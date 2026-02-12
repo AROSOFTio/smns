@@ -1,0 +1,786 @@
+# Seminary Results Management System (SRMS)
+
+[![PHP Version](https://img.shields.io/badge/PHP-7.4%2B-blue.svg)](https://www.php.net/)
+[![MySQL Version](https://img.shields.io/badge/MySQL-5.7%2B-orange.svg)](https://www.mysql.com/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+A comprehensive web-based platform designed to manage academic records, student information, course administration, results processing, and financial transactions for theological seminary institutions.
+
+## 📋 Table of Contents
+
+- [Features](#features)
+- [System Requirements](#system-requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [User Roles](#user-roles)
+- [Module Overview](#module-overview)
+- [Database Schema](#database-schema)
+- [Security Features](#security-features)
+- [API Documentation](#api-documentation)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [Support](#support)
+- [License](#license)
+
+## ✨ Features
+
+### Core Functionality
+- **Multi-role Access Control** - Students, Lecturers, Finance Staff, and Administrators
+- **Academic Management** - Complete course, program, and semester management
+- **Results Processing** - Comprehensive grading system with GPA calculation
+- **Financial Management** - Fee structures, invoicing, and payment tracking
+- **Reporting System** - Transcripts, financial statements, and analytics
+- **Email Notifications** - Automated notifications for important events
+- **Secure Authentication** - Password hashing, session management, and account protection
+
+### Student Portal
+- View academic records and transcripts
+- Register for courses
+- Check results and GPA
+- View fee statements and payment history
+- Download official documents
+
+### Lecturer Portal
+- Manage assigned courses
+- View class lists
+- Enter and submit student results
+- Generate class reports
+- Track teaching assignments
+
+### Admin Portal
+- Complete user management
+- Academic structure configuration
+- Results approval and publication
+- System settings and customization
+- Activity logs and monitoring
+
+### Finance Module
+- Fee structure management
+- Payment recording and receipts
+- Invoice generation
+- Outstanding balance tracking
+- Comprehensive financial reports
+
+## 🔧 System Requirements
+
+### Server Requirements
+- **Web Server:** Apache 2.4+ with mod_rewrite enabled
+- **PHP:** 7.4 or higher
+- **Database:** MySQL 5.7+ or MariaDB 10.2+
+- **PHP Extensions:**
+  - mysqli
+  - pdo_mysql
+  - mbstring
+  - gd
+  - curl
+  - openssl
+  - zip
+  - xml
+
+### Recommended Server Specifications
+- **RAM:** Minimum 2GB, Recommended 4GB+
+- **Storage:** Minimum 10GB free space
+- **Processor:** 2+ CPU cores
+
+### Client Requirements
+- **Browsers:** 
+  - Google Chrome (latest 2 versions)
+  - Mozilla Firefox (latest 2 versions)
+  - Microsoft Edge (latest 2 versions)
+  - Safari (latest 2 versions)
+- **Screen Resolution:** Minimum 1024x768
+- **Internet Connection:** Broadband recommended
+
+## 📦 Installation
+
+### Step 1: Download and Extract
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/seminary-results-system.git
+
+# Navigate to the directory
+cd seminary-results-system
+
+# Or download and extract the ZIP file
+unzip seminary-results-system.zip
+cd seminary-results-system
+```
+
+### Step 2: Configure Web Server
+
+#### Apache Configuration
+
+1. **Copy files to web root:**
+```bash
+sudo cp -r seminary-results-system /var/www/html/srms
+```
+
+2. **Set permissions:**
+```bash
+sudo chown -R www-data:www-data /var/www/html/srms
+sudo chmod -R 755 /var/www/html/srms
+sudo chmod -R 777 /var/www/html/srms/uploads
+sudo chmod -R 777 /var/www/html/srms/backups
+```
+
+3. **Enable mod_rewrite:**
+```bash
+sudo a2enmod rewrite
+sudo systemctl restart apache2
+```
+
+4. **Configure virtual host (optional):**
+```apache
+<VirtualHost *:80>
+    ServerName srms.yourdomain.com
+    DocumentRoot /var/www/html/srms
+    
+    <Directory /var/www/html/srms>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+    
+    ErrorLog ${APACHE_LOG_DIR}/srms_error.log
+    CustomLog ${APACHE_LOG_DIR}/srms_access.log combined
+</VirtualHost>
+```
+
+### Step 3: Create Database
+
+```bash
+# Login to MySQL
+mysql -u root -p
+
+# Create database
+CREATE DATABASE smns CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+# Create database user
+CREATE USER 'srms_user'@'localhost' IDENTIFIED BY 'your_secure_password';
+GRANT ALL PRIVILEGES ON smns.* TO 'srms_user'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+
+# Import database schema
+mysql -u srms_user -p smns < database/schema.sql
+```
+
+### Step 4: Configure Application
+
+1. **Rename configuration file:**
+```bash
+cp config.sample.php config.php
+```
+
+2. **Edit config.php:**
+```php
+<?php
+// Database Configuration
+define('DB_HOST', 'localhost');
+define('DB_NAME', 'smns');
+define('DB_USER', 'srms_user');
+define('DB_PASS', 'your_secure_password');
+
+// Base URL
+define('BASE_URL', 'http://yourdomain.com/srms/');
+
+// Timezone
+date_default_timezone_set('Africa/Kampala');
+
+// Email Configuration
+define('SMTP_HOST', 'smtp.gmail.com');
+define('SMTP_PORT', 587);
+define('SMTP_USER', 'your-email@gmail.com');
+define('SMTP_PASS', 'your-app-password');
+define('SMTP_FROM', 'noreply@seminary.edu');
+define('SMTP_FROM_NAME', 'Seminary Administration');
+
+// Security Settings
+define('SESSION_TIMEOUT', 3600); // 1 hour
+define('MAX_LOGIN_ATTEMPTS', 5);
+define('ACCOUNT_LOCKOUT_DURATION', 30); // minutes
+
+// File Upload Settings
+define('MAX_FILE_SIZE', 5242880); // 5MB
+define('ALLOWED_EXTENSIONS', ['jpg', 'jpeg', 'png', 'pdf']);
+?>
+```
+
+### Step 5: Set Up Email Templates
+
+The system includes default email templates. You can customize them in the database:
+
+```sql
+-- Update institution information in email templates
+UPDATE email_templates 
+SET body = REPLACE(body, '{{institution_name}}', 'Your Seminary Name');
+```
+
+### Step 6: Create Default Admin Account
+
+The database schema includes a default admin account:
+- **Username:** admin
+- **Password:** password (⚠️ **CHANGE IMMEDIATELY**)
+- **Email:** admin@seminary.edu
+
+**First Login Steps:**
+1. Navigate to `http://yourdomain.com/srms/`
+2. Login with default credentials
+3. Go to Profile → Change Password
+4. Update admin email and contact information
+
+## ⚙️ Configuration
+
+### Institution Settings
+
+After login as admin, configure your institution:
+
+1. Navigate to **Admin → System Settings**
+2. Update the following:
+   - Institution Name
+   - Institution Email
+   - Institution Phone
+   - Physical Address
+   - Logo (upload institution logo)
+
+### Academic Configuration
+
+1. **Create Academic Year:**
+   - Admin → Academic Management → Academic Years
+   - Add current academic year (e.g., 2024/2025)
+
+2. **Create Semesters:**
+   - Admin → Academic Management → Semesters
+   - Add semesters with start/end dates
+   - Set registration periods
+
+3. **Configure Grading System:**
+   - Admin → Academic Management → Grading System
+   - Default grading scale is pre-configured
+   - Modify if needed
+
+4. **Add Programs:**
+   - Admin → Academic Management → Programs
+   - Create academic programs/departments
+   - Set duration and credit requirements
+
+5. **Add Courses:**
+   - Admin → Course Management → Add Course
+   - Configure courses with codes, credits, levels
+
+### Financial Configuration
+
+1. **Set Up Fee Structure:**
+   - Finance → Fees Structure → Add Fees
+   - Create fee items (Tuition, Library, Medical, etc.)
+   - Assign to programs and levels
+
+2. **Configure Payment Methods:**
+   - Finance → Settings
+   - Enable payment methods (Cash, Bank Transfer, Mobile Money)
+
+## 📖 Usage
+
+### Student Workflow
+
+1. **First Login:**
+   - Receive credentials via email
+   - Login and change password
+   - Complete profile information
+
+2. **Course Registration:**
+   - Navigate to Academic → Course Registration
+   - Select courses for the semester
+   - Submit for approval
+   - Print registration form
+
+3. **View Results:**
+   - Navigate to Academic → View Results
+   - Select semester
+   - Download result slip
+
+4. **Check Fees:**
+   - Navigate to Finance → Fee Statement
+   - View outstanding balance
+   - Download statement
+
+### Lecturer Workflow
+
+1. **View Assigned Courses:**
+   - Dashboard shows all assigned courses
+   - Click course to view details
+
+2. **Enter Results:**
+   - Navigate to Results → Enter Results
+   - Select course and semester
+   - Input marks for each student
+   - Save as draft or submit
+
+3. **Generate Class List:**
+   - Navigate to My Courses
+   - Select course
+   - Click "Print Class List"
+
+### Finance Staff Workflow
+
+1. **Record Payment:**
+   - Navigate to Payments → Record Payment
+   - Search for student
+   - Enter payment details
+   - Generate receipt
+
+2. **Generate Invoices:**
+   - Navigate to Invoices → Generate Invoice
+   - Select student or bulk generate
+   - Send via email
+
+3. **Run Reports:**
+   - Navigate to Reports
+   - Select report type
+   - Set date range
+   - Export to Excel/PDF
+
+### Admin Workflow
+
+1. **Add Students:**
+   - Navigate to Student Management → Add Student
+   - Fill in student information
+   - System generates student ID
+   - Welcome email sent automatically
+
+2. **Assign Courses to Lecturers:**
+   - Navigate to Lecturer Management
+   - Select lecturer
+   - Click "Assign Courses"
+   - Select courses and semester
+
+3. **Approve Results:**
+   - Navigate to Results Management
+   - View submitted results
+   - Review and approve
+   - Publish to students
+
+4. **Monitor System:**
+   - View activity logs
+   - Check system statistics
+   - Manage user accounts
+
+## 👥 User Roles
+
+### Student
+- View academic records
+- Register for courses
+- Check results and GPA
+- View fees and payments
+- Download transcripts
+
+### Lecturer
+- Manage assigned courses
+- Enter student results
+- View class lists
+- Generate reports
+- Track submissions
+
+### Finance Staff
+- Record payments
+- Generate invoices
+- Manage fee structures
+- Run financial reports
+- Send payment reminders
+
+### Administrator
+- Full system access
+- User management
+- Academic configuration
+- Results approval
+- System settings
+
+## 📊 Module Overview
+
+### Authentication Module
+- Secure login/logout
+- Password reset
+- Session management
+- Account lockout
+- Activity logging
+
+### Student Portal
+- Personal dashboard
+- Profile management
+- Course registration
+- Results viewing
+- Fee statements
+- Document downloads
+
+### Lecturer Portal
+- Teaching dashboard
+- Course management
+- Results entry
+- Class lists
+- Performance analytics
+
+### Admin Portal
+- System dashboard
+- User management
+- Academic setup
+- Results approval
+- Configuration
+
+### Finance Module
+- Fee structures
+- Payment processing
+- Invoice generation
+- Balance tracking
+- Financial reports
+
+### Reports Module
+- Academic transcripts
+- Result slips
+- Financial statements
+- Statistical reports
+- Custom exports
+
+## 🗄️ Database Schema
+
+### Core Tables
+- **users** - Authentication and user accounts
+- **students** - Student information
+- **lecturers** - Lecturer information
+- **admins** - Administrator accounts
+- **finance_staff** - Finance personnel
+
+### Academic Tables
+- **programs** - Academic programs
+- **courses** - Course catalog
+- **academic_years** - Academic year definitions
+- **semesters** - Semester periods
+- **course_registrations** - Student course enrollments
+- **results** - Student grades and marks
+- **grades** - Grading scale
+
+### Finance Tables
+- **fees_structure** - Fee definitions
+- **invoices** - Student invoices
+- **payments** - Payment records
+- **student_balances** - Current balances
+
+### System Tables
+- **roles** - User roles
+- **permissions** - System permissions
+- **activity_logs** - Audit trail
+- **notifications** - User notifications
+- **settings** - System configuration
+
+For complete schema details, see `database/schema.sql`
+
+## 🔒 Security Features
+
+### Authentication Security
+- **Password Hashing:** bcrypt algorithm
+- **Session Management:** Secure session handling with timeout
+- **Account Lockout:** After 5 failed login attempts
+- **Password Policy:** Minimum 8 characters, complexity requirements
+- **Password History:** Prevents reuse of last 3 passwords
+
+### Application Security
+- **SQL Injection Prevention:** Prepared statements
+- **XSS Protection:** Input sanitization and output escaping
+- **CSRF Protection:** Token validation on all forms
+- **File Upload Validation:** Type and size restrictions
+- **HTTPS Enforcement:** SSL/TLS recommended
+
+### Data Security
+- **Role-Based Access Control (RBAC)**
+- **Activity Logging:** All actions tracked
+- **Data Encryption:** Sensitive data encrypted
+- **Regular Backups:** Automated daily backups
+- **Audit Trail:** Complete change history
+
+## 🔌 API Documentation
+
+### Authentication
+All API requests require authentication via session or API token.
+
+### Available Endpoints
+
+#### Students API
+```
+GET    /api/students.php          - List all students
+GET    /api/students.php?id={id}  - Get student details
+POST   /api/students.php          - Create student
+PUT    /api/students.php          - Update student
+DELETE /api/students.php          - Delete student
+```
+
+#### Results API
+```
+GET    /api/results.php                    - List results
+GET    /api/results.php?student={id}       - Get student results
+POST   /api/results.php                    - Add results
+PUT    /api/results.php                    - Update results
+```
+
+#### Payments API
+```
+GET    /api/payments.php                   - List payments
+GET    /api/payments.php?student={id}      - Get student payments
+POST   /api/payments.php                   - Record payment
+```
+
+#### Courses API
+```
+GET    /api/courses.php           - List courses
+GET    /api/courses.php?id={id}   - Get course details
+POST   /api/courses.php           - Create course
+PUT    /api/courses.php           - Update course
+```
+
+### Response Format
+```json
+{
+  "status": "success|error",
+  "message": "Response message",
+  "data": {}
+}
+```
+
+### Example Request
+```bash
+curl -X GET "http://yourdomain.com/srms/api/students.php" \
+     -H "Authorization: Bearer YOUR_API_TOKEN" \
+     -H "Content-Type: application/json"
+```
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+#### Cannot login / Invalid credentials
+```
+Solution:
+1. Verify username and password
+2. Check if account is active
+3. Check if account is locked (wait 30 minutes or contact admin)
+4. Clear browser cache and cookies
+```
+
+#### Database connection error
+```
+Solution:
+1. Verify database credentials in config.php
+2. Check if MySQL service is running: sudo systemctl status mysql
+3. Verify database exists: mysql -u root -p -e "SHOW DATABASES;"
+4. Check user permissions
+```
+
+#### 404 errors / Page not found
+```
+Solution:
+1. Verify .htaccess file exists
+2. Check if mod_rewrite is enabled: sudo a2enmod rewrite
+3. Restart Apache: sudo systemctl restart apache2
+4. Check base URL in config.php
+```
+
+#### Email not sending
+```
+Solution:
+1. Verify SMTP settings in config.php
+2. Check if PHP mail() function is enabled
+3. Verify firewall allows SMTP port
+4. Check email logs in /logs/email_errors.log
+5. Test with a different SMTP provider
+```
+
+#### File upload errors
+```
+Solution:
+1. Check upload directory permissions: chmod 777 uploads/
+2. Verify PHP upload_max_filesize in php.ini
+3. Check post_max_size in php.ini
+4. Ensure uploads/ directory exists
+```
+
+#### Session timeout issues
+```
+Solution:
+1. Increase SESSION_TIMEOUT in config.php
+2. Check PHP session.gc_maxlifetime in php.ini
+3. Clear browser cache
+4. Check server system time
+```
+
+### Error Logs
+
+Check logs for detailed error information:
+```bash
+# Apache error log
+tail -f /var/log/apache2/error.log
+
+# Application error log
+tail -f /var/www/html/srms/logs/error.log
+
+# MySQL error log
+tail -f /var/log/mysql/error.log
+```
+
+### Performance Issues
+
+If experiencing slow performance:
+
+1. **Enable caching:**
+   - Enable OpCache in php.ini
+   - Configure query caching in MySQL
+
+2. **Optimize database:**
+```sql
+OPTIMIZE TABLE students;
+OPTIMIZE TABLE results;
+OPTIMIZE TABLE course_registrations;
+```
+
+3. **Check server resources:**
+```bash
+top
+df -h
+free -m
+```
+
+## 🔄 Backup and Restore
+
+### Manual Backup
+
+```bash
+# Backup database
+mysqldump -u srms_user -p smns > backup_$(date +%Y%m%d).sql
+
+# Backup files
+tar -czf srms_files_$(date +%Y%m%d).tar.gz /var/www/html/srms
+```
+
+### Restore Database
+
+```bash
+mysql -u srms_user -p smns < backup_20241215.sql
+```
+
+### Automated Backups
+
+Create a cron job for daily backups:
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add this line for daily backup at 2 AM
+0 2 * * * /var/www/html/srms/scripts/backup.sh
+```
+
+## 🚀 Maintenance
+
+### Regular Tasks
+
+**Daily:**
+- Monitor error logs
+- Check system performance
+- Verify backups completed
+
+**Weekly:**
+- Review activity logs
+- Check disk space
+- Update content
+
+**Monthly:**
+- Security updates
+- Database optimization
+- Performance review
+
+**Quarterly:**
+- Full system backup
+- Security audit
+- Feature review
+
+### System Updates
+
+```bash
+# Update system packages
+sudo apt update && sudo apt upgrade
+
+# Update PHP extensions
+sudo apt install php-extensions
+
+# Restart services
+sudo systemctl restart apache2
+sudo systemctl restart mysql
+```
+
+## 👨‍💻 Contributing
+
+We welcome contributions! Please follow these guidelines:
+
+1. **Fork the repository**
+2. **Create a feature branch:** `git checkout -b feature/YourFeature`
+3. **Commit changes:** `git commit -m 'Add YourFeature'`
+4. **Push to branch:** `git push origin feature/YourFeature`
+5. **Submit pull request**
+
+### Coding Standards
+- Follow PSR-12 coding standards
+- Comment complex logic
+- Write meaningful commit messages
+- Include unit tests for new features
+
+## 📞 Support
+
+### Documentation
+- Full documentation: `/docs/`
+- API documentation: `/docs/api/`
+- Database schema: `/database/schema.sql`
+
+### Getting Help
+- **Email:** support@seminary.edu
+- **Issue Tracker:** GitHub Issues
+- **Community Forum:** [Link to forum]
+
+### Professional Support
+For professional support, training, or customization:
+- **Email:** commercial@seminary.edu
+- **Phone:** +256-XXX-XXXXXX
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **PHPMailer** - Email functionality
+- **FPDF** - PDF generation
+- **PHPExcel** - Excel export
+- **DataTables** - Interactive tables
+- **Bootstrap** - UI framework
+
+## 📝 Version History
+
+### Version 1.0.0 (Current)
+- Initial release
+- Core functionality implemented
+- Student, Lecturer, Admin, and Finance modules
+- Comprehensive reporting system
+- Email notifications
+- API endpoints
+
+### Roadmap
+- **v1.1.0** - Mobile application
+- **v1.2.0** - Online payment gateway
+- **v1.3.0** - SMS notifications
+- **v2.0.0** - Advanced analytics and AI insights
+
+---
+
+**Developed for:** Seminary Institutions  
+**Technology Stack:** PHP, MySQL, JavaScript, HTML5, CSS3  
+**Last Updated:** February 2026
+
+For more information, visit [https://github.com/yourusername/seminary-results-system](https://github.com/yourusername/seminary-results-system)
