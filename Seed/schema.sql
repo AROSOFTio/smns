@@ -306,7 +306,6 @@ CREATE TABLE course_registrations (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
-git remote set-url origin https://RAYTECHsudo:RAYTECH@2023@github.com/RAYTECHsudo/SMNS.git
 
 -- ============================================================================
 -- RESULTS TABLES
