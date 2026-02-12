@@ -4,12 +4,21 @@
  */
 require_once '../../config.php';
 
-// Initialize with finance role for session isolation
+// Simple session handling
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Initialize session and auth with finance module context
 $session = new Session('finance');
 $auth = new Auth('finance');
 
-// Verify finance access
-Security::requireRole('finance');
+// Verify finance access (using module-specific session keys)
+if (!isset($_SESSION['finance_logged_in']) || $_SESSION['finance_logged_in'] !== true || $_SESSION['finance_role'] !== 'finance') {
+    header('Location: ' . BASE_URL . '/views/finance/login.php?error=unauthorized');
+    exit;
+}
+
 $currentUser = $auth->getCurrentUser();
 $financeProfile = $currentUser['profile'];
 
@@ -46,15 +55,34 @@ $stmt = $conn->prepare("SELECT p.*, s.student_id, s.first_name, s.last_name
 $stmt->execute();
 $recentPayments = $stmt->fetchAll();
 
+// Additional stats for dashboard
+$stmt = $conn->prepare("SELECT COUNT(*) as total FROM invoices 
+                        WHERE semester_id = :semester_id AND status != 'paid'");
+$stmt->execute(['semester_id' => $currentSemester['id'] ?? 0]);
+$totalInvoices = $stmt->fetch()['total'];
+
+$stmt = $conn->prepare("SELECT COUNT(*) as total FROM student_balances 
+                        WHERE semester_id = :semester_id AND balance > 0");
+$stmt->execute(['semester_id' => $currentSemester['id'] ?? 0]);
+$studentsWithBalance = $stmt->fetch()['total'];
+
+// Notifications
+$stmt = $conn->prepare("SELECT * FROM notifications WHERE user_id = :user_id AND read_status = 'unread' ORDER BY created_at DESC LIMIT 5");
+$stmt->execute(['user_id' => $currentUser['id']]);
+$unreadNotifications = $stmt->fetchAll();
+
 $pageTitle = 'Finance Dashboard - ' . APP_NAME;
 include '../../includes/header.php';
 ?>
 
 <?php include '../../includes/finance/sidebar.php'; ?>
 
-<div class="main-content">
+<div class="main-content" id="mainContent">
     <div class="topbar">
         <div class="topbar-left">
+            <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar">
+                <i class="fas fa-bars"></i>
+            </button>
             <h4>Dashboard</h4>
         </div>
         <div class="topbar-right">
@@ -64,6 +92,7 @@ include '../../includes/header.php';
                     <div class="date-display"><?php echo date('l, F j, Y'); ?></div>
                 </div>
             </div>
+            <?php include '../../includes/notification_bell.php'; ?>
             <div class="user-info">
                 <div class="user-dropdown">
                     <button class="user-dropdown-toggle" id="userDropdown">
@@ -84,8 +113,8 @@ include '../../includes/header.php';
                             <i>📈</i> Reports
                         </a>
                         <div class="dropdown-divider"></div>
-                        <a href="<?php echo BASE_URL; ?>/views/auth/logout.php" class="dropdown-item logout-item">
-                            <i>🚪</i> Logout
+                        <a href="<?php echo BASE_URL; ?>/views/finance/logout.php" class="dropdown-item logout-item">
+                            <i class="fas fa-sign-out-alt"></i> Logout
                         </a>
                     </div>
                 </div>
@@ -99,6 +128,81 @@ include '../../includes/header.php';
                 <?php echo e($session->getFlash('success')); ?>
             </div>
         <?php endif; ?>
+        
+        <!-- Welcome Section -->
+        <div class="welcome-section mb-4">
+            <h2>Finance Dashboard</h2>
+            <p class="text-muted">Monitor payments, manage invoices, and track financial performance.</p>
+        </div>
+        
+        <!-- Finance Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card payments">
+                <div class="stat-icon">💰</div>
+                <div class="stat-details">
+                    <h3>UGX <?php echo number_format($paymentsToday, 0); ?></h3>
+                    <p>Total Payments Today</p>
+                    <div class="stat-change positive">⭡ Collected</div>
+                </div>
+            </div>
+            
+            <div class="stat-card outstanding">
+                <div class="stat-icon">⏰</div>
+                <div class="stat-details">
+                    <h3>UGX <?php echo number_format($outstandingBalance, 0); ?></h3>
+                    <p>Outstanding Balances</p>
+                    <div class="stat-change negative">⚠️ Pending</div>
+                </div>
+            </div>
+            
+            <div class="stat-card invoices">
+                <div class="stat-icon">📄</div>
+                <div class="stat-details">
+                    <h3><?php echo number_format($totalInvoices); ?></h3>
+                    <p>Active Invoices</p>
+                    <div class="stat-change neutral">—— Current</div>
+                </div>
+            </div>
+            
+            <div class="stat-card students">
+                <div class="stat-icon">👥</div>
+                <div class="stat-details">
+                    <h3><?php echo number_format($studentsWithBalance); ?></h3>
+                    <p>Students w/ Balance</p>
+                    <div class="stat-change negative">💳 Outstanding</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Quick Actions Section -->
+        <div class="quick-actions-section">
+            <h3>Quick Actions</h3>
+            <div class="action-grid">
+                <a href="payments/record.php" class="action-card">
+                    <div class="action-icon">💳</div>
+                    <h4>Record Payment</h4>
+                    <p>Process student fee payments</p>
+                </a>
+                
+                <a href="invoices/generate.php" class="action-card">
+                    <div class="action-icon">📋</div>
+                    <h4>Generate Invoices</h4>
+                    <p>Create fee invoices for students</p>
+                </a>
+                
+                <a href="reports/financial.php" class="action-card">
+                    <div class="action-icon">📊</div>
+                    <h4>Financial Reports</h4>
+                    <p>View payment and revenue reports</p>
+                </a>
+                
+                <a href="statements/student.php" class="action-card">
+                    <div class="action-icon">🧾</div>
+                    <h4>Student Statements</h4>
+                    <p>Generate fee statements for students</p>
+                </a>
+            </div>
+        </div>
         
         <!-- Welcome Message -->
         <div class="card">

@@ -50,6 +50,9 @@ document.addEventListener('DOMContentLoaded', function() {
         dropdownToggle.addEventListener('click', function(e) {
             e.stopPropagation();
             userDropdown.classList.toggle('active');
+            // Close notification dropdown if open
+            var nd = document.getElementById('notificationDropdown');
+            if (nd) nd.classList.remove('show');
         });
         
         // Close dropdown when clicking outside
@@ -65,6 +68,127 @@ document.addEventListener('DOMContentLoaded', function() {
             item.addEventListener('click', function() {
                 userDropdown.classList.remove('active');
             });
+        });
+    }
+    
+    // Sidebar Toggle Functionality (single authoritative handler)
+    const sidebarToggle = document.getElementById('sidebarToggle');
+
+    // Notification Bell Toggle
+    const notifBell = document.getElementById('notificationBell');
+    const notifDropdown = document.getElementById('notificationDropdown');
+
+    if (notifBell && notifDropdown) {
+        notifBell.addEventListener('click', function(e) {
+            e.stopPropagation();
+            // Close user dropdown if open
+            if (userDropdown) userDropdown.classList.remove('active');
+            notifDropdown.classList.toggle('show');
+        });
+
+        // Close notification dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (notifDropdown && !notifDropdown.contains(e.target) && e.target !== notifBell) {
+                notifDropdown.classList.remove('show');
+            }
+        });
+
+        // Mark all as read
+        const markAllBtn = document.getElementById('markAllRead');
+        if (markAllBtn) {
+            markAllBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                // Determine base URL from current page path
+                var pathParts = window.location.pathname.split('/');
+                var smnsIndex = pathParts.indexOf('smns');
+                var baseUrl = pathParts.slice(0, smnsIndex + 1).join('/');
+
+                fetch(baseUrl + '/api/notifications.php?action=mark_all_read', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        // Remove badge
+                        var badge = notifBell.querySelector('.notification-badge');
+                        if (badge) badge.remove();
+                        // Clear unread styling
+                        document.querySelectorAll('.notification-item.unread').forEach(function(item) {
+                            item.classList.remove('unread');
+                        });
+                        // Replace list with empty state
+                        var list = document.querySelector('.notification-list');
+                        if (list) {
+                            list.innerHTML = '<div class="notification-empty"><i class="fas fa-bell-slash"></i><p>No new notifications</p></div>';
+                        }
+                        // Hide mark all link
+                        markAllBtn.style.display = 'none';
+                    }
+                })
+                .catch(function(err) { console.error('Notification error:', err); });
+            });
+        }
+
+        // Mark individual notification as read on click
+        document.querySelectorAll('.notification-item').forEach(function(item) {
+            item.addEventListener('click', function() {
+                var notifId = this.getAttribute('data-id');
+                if (notifId) {
+                    var pathParts = window.location.pathname.split('/');
+                    var smnsIndex = pathParts.indexOf('smns');
+                    var baseUrl = pathParts.slice(0, smnsIndex + 1).join('/');
+
+                    fetch(baseUrl + '/api/notifications.php?action=mark_read&id=' + notifId, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    }).catch(function(err) { console.error('Notification error:', err); });
+                }
+            });
+        });
+    }
+    const sidebar = document.getElementById('sidebar') || document.querySelector('.sidebar');
+    const mainContent = document.getElementById('mainContent') || document.querySelector('.main-content');
+    
+    if (sidebarToggle && sidebar && mainContent) {
+        // Clean up old localStorage key from navigation.js
+        localStorage.removeItem('sidebar-collapsed');
+        
+        // Check localStorage for sidebar state and apply on page load
+        if (localStorage.getItem('sidebarCollapsed') === 'true') {
+            sidebar.classList.add('collapsed');
+            mainContent.classList.add('expanded');
+            var icon = sidebarToggle.querySelector('i');
+            if (icon) {
+                icon.classList.remove('fa-bars');
+                icon.classList.add('fa-indent');
+            }
+        }
+        
+        sidebarToggle.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            sidebar.classList.toggle('collapsed');
+            mainContent.classList.toggle('expanded');
+            
+            // Save state to localStorage
+            var isCollapsed = sidebar.classList.contains('collapsed');
+            localStorage.setItem('sidebarCollapsed', isCollapsed);
+            
+            // Change icon
+            var icon = this.querySelector('i');
+            if (icon) {
+                if (isCollapsed) {
+                    icon.classList.remove('fa-bars');
+                    icon.classList.add('fa-indent');
+                } else {
+                    icon.classList.remove('fa-indent');
+                    icon.classList.add('fa-bars');
+                }
+            }
         });
     }
 });
@@ -115,10 +239,7 @@ $(document).ready(function() {
         }
     });
     
-    // Sidebar toggle for mobile
-    $('#sidebarToggle').click(function() {
-        $('.sidebar').toggleClass('show');
-    });
+    // Sidebar toggle for mobile is handled by vanilla JS above - no duplicate jQuery handler
     
     // DataTable initialization if available
     if (typeof $.fn.DataTable === 'function') {

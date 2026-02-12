@@ -1,40 +1,36 @@
 <?php
 /**
- * Logout Page - Handles logout for current user
+ * Logout Page - Secure logout for all users
+ * Destroys the entire session (all modules)
  */
 require_once '../../config.php';
 
-// Try to detect which role session is active for THIS user
-$roles = ['admin', 'student', 'lecturer', 'finance'];
-$activeRole = null;
-
-// Check which role session THIS user has active
-foreach ($roles as $role) {
-    if (session_status() === PHP_SESSION_ACTIVE) {
-        session_write_close();
-    }
-    
-    session_name('SMNS_' . strtoupper($role) . '_SESSION');
+// Ensure session is started
+if (session_status() === PHP_SESSION_NONE) {
     session_start();
-    
-    if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
-        $activeRole = $role;
-        
-        // Found the active session for THIS user - logout and destroy it
-        $auth = new Auth($activeRole);
-        $auth->logout();
-        break;
-    } else {
-        session_write_close();
-    }
 }
 
-// Start public session for flash message
-session_name('SMNS_PUBLIC_SESSION');
-session_start();
-$_SESSION['flash_success'] = 'You have been successfully logged out.';
+// Initialize auth
+$auth = new Auth();
 
-// Redirect to unified login page
-header('Location: login.php');
-exit;
+// Log logout activity and destroy session
+$auth->logout();
+
+// Destroy the entire session
+$_SESSION = [];
+if (ini_get("session.use_cookies")) {
+    $params = session_get_cookie_params();
+    setcookie(session_name(), '', time() - 42000,
+        $params["path"], $params["domain"],
+        $params["secure"], $params["httponly"]
+    );
+}
+session_destroy();
+
+// Start fresh session for flash message
+session_start();
+$_SESSION['flash_success'] = 'You have been logged out successfully.';
+
+// Redirect to login page
+header('Location: login.php?action=logout');
 exit;

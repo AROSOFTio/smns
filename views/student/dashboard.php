@@ -4,12 +4,21 @@
  */
 require_once '../../config.php';
 
-// Initialize with student role for session isolation
+// Simple session handling
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Initialize session and auth with student module context
 $session = new Session('student');
 $auth = new Auth('student');
 
-// Verify student access
-Security::requireRole('student');
+// Verify student access (using module-specific session keys)
+if (!isset($_SESSION['student_logged_in']) || $_SESSION['student_logged_in'] !== true || $_SESSION['student_role'] !== 'student') {
+    header('Location: ' . BASE_URL . '/views/student/login.php?error=unauthorized');
+    exit;
+}
+
 $currentUser = $auth->getCurrentUser();
 $studentProfile = $currentUser['profile'];
 
@@ -71,9 +80,12 @@ include '../../includes/header.php';
 
 <?php include '../../includes/student/sidebar.php'; ?>
 
-<div class="main-content">
+<div class="main-content" id="mainContent">
     <div class="topbar">
         <div class="topbar-left">
+            <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar">
+                <i class="fas fa-bars"></i>
+            </button>
             <h4>Dashboard</h4>
         </div>
         <div class="topbar-right">
@@ -83,6 +95,7 @@ include '../../includes/header.php';
                     <div class="date-display"><?php echo date('l, F j, Y'); ?></div>
                 </div>
             </div>
+            <?php include '../../includes/notification_bell.php'; ?>
             <div class="user-info">
                 <div class="user-dropdown">
                     <button class="user-dropdown-toggle" id="userDropdown">
@@ -106,8 +119,8 @@ include '../../includes/header.php';
                             <i>💰</i> Fee Statement
                         </a>
                         <div class="dropdown-divider"></div>
-                        <a href="<?php echo BASE_URL; ?>/views/auth/logout.php" class="dropdown-item logout-item">
-                            <i>🚪</i> Logout
+                        <a href="<?php echo BASE_URL; ?>/views/student/logout.php" class="dropdown-item logout-item">
+                            <i class="fas fa-sign-out-alt"></i> Logout
                         </a>
                     </div>
                 </div>
@@ -121,6 +134,87 @@ include '../../includes/header.php';
                 <?php echo e($session->getFlash('success')); ?>
             </div>
         <?php endif; ?>
+        
+        <!-- Welcome Section -->
+        <div class="welcome-section mb-4">
+            <h2>Good <?php echo date('H') < 12 ? 'Morning' : (date('H') < 17 ? 'Afternoon' : 'Evening'); ?>, <?php echo e($studentProfile['first_name']); ?>!</h2>
+            <p class="text-muted">Welcome to your student dashboard. Here's your academic overview.</p>
+        </div>
+        
+        <!-- Student Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card academic">
+                <div class="stat-icon">📚</div>
+                <div class="stat-details">
+                    <h3><?php echo number_format($registeredCourses); ?></h3>
+                    <p>Courses This Semester</p>
+                    <div class="stat-change neutral">—— <?php echo $currentSemester['semester_name'] ?? 'N/A'; ?></div>
+                </div>
+            </div>
+            
+            <div class="stat-card gpa">
+                <div class="stat-icon">🎯</div>
+                <div class="stat-details">
+                    <h3><?php echo number_format($cumulativeGPA, 2); ?></h3>
+                    <p>Cumulative GPA</p>
+                    <div class="stat-change <?php echo $cumulativeGPA >= 3.5 ? 'positive' : ($cumulativeGPA >= 2.5 ? 'neutral' : 'negative'); ?>">
+                        <?php echo $cumulativeGPA >= 3.5 ? '⭐ Excellent' : ($cumulativeGPA >= 2.5 ? '👍 Good' : '⚠️ Needs Improvement'); ?>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="stat-card financial">
+                <div class="stat-icon">💳</div>
+                <div class="stat-details">
+                    <h3>UGX <?php echo number_format($outstandingBalance, 0); ?></h3>
+                    <p>Outstanding Balance</p>
+                    <div class="stat-change <?php echo $outstandingBalance == 0 ? 'positive' : ($outstandingBalance < 500000 ? 'neutral' : 'negative'); ?>">
+                        <?php echo $outstandingBalance == 0 ? '✅ Paid' : ($outstandingBalance < 500000 ? '⏰ Pending' : '🚨 Overdue'); ?>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="stat-card notifications">
+                <div class="stat-icon">🔔</div>
+                <div class="stat-details">
+                    <h3><?php echo count($unreadNotifications); ?></h3>
+                    <p>New Notifications</p>
+                    <div class="stat-change <?php echo count($unreadNotifications) > 0 ? 'negative' : 'positive'; ?>">
+                        <?php echo count($unreadNotifications) > 0 ? '📬 Unread' : '✅ Up to date'; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Quick Actions Section -->
+        <div class="quick-actions-section">
+            <h3>Quick Actions</h3>
+            <div class="action-grid">
+                <a href="courses/registration.php" class="action-card">
+                    <div class="action-icon">📝</div>
+                    <h4>Course Registration</h4>
+                    <p>Register for new courses this semester</p>
+                </a>
+                
+                <a href="results/view.php" class="action-card">
+                    <div class="action-icon">📊</div>
+                    <h4>View Results</h4>
+                    <p>Check your academic performance and grades</p>
+                </a>
+                
+                <a href="fees/statement.php" class="action-card">
+                    <div class="action-icon">💰</div>
+                    <h4>Fee Statement</h4>
+                    <p>View and pay outstanding fees</p>
+                </a>
+                
+                <a href="timetable/view.php" class="action-card">
+                    <div class="action-icon">🗓️</div>
+                    <h4>Class Timetable</h4>
+                    <p>View your class schedule and timings</p>
+                </a>
+            </div>
+        </div>
         
         <!-- Welcome Message -->
         <div class="card">

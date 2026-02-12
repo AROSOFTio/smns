@@ -2,6 +2,7 @@
 /**
  * Authentication Handler Class
  * Handles user authentication, login, logout, and session management
+ * Supports module-isolated sessions (admin, student, lecturer, finance can be logged in simultaneously)
  */
 require_once __DIR__ . '/Database.php';
 require_once __DIR__ . '/Session.php';
@@ -9,11 +10,45 @@ require_once __DIR__ . '/Session.php';
 class Auth {
     private $db;
     private $session;
+    private $module; // The current module context (admin, student, lecturer, finance)
     
     public function __construct($role = null) {
         $database = new Database();
         $this->db = $database->getConnection();
         $this->session = new Session($role);
+        $this->module = $role; // Store the module context
+    }
+    
+    /**
+     * Get module-prefixed session key
+     * This allows multiple roles to be logged in simultaneously without conflicts
+     */
+    private function getModuleKey($key) {
+        if ($this->module) {
+            return $this->module . '_' . $key;
+        }
+        return $key;
+    }
+    
+    /**
+     * Set module-specific session value
+     */
+    public function setModuleSession($key, $value) {
+        $_SESSION[$this->getModuleKey($key)] = $value;
+    }
+    
+    /**
+     * Get module-specific session value
+     */
+    public function getModuleSession($key, $default = null) {
+        return $_SESSION[$this->getModuleKey($key)] ?? $default;
+    }
+    
+    /**
+     * Check if module-specific session key exists
+     */
+    public function hasModuleSession($key) {
+        return isset($_SESSION[$this->getModuleKey($key)]);
     }
     
     /**
@@ -57,27 +92,38 @@ class Auth {
             // Get user profile based on role
             $profile = $this->getUserProfile($user['id'], $user['role']);
             
-            // Clear current user's session data only (not other users!)
             // Regenerate session ID for security (prevent session fixation)
             session_regenerate_id(true);
-            $_SESSION = []; // Clear only THIS user's session data
             
-            // Start new role-specific session for THIS user
-            $this->session = new Session($user['role']);
+            // Set module-specific session data (does NOT clear other modules' sessions)
+            // This allows admin, student, lecturer, finance to be logged in simultaneously
+            $modulePrefix = $this->module ?? $user['role'];
             
-            // Set session with security markers for THIS user only
-            $this->session->set('user_id', $user['id']);
-            $this->session->set('username', $user['username']);
-            $this->session->set('email', $user['email']);
-            $this->session->set('role', $user['role']);
-            $this->session->set('session_role', $user['role']);
-            $this->session->set('profile', $profile);
-            $this->session->set('logged_in', true);
-            $this->session->set('login_time', time());
-            $this->session->set('session_token', bin2hex(random_bytes(32)));
+            // Clear only THIS module's session data
+            $this->clearModuleSession($modulePrefix);
+            
+            // Set module-specific session data
+            $_SESSION[$modulePrefix . '_user_id'] = $user['id'];
+            $_SESSION[$modulePrefix . '_username'] = $user['username'];
+            $_SESSION[$modulePrefix . '_email'] = $user['email'];
+            $_SESSION[$modulePrefix . '_role'] = $user['role'];
+            $_SESSION[$modulePrefix . '_profile'] = $profile;
+            $_SESSION[$modulePrefix . '_logged_in'] = true;
+            $_SESSION[$modulePrefix . '_login_time'] = time();
+            $_SESSION[$modulePrefix . '_session_token'] = bin2hex(random_bytes(32));
+            
+            // Also set legacy keys for backward compatibility (but these may be overwritten)
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['email'] = $user['email'];
+            $_SESSION['role'] = $user['role'];
+            $_SESSION['profile'] = $profile;
+            $_SESSION['logged_in'] = true;
+            $_SESSION['login_time'] = time();
+            $_SESSION['session_token'] = bin2hex(random_bytes(32));
             
             // Log activity
-            $this->logActivity($user['id'], 'login', 'authentication', 'User logged in successfully');
+            $this->logActivity($user['id'], 'login', 'authentication', 'User logged in to ' . $modulePrefix . ' module');
             
             return ['success' => true, 'role' => $user['role'], 'user' => $profile];
         } catch(Exception $e) {
@@ -91,27 +137,76 @@ class Auth {
     }
     
     /**
-     * Logout user
+     * Clear module-specific session data only
+     * This preserves other modules' sessions
      */
-    public function logout() {
-        $userId = $this->session->get('user_id');
-        if ($userId) {
-            $this->logActivity($userId, 'logout', 'authentication', 'User logged out');
+    public function clearModuleSession($module = null) {
+        $prefix = $module ?? $this->module;
+        if (!$prefix) return;
+        
+        $keysToRemove = [];
+        foreach ($_SESSION as $key => $value) {
+            if (strpos($key, $prefix . '_') === 0) {
+                $keysToRemove[] = $key;
+            }
         }
-        $this->session->destroy();
+        foreach ($keysToRemove as $key) {
+            unset($_SESSION[$key]);
+        }
     }
     
     /**
-     * Check if user is logged in
+     * Logout user from current module only
+     * Does NOT affect other module sessions
+     */
+    public function logout() {
+        // Get user ID from module-specific session
+        $modulePrefix = $this->module;
+        $userId = null;
+        
+        if ($modulePrefix && isset($_SESSION[$modulePrefix . '_user_id'])) {
+            $userId = $_SESSION[$modulePrefix . '_user_id'];
+        } else {
+            $userId = $this->session->get('user_id');
+        }
+        
+        if ($userId) {
+            $this->logActivity($userId, 'logout', 'authentication', 'User logged out from ' . ($modulePrefix ?? 'system'));
+        }
+        
+        // Clear only THIS module's session data
+        if ($modulePrefix) {
+            $this->clearModuleSession($modulePrefix);
+        } else {
+            $this->session->destroy();
+        }
+    }
+    
+    /**
+     * Check if user is logged in to the current module
      */
     public function isLoggedIn() {
+        // First check module-specific login
+        if ($this->module) {
+            $moduleLoggedIn = $_SESSION[$this->module . '_logged_in'] ?? false;
+            $moduleRole = $_SESSION[$this->module . '_role'] ?? null;
+            if ($moduleLoggedIn === true && $moduleRole === $this->module) {
+                return true;
+            }
+        }
+        // Fallback to legacy check
         return $this->session->get('logged_in') === true;
     }
     
     /**
-     * Check if user has specific role
+     * Check if user has specific role in current module
      */
     public function hasRole($role) {
+        // First check module-specific role
+        if ($this->module) {
+            return ($_SESSION[$this->module . '_role'] ?? null) === $role;
+        }
+        // Fallback to legacy check
         return $this->session->get('role') === $role;
     }
     
@@ -144,13 +239,28 @@ class Auth {
     }
     
     /**
-     * Get current user
+     * Get current user from module-specific session
      */
     public function getCurrentUser() {
         if (!$this->isLoggedIn()) {
             return null;
         }
         
+        // Try module-specific keys first
+        if ($this->module) {
+            $prefix = $this->module . '_';
+            if (isset($_SESSION[$prefix . 'user_id'])) {
+                return [
+                    'id' => $_SESSION[$prefix . 'user_id'],
+                    'username' => $_SESSION[$prefix . 'username'],
+                    'email' => $_SESSION[$prefix . 'email'],
+                    'role' => $_SESSION[$prefix . 'role'],
+                    'profile' => $_SESSION[$prefix . 'profile']
+                ];
+            }
+        }
+        
+        // Fallback to legacy keys
         return [
             'id' => $this->session->get('user_id'),
             'username' => $this->session->get('username'),

@@ -6,38 +6,49 @@ if (!defined('BASE_PATH')) {
     require_once '../../config.php';
 }
 
-Security::requireAuth();
+// Ensure session is started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Module-aware login check
+// Each dashboard already does its own module-specific auth check before including this header.
+// This check supports both module-specific sessions (admin_logged_in, student_logged_in, etc.)
+// and the legacy 'logged_in' key for backward compatibility.
+$isAuthenticated = false;
+
+// Check module-specific sessions first
+$modules = ['admin', 'student', 'lecturer', 'finance'];
+foreach ($modules as $mod) {
+    if (isset($_SESSION[$mod . '_logged_in']) && $_SESSION[$mod . '_logged_in'] === true) {
+        $isAuthenticated = true;
+        break;
+    }
+}
+
+// Fallback to legacy session check
+if (!$isAuthenticated && isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
+    $isAuthenticated = true;
+}
+
+if (!$isAuthenticated) {
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=unauthorized');
+    exit;
+}
 
 // Reuse existing auth and session objects if already initialized by the page
-// This preserves role-specific session isolation
 if (!isset($auth) || !is_object($auth)) {
-    // Try to detect role from current session or URL path
-    $detectedRole = null;
-    if (isset($_SESSION['role'])) {
-        $detectedRole = $_SESSION['role'];
-    } elseif (strpos($_SERVER['PHP_SELF'], '/admin/') !== false) {
-        $detectedRole = 'admin';
-    } elseif (strpos($_SERVER['PHP_SELF'], '/student/') !== false) {
-        $detectedRole = 'student';
-    } elseif (strpos($_SERVER['PHP_SELF'], '/lecturer/') !== false) {
-        $detectedRole = 'lecturer';
-    } elseif (strpos($_SERVER['PHP_SELF'], '/finance/') !== false) {
-        $detectedRole = 'finance';
-    }
-    
-    $auth = new Auth($detectedRole);
+    $auth = new Auth();
 }
 
 if (!isset($session) || !is_object($session)) {
-    // Use the same role as auth if detected
-    $detectedRole = null;
-    if (isset($auth) && isset($_SESSION['role'])) {
-        $detectedRole = $_SESSION['role'];
-    }
-    $session = new Session($detectedRole);
+    $session = new Session();
 }
 
-$currentUser = $auth->getCurrentUser();
+// Only override $currentUser if not already set by the dashboard
+if (!isset($currentUser) || !is_array($currentUser)) {
+    $currentUser = $auth->getCurrentUser();
+}
 
 // Get user initials
 $initials = '';
@@ -54,7 +65,9 @@ if ($currentUser && isset($currentUser['profile'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo $pageTitle ?? APP_NAME; ?></title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/style.css">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/responsive-nav.css">
     <?php if (isset($additionalCSS)): ?>
         <?php foreach($additionalCSS as $css): ?>
             <link rel="stylesheet" href="<?php echo BASE_URL . '/assets/css/' . $css; ?>">

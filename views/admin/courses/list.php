@@ -4,12 +4,21 @@
  */
 require_once '../../../config.php';
 
-// Initialize with admin role for session isolation
+// Simple session handling
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Initialize with admin module context
 $session = new Session('admin');
 $auth = new Auth('admin');
 
-// Verify admin access
-Security::requireRole('admin');
+// Verify admin access (using module-specific session keys)
+if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true || $_SESSION['admin_role'] !== 'admin') {
+    header('Location: ' . BASE_URL . '/views/admin/login.php?error=unauthorized');
+    exit;
+}
+
 $currentUser = $auth->getCurrentUser();
 
 // Get filter parameters
@@ -53,6 +62,11 @@ $courses = $stmt->fetchAll();
 $stmt = $conn->query("SELECT * FROM programs WHERE status = 'active' ORDER BY program_name");
 $programs = $stmt->fetchAll();
 
+// Notifications (admin sees all system notifications)
+$stmt = $conn->prepare("SELECT * FROM notifications WHERE read_status = 'unread' ORDER BY created_at DESC LIMIT 10");
+$stmt->execute();
+$unreadNotifications = $stmt->fetchAll();
+
 $pageTitle = 'Courses List - ' . APP_NAME;
 include '../../../includes/header.php';
 ?>
@@ -72,6 +86,7 @@ include '../../../includes/header.php';
                 </div>
             </div>
             <a href="add.php" class="btn btn-primary">➕ Add New Course</a>
+            <?php include '../../../includes/notification_bell.php'; ?>
             <div class="user-dropdown">
                 <button class="user-dropdown-toggle" id="userDropdown">
                     <div class="user-avatar-sm">
@@ -87,8 +102,8 @@ include '../../../includes/header.php';
                         <i>👤</i> Profile
                     </a>
                     <div class="dropdown-divider"></div>
-                    <a href="<?php echo BASE_URL; ?>/views/auth/logout.php" class="dropdown-item logout-item">
-                        <i>🚪</i> Logout
+                    <a href="<?php echo BASE_URL; ?>/views/admin/logout.php" class="dropdown-item logout-item">
+                        <i class="fas fa-sign-out-alt"></i> Logout
                     </a>
                 </div>
             </div>

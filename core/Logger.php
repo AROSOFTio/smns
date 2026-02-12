@@ -75,4 +75,50 @@ class Logger {
             return [];
         }
     }
+    
+    /**
+     * Get login sessions with duration (login + matching logout)
+     */
+    public function getLoginSessions($limit = 50) {
+        try {
+            // Get login events with their corresponding logout
+            $sql = "SELECT 
+                        login.id,
+                        login.user_id,
+                        login.description as login_description,
+                        login.created_at as login_time,
+                        logout.created_at as logout_time,
+                        u.username,
+                        CASE 
+                            WHEN logout.created_at IS NOT NULL 
+                            THEN TIMESTAMPDIFF(MINUTE, login.created_at, logout.created_at)
+                            ELSE NULL 
+                        END as session_duration_minutes
+                    FROM activity_logs login
+                    LEFT JOIN users u ON login.user_id = u.id
+                    LEFT JOIN activity_logs logout ON (
+                        logout.user_id = login.user_id 
+                        AND logout.action = 'logout' 
+                        AND logout.created_at > login.created_at
+                        AND logout.created_at = (
+                            SELECT MIN(lo.created_at) 
+                            FROM activity_logs lo 
+                            WHERE lo.user_id = login.user_id 
+                            AND lo.action = 'logout' 
+                            AND lo.created_at > login.created_at
+                        )
+                    )
+                    WHERE login.action = 'login'
+                    ORDER BY login.created_at DESC 
+                    LIMIT :limit";
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            return $stmt->fetchAll();
+        } catch(Exception $e) {
+            error_log("Get login sessions error: " . $e->getMessage());
+            return [];
+        }
+    }
 }

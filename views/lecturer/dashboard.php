@@ -4,12 +4,21 @@
  */
 require_once '../../config.php';
 
-// Initialize with lecturer role for session isolation
+// Simple session handling
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Initialize session and auth with lecturer module context
 $session = new Session('lecturer');
 $auth = new Auth('lecturer');
 
-// Verify lecturer access
-Security::requireRole('lecturer');
+// Verify lecturer access (using module-specific session keys)
+if (!isset($_SESSION['lecturer_logged_in']) || $_SESSION['lecturer_logged_in'] !== true || $_SESSION['lecturer_role'] !== 'lecturer') {
+    header('Location: ' . BASE_URL . '/views/lecturer/login.php?error=unauthorized');
+    exit;
+}
+
 $currentUser = $auth->getCurrentUser();
 $lecturerProfile = $currentUser['profile'];
 
@@ -65,15 +74,23 @@ $stmt->execute([
 ]);
 $myCourses = $stmt->fetchAll();
 
+// Notifications
+$stmt = $conn->prepare("SELECT * FROM notifications WHERE user_id = :user_id AND read_status = 'unread' ORDER BY created_at DESC LIMIT 5");
+$stmt->execute(['user_id' => $currentUser['id']]);
+$unreadNotifications = $stmt->fetchAll();
+
 $pageTitle = 'Lecturer Dashboard - ' . APP_NAME;
 include '../../includes/header.php';
 ?>
 
 <?php include '../../includes/lecturer/sidebar.php'; ?>
 
-<div class="main-content">
+<div class="main-content" id="mainContent">
     <div class="topbar">
         <div class="topbar-left">
+            <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar">
+                <i class="fas fa-bars"></i>
+            </button>
             <h4>Dashboard</h4>
         </div>
         <div class="topbar-right">
@@ -83,6 +100,7 @@ include '../../includes/header.php';
                     <div class="date-display"><?php echo date('l, F j, Y'); ?></div>
                 </div>
             </div>
+            <?php include '../../includes/notification_bell.php'; ?>
             <div class="user-info">
                 <div class="user-dropdown">
                     <button class="user-dropdown-toggle" id="userDropdown">
@@ -106,8 +124,8 @@ include '../../includes/header.php';
                             <i>📁</i> Reports
                         </a>
                         <div class="dropdown-divider"></div>
-                        <a href="<?php echo BASE_URL; ?>/views/auth/logout.php" class="dropdown-item logout-item">
-                            <i>🚪</i> Logout
+                        <a href="<?php echo BASE_URL; ?>/views/lecturer/logout.php" class="dropdown-item logout-item">
+                            <i class="fas fa-sign-out-alt"></i> Logout
                         </a>
                     </div>
                 </div>
@@ -121,6 +139,83 @@ include '../../includes/header.php';
                 <?php echo e($session->getFlash('success')); ?>
             </div>
         <?php endif; ?>
+        
+        <!-- Welcome Section -->
+        <div class="welcome-section mb-4">
+            <h2>Good <?php echo date('H') < 12 ? 'Morning' : (date('H') < 17 ? 'Afternoon' : 'Evening'); ?>, <?php echo e($lecturerProfile['first_name']); ?>!</h2>
+            <p class="text-muted">Welcome to your lecturer dashboard. Manage your courses and students.</p>
+        </div>
+        
+        <!-- Lecturer Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card courses">
+                <div class="stat-icon">📚</div>
+                <div class="stat-details">
+                    <h3><?php echo number_format($totalCourses); ?></h3>
+                    <p>Assigned Courses</p>
+                    <div class="stat-change neutral">—— Current Semester</div>
+                </div>
+            </div>
+            
+            <div class="stat-card students">
+                <div class="stat-icon">👥</div>
+                <div class="stat-details">
+                    <h3><?php echo number_format($totalStudents); ?></h3>
+                    <p>Total Students</p>
+                    <div class="stat-change positive">↗ Enrolled</div>
+                </div>
+            </div>
+            
+            <div class="stat-card results">
+                <div class="stat-icon">📝</div>
+                <div class="stat-details">
+                    <h3><?php echo number_format($pendingResults); ?></h3>
+                    <p>Pending Results</p>
+                    <div class="stat-change <?php echo $pendingResults > 0 ? 'negative' : 'positive'; ?>">
+                        <?php echo $pendingResults > 0 ? '⚠️ Needs Attention' : '✅ All Updated'; ?>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="stat-card semester">
+                <div class="stat-icon">📅</div>
+                <div class="stat-details">
+                    <h3><?php echo $currentSemester['semester_name'] ?? 'N/A'; ?></h3>
+                    <p>Current Semester</p>
+                    <div class="stat-change positive">🎯 Active</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Quick Actions Section -->
+        <div class="quick-actions-section">
+            <h3>Quick Actions</h3>
+            <div class="action-grid">
+                <a href="courses/view.php" class="action-card">
+                    <div class="action-icon">📖</div>
+                    <h4>My Courses</h4>
+                    <p>View and manage assigned courses</p>
+                </a>
+                
+                <a href="results/enter.php" class="action-card">
+                    <div class="action-icon">✏️</div>
+                    <h4>Enter Results</h4>
+                    <p>Input student grades and assessments</p>
+                </a>
+                
+                <a href="students/class-list.php" class="action-card">
+                    <div class="action-icon">👥</div>
+                    <h4>Class Lists</h4>
+                    <p>View students in your courses</p>
+                </a>
+                
+                <a href="reports/progress.php" class="action-card">
+                    <div class="action-icon">📊</div>
+                    <h4>Progress Reports</h4>
+                    <p>Generate class performance reports</p>
+                </a>
+            </div>
+        </div>
         
         <!-- Welcome Message -->
         <div class="card">

@@ -1,12 +1,15 @@
 <?php
 /**
  * Session Management Class
- * Handles session operations with security measures and role-based isolation
+ * Handles session operations with security measures
+ * Supports module-isolated sessions for multi-role access
  */
 class Session {
     private $role = null;
     
     public function __construct($role = null) {
+        $this->role = $role;  // Store role first
+        
         if (session_status() === PHP_SESSION_NONE) {
             // Configure secure session
             ini_set('session.cookie_httponly', 1);
@@ -16,13 +19,8 @@ class Session {
             ini_set('session.gc_maxlifetime', defined('SESSION_TIMEOUT') ? SESSION_TIMEOUT : 3600);
             ini_set('session.use_strict_mode', 1);
             
-            // Set role-specific session name for complete isolation
-            if ($role) {
-                $this->role = $role;
-                session_name('SMNS_' . strtoupper($role) . '_SESSION');
-            } else {
-                session_name('SMNS_PUBLIC_SESSION');
-            }
+            // Use unified session name for all users
+            session_name('SMNS_SESSION');
             
             // Start session
             session_start();
@@ -178,6 +176,56 @@ class Session {
      */
     public function remove($key) {
         if (isset($_SESSION[$key])) {
+            unset($_SESSION[$key]);
+        }
+    }
+    
+    /**
+     * Get current module/role context
+     */
+    public function getRole() {
+        return $this->role;
+    }
+    
+    /**
+     * Set module-specific session variable
+     */
+    public function setModule($key, $value) {
+        $prefix = $this->role ? $this->role . '_' : '';
+        $_SESSION[$prefix . $key] = $value;
+    }
+    
+    /**
+     * Get module-specific session variable
+     */
+    public function getModule($key, $default = null) {
+        $prefix = $this->role ? $this->role . '_' : '';
+        return $_SESSION[$prefix . $key] ?? $default;
+    }
+    
+    /**
+     * Check if module-specific session variable exists
+     */
+    public function hasModule($key) {
+        $prefix = $this->role ? $this->role . '_' : '';
+        return isset($_SESSION[$prefix . $key]);
+    }
+    
+    /**
+     * Clear only module-specific session data
+     * Preserves other modules' sessions
+     */
+    public function clearModule() {
+        if (!$this->role) return;
+        
+        $prefix = $this->role . '_';
+        $keysToRemove = [];
+        foreach ($_SESSION as $key => $value) {
+            if (strpos($key, $prefix) === 0) {
+                $keysToRemove[] = $key;
+            }
+        }
+        foreach ($keysToRemove as $key) {
             unset($_SESSION[$key]);
         }
     }
