@@ -4,11 +4,14 @@
  */
 require_once '../../config.php';
 
+// Initialize with finance role for session isolation
+$session = new Session('finance');
+$auth = new Auth('finance');
+
+// Verify finance access
 Security::requireRole('finance');
-$auth = new Auth();
 $currentUser = $auth->getCurrentUser();
 $financeProfile = $currentUser['profile'];
-$session = new Session();
 
 // Get statistics
 $db = new Database();

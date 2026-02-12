@@ -4,10 +4,13 @@
  */
 require_once '../../config.php';
 
+// Initialize with admin role for session isolation
+$session = new Session('admin');
+$auth = new Auth('admin');
+
+// Verify admin access
 Security::requireRole('admin');
-$auth = new Auth();
 $currentUser = $auth->getCurrentUser();
-$session = new Session();
 
 // Get statistics
 $db = new Database();

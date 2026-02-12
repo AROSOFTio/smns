@@ -4,11 +4,14 @@
  */
 require_once '../../config.php';
 
+// Initialize with lecturer role for session isolation
+$session = new Session('lecturer');
+$auth = new Auth('lecturer');
+
+// Verify lecturer access
 Security::requireRole('lecturer');
-$auth = new Auth();
 $currentUser = $auth->getCurrentUser();
 $lecturerProfile = $currentUser['profile'];
-$session = new Session();
 
 // Get statistics
 $db = new Database();

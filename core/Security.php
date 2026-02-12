@@ -142,24 +142,85 @@ class Security {
     }
     
     /**
-     * Restrict access by role
+     * Restrict access by role with role-specific session handling
      */
     public static function requireRole($allowedRoles) {
         require_once __DIR__ . '/Auth.php';
-        $auth = new Auth();
+        require_once __DIR__ . '/Session.php';
         
+        // Detect role from URL path or session
+        $detectedRole = null;
+        if (isset($_SESSION['role'])) {
+            $detectedRole = $_SESSION['role'];
+        } elseif (strpos($_SERVER['PHP_SELF'], '/admin/') !== false) {
+            $detectedRole = 'admin';
+        } elseif (strpos($_SERVER['PHP_SELF'], '/student/') !== false) {
+            $detectedRole = 'student';
+        } elseif (strpos($_SERVER['PHP_SELF'], '/lecturer/') !== false) {
+            $detectedRole = 'lecturer';
+        } elseif (strpos($_SERVER['PHP_SELF'], '/finance/') !== false) {
+            $detectedRole = 'finance';
+        }
+        
+        // Use role-specific session
+        $session = new Session($detectedRole);
+        $auth = new Auth($detectedRole);
+        
+        // Check if user is logged in
         if (!$auth->isLoggedIn()) {
+            // Store the intended destination
+            $_SESSION['intended_url'] = $_SERVER['REQUEST_URI'];
             header('Location: ' . BASE_URL . '/views/auth/login.php');
+            exit;
+        }
+        
+        // Validate session token exists
+        if (!$session->has('session_token')) {
+            // Invalid session, force logout
+            $auth->logout();
+            header('Location: ' . BASE_URL . '/views/auth/login.php?error=invalid_session');
             exit;
         }
         
         $currentUser = $auth->getCurrentUser();
         $userRole = $currentUser['role'];
         
-        if (!in_array($userRole, (array)$allowedRoles)) {
-            header('Location: ' . BASE_URL . '/index.php?error=access_denied');
+        // Verify the session role matches the user role
+        if (isset($_SESSION['session_role']) && $_SESSION['session_role'] !== $userRole) {
+            // Role mismatch - possible session tampering
+            error_log("Session role mismatch detected for user {$currentUser['username']}");
+            $auth->logout();
+            header('Location: ' . BASE_URL . '/views/auth/login.php?error=invalid_session');
             exit;
         }
+        
+        // Check if user has required role
+        if (!in_array($userRole, (array)$allowedRoles)) {
+            // Log unauthorized access attempt
+            error_log("Unauthorized access attempt by user {$currentUser['username']} (role: {$userRole}) to restricted area requiring: " . implode(', ', (array)$allowedRoles));
+            
+            // Redirect to appropriate dashboard based on user's actual role
+            switch($userRole) {
+                case 'admin':
+                    header('Location: ' . BASE_URL . '/views/admin/dashboard.php?error=access_denied');
+                    break;
+                case 'student':
+                    header('Location: ' . BASE_URL . '/views/student/dashboard.php?error=access_denied');
+                    break;
+                case 'lecturer':
+                    header('Location: ' . BASE_URL . '/views/lecturer/dashboard.php?error=access_denied');
+                    break;
+                case 'finance':
+                    header('Location: ' . BASE_URL . '/views/finance/dashboard.php?error=access_denied');
+                    break;
+                default:
+                    header('Location: ' . BASE_URL . '/index.php?error=access_denied');
+            }
+            exit;
+        }
+        
+        // Update last activity time
+        $_SESSION['last_activity'] = time();
     }
     
     /**
@@ -167,11 +228,55 @@ class Security {
      */
     public static function requireAuth() {
         require_once __DIR__ . '/Auth.php';
+        require_once __DIR__ . '/Session.php';
+        
+        $session = new Session();
         $auth = new Auth();
         
         if (!$auth->isLoggedIn()) {
+            // Store the intended destination
+            $_SESSION['intended_url'] = $_SERVER['REQUEST_URI'];
             header('Location: ' . BASE_URL . '/views/auth/login.php');
             exit;
         }
+        
+        // Validate session token
+        if (!$session->has('session_token')) {
+            $auth->logout();
+            header('Location: ' . BASE_URL . '/views/auth/login.php?error=invalid_session');
+            exit;
+        }
+        
+        // Update last activity
+        $_SESSION['last_activity'] = time();
+    }
+    
+    /**
+     * Validate user session integrity
+     */
+    public static function validateSessionIntegrity() {
+        if (session_status() === PHP_SESSION_NONE) {
+            return false;
+        }
+        
+        // Check if session has required security markers
+        if (!isset($_SESSION['fingerprint']) || !isset($_SESSION['ip_address'])) {
+            return false;
+        }
+        
+        // Check if session has user data
+        if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
+            return false;
+        }
+        
+        // Check session timeout
+        if (isset($_SESSION['last_activity'])) {
+            $timeout = defined('SESSION_TIMEOUT') ? SESSION_TIMEOUT : 3600;
+            if (time() - $_SESSION['last_activity'] > $timeout) {
+                return false;
+            }
+        }
+        
+        return true;
     }
 }

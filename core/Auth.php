@@ -10,10 +10,10 @@ class Auth {
     private $db;
     private $session;
     
-    public function __construct() {
+    public function __construct($role = null) {
         $database = new Database();
         $this->db = $database->getConnection();
-        $this->session = new Session();
+        $this->session = new Session($role);
     }
     
     /**
@@ -57,13 +57,24 @@ class Auth {
             // Get user profile based on role
             $profile = $this->getUserProfile($user['id'], $user['role']);
             
-            // Set session
+            // Clear current user's session data only (not other users!)
+            // Regenerate session ID for security (prevent session fixation)
+            session_regenerate_id(true);
+            $_SESSION = []; // Clear only THIS user's session data
+            
+            // Start new role-specific session for THIS user
+            $this->session = new Session($user['role']);
+            
+            // Set session with security markers for THIS user only
             $this->session->set('user_id', $user['id']);
             $this->session->set('username', $user['username']);
             $this->session->set('email', $user['email']);
             $this->session->set('role', $user['role']);
+            $this->session->set('session_role', $user['role']);
             $this->session->set('profile', $profile);
             $this->session->set('logged_in', true);
+            $this->session->set('login_time', time());
+            $this->session->set('session_token', bin2hex(random_bytes(32)));
             
             // Log activity
             $this->logActivity($user['id'], 'login', 'authentication', 'User logged in successfully');

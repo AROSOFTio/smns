@@ -41,18 +41,29 @@ function redirect($url) {
 
 /**
  * Get flash message
+ * Uses existing session if available, otherwise creates public session
  */
 function getFlash($key) {
-    $session = new Session();
-    return $session->getFlash($key);
+    global $session;
+    if (isset($session) && is_object($session)) {
+        return $session->getFlash($key);
+    }
+    $tempSession = new Session();
+    return $tempSession->getFlash($key);
 }
 
 /**
  * Set flash message
+ * Uses existing session if available, otherwise creates public session
  */
 function setFlash($key, $message) {
-    $session = new Session();
-    $session->setFlash($key, $message);
+    global $session;
+    if (isset($session) && is_object($session)) {
+        $session->setFlash($key, $message);
+    } else {
+        $tempSession = new Session();
+        $tempSession->setFlash($key, $message);
+    }
 }
 
 /**
@@ -77,26 +88,39 @@ function dd($var) {
 
 /**
  * Check if user is logged in
+ * Uses existing auth if available
  */
 function isLoggedIn() {
-    $auth = new Auth();
-    return $auth->isLoggedIn();
+    global $auth;
+    if (isset($auth) && is_object($auth)) {
+        return $auth->isLoggedIn();
+    }
+    // Try to detect from any active session
+    return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
 }
 
 /**
  * Get current user
+ * Uses existing auth if available
  */
 function currentUser() {
-    $auth = new Auth();
-    return $auth->getCurrentUser();
+    global $auth;
+    if (isset($auth) && is_object($auth)) {
+        return $auth->getCurrentUser();
+    }
+    return null;
 }
 
 /**
  * Check user role
+ * Uses existing auth if available
  */
 function hasRole($role) {
-    $auth = new Auth();
-    return $auth->hasRole($role);
+    global $auth;
+    if (isset($auth) && is_object($auth)) {
+        return $auth->hasRole($role);
+    }
+    return isset($_SESSION['role']) && $_SESSION['role'] === $role;
 }
 
 /**

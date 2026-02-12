@@ -4,11 +4,14 @@
  */
 require_once '../../config.php';
 
+// Initialize with student role for session isolation
+$session = new Session('student');
+$auth = new Auth('student');
+
+// Verify student access
 Security::requireRole('student');
-$auth = new Auth();
 $currentUser = $auth->getCurrentUser();
 $studentProfile = $currentUser['profile'];
-$session = new Session();
 
 // Get statistics
 $db = new Database();

@@ -7,9 +7,37 @@ if (!defined('BASE_PATH')) {
 }
 
 Security::requireAuth();
-$auth = new Auth();
+
+// Reuse existing auth and session objects if already initialized by the page
+// This preserves role-specific session isolation
+if (!isset($auth) || !is_object($auth)) {
+    // Try to detect role from current session or URL path
+    $detectedRole = null;
+    if (isset($_SESSION['role'])) {
+        $detectedRole = $_SESSION['role'];
+    } elseif (strpos($_SERVER['PHP_SELF'], '/admin/') !== false) {
+        $detectedRole = 'admin';
+    } elseif (strpos($_SERVER['PHP_SELF'], '/student/') !== false) {
+        $detectedRole = 'student';
+    } elseif (strpos($_SERVER['PHP_SELF'], '/lecturer/') !== false) {
+        $detectedRole = 'lecturer';
+    } elseif (strpos($_SERVER['PHP_SELF'], '/finance/') !== false) {
+        $detectedRole = 'finance';
+    }
+    
+    $auth = new Auth($detectedRole);
+}
+
+if (!isset($session) || !is_object($session)) {
+    // Use the same role as auth if detected
+    $detectedRole = null;
+    if (isset($auth) && isset($_SESSION['role'])) {
+        $detectedRole = $_SESSION['role'];
+    }
+    $session = new Session($detectedRole);
+}
+
 $currentUser = $auth->getCurrentUser();
-$session = new Session();
 
 // Get user initials
 $initials = '';

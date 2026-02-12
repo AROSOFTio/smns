@@ -1,28 +1,155 @@
 <?php
 /**
  * Session Management Class
- * Handles session operations
+ * Handles session operations with security measures and role-based isolation
  */
 class Session {
+    private $role = null;
     
-    public function __construct() {
+    public function __construct($role = null) {
         if (session_status() === PHP_SESSION_NONE) {
-            // Configure session
+            // Configure secure session
             ini_set('session.cookie_httponly', 1);
             ini_set('session.use_only_cookies', 1);
             ini_set('session.cookie_secure', 0); // Set to 1 in production with HTTPS
+            ini_set('session.cookie_samesite', 'Strict');
             ini_set('session.gc_maxlifetime', defined('SESSION_TIMEOUT') ? SESSION_TIMEOUT : 3600);
+            ini_set('session.use_strict_mode', 1);
             
+            // Set role-specific session name for complete isolation
+            if ($role) {
+                $this->role = $role;
+                session_name('SMNS_' . strtoupper($role) . '_SESSION');
+            } else {
+                session_name('SMNS_PUBLIC_SESSION');
+            }
+            
+            // Start session
             session_start();
             
-            // Regenerate session ID periodically
-            if (!isset($_SESSION['created'])) {
-                $_SESSION['created'] = time();
-            } else if (time() - $_SESSION['created'] > 1800) {
-                session_regenerate_id(true);
-                $_SESSION['created'] = time();
+            // Initialize session security fingerprint
+            if (!isset($_SESSION['initialized'])) {
+                $this->initializeSession();
+            }
+            
+            // Only validate if this is a role-specific session (not public)
+            // Public sessions are for login page and don't need strict validation
+            if ($this->role) {
+                // Validate session fingerprint and role match
+                if (!$this->validateSession()) {
+                    $this->destroy();
+                    session_start();
+                    $this->initializeSession();
+                }
+                
+                // Regenerate session ID periodically
+                if (isset($_SESSION['created'])) {
+                    if (time() - $_SESSION['created'] > 1800) { // 30 minutes
+                        $this->regenerateId();
+                    }
+                }
+            }
+            
+            // Update last activity
+            $_SESSION['last_activity'] = time();
+        } else {
+            // Session already started, set role if provided
+            if ($role && !$this->role) {
+                $this->role = $role;
             }
         }
+    }
+    
+    /**
+     * Initialize session with security fingerprint
+     */
+    private function initializeSession() {
+        $_SESSION['initialized'] = true;
+        $_SESSION['created'] = time();
+        $_SESSION['fingerprint'] = $this->generateFingerprint();
+        $_SESSION['ip_address'] = $this->getClientIP();
+        $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        if ($this->role) {
+            $_SESSION['session_role'] = $this->role;
+        }
+    }
+    
+    /**
+     * Generate session fingerprint including role for isolation
+     */
+    private function generateFingerprint() {
+        $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $ipAddress = $this->getClientIP();
+        $role = $this->role ?? 'public';
+        return hash('sha256', $userAgent . $ipAddress . $role . session_id());
+    }
+    
+    /**
+     * Get client IP address
+     */
+    private function getClientIP() {
+        if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
+            return $_SERVER['HTTP_CLIENT_IP'];
+        } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            return $_SERVER['HTTP_X_FORWARDED_FOR'];
+        } else {
+            return $_SERVER['REMOTE_ADDR'] ?? '';
+        }
+    }
+    
+    /**
+     * Validate session fingerprint and role match
+     */
+    private function validateSession() {
+        if (!isset($_SESSION['fingerprint']) || !isset($_SESSION['ip_address'])) {
+            return false;
+        }
+        
+        // Check IP address hasn't changed
+        if ($_SESSION['ip_address'] !== $this->getClientIP()) {
+            return false;
+        }
+        
+        // Check user agent hasn't changed
+        if (isset($_SESSION['user_agent'])) {
+            $currentUserAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+            if ($_SESSION['user_agent'] !== $currentUserAgent) {
+                return false;
+            }
+        }
+        
+        // Check role matches if role is set (for role-specific sessions)
+        if ($this->role && isset($_SESSION['session_role'])) {
+            if ($_SESSION['session_role'] !== $this->role) {
+                return false;
+            }
+        }
+        
+        // Verify user role matches session role for logged in users
+        if (isset($_SESSION['role']) && isset($_SESSION['session_role'])) {
+            if ($_SESSION['role'] !== $_SESSION['session_role']) {
+                return false;
+            }
+        }
+        
+        // Check session timeout
+        if (isset($_SESSION['last_activity'])) {
+            $timeout = defined('SESSION_TIMEOUT') ? SESSION_TIMEOUT : 3600;
+            if (time() - $_SESSION['last_activity'] > $timeout) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Regenerate session ID
+     */
+    public function regenerateId() {
+        session_regenerate_id(true);
+        $_SESSION['created'] = time();
+        $_SESSION['fingerprint'] = $this->generateFingerprint();
     }
     
     /**
