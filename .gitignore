@@ -1,0 +1,47 @@
+# Ignore development and system files
+*.log
+.DS_Store
+Thumbs.db
+
+# Ignore config files (keep config.sample.php)
+/config.php
+
+# Ignore uploaded files
+/uploads/*
+!/uploads/.gitkeep
+
+# Ignore downloads
+/downloads/*
+!/downloads/.gitkeep
+
+# Ignore logs
+/logs/*
+!/logs/.gitkeep
+
+# Ignore cache
+/cache/*
+!/cache/.gitkeep
+
+# Ignore database backups
+/database/backups/*
+!/database/backups/.gitkeep
+
+# Ignore vendor (if using Composer)
+/vendor/
+composer.lock
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Ignore temporary files
+/temp/*
+*.tmp
+
+# Ignore system files
+.htaccess.bak
+error_log
+php_errors.log
