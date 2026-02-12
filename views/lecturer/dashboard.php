@@ -141,9 +141,13 @@ include '../../includes/header.php';
         <?php endif; ?>
         
         <!-- Welcome Section -->
-        <div class="welcome-section mb-4">
-            <h2>Good <?php echo date('H') < 12 ? 'Morning' : (date('H') < 17 ? 'Afternoon' : 'Evening'); ?>, <?php echo e($lecturerProfile['first_name']); ?>!</h2>
-            <p class="text-muted">Welcome to your lecturer dashboard. Manage your courses and students.</p>
+        <div class="welcome-section mb-3">
+            <h5>Good <?php echo date('H') < 12 ? 'Morning' : (date('H') < 17 ? 'Afternoon' : 'Evening'); ?>, <?php echo e($lecturerProfile['first_name']); ?>!</h5>
+            <p class="text-muted mb-0" style="font-size:13px;">
+                <strong>ID:</strong> <?php echo e($lecturerProfile['lecturer_id']); ?> &nbsp;|&nbsp;
+                <strong>Dept:</strong> <?php echo e($lecturerProfile['department'] ?? 'N/A'); ?> &nbsp;|&nbsp;
+                <?php echo e($lecturerProfile['specialization'] ?? ''); ?>
+            </p>
         </div>
         
         <!-- Lecturer Stats Cards -->
@@ -187,104 +191,19 @@ include '../../includes/header.php';
             </div>
         </div>
         
-        <!-- Quick Actions Section -->
-        <div class="quick-actions-section">
-            <h3>Quick Actions</h3>
-            <div class="action-grid">
-                <a href="courses/view.php" class="action-card">
-                    <div class="action-icon">📖</div>
-                    <h4>My Courses</h4>
-                    <p>View and manage assigned courses</p>
-                </a>
-                
-                <a href="results/enter.php" class="action-card">
-                    <div class="action-icon">✏️</div>
-                    <h4>Enter Results</h4>
-                    <p>Input student grades and assessments</p>
-                </a>
-                
-                <a href="students/class-list.php" class="action-card">
-                    <div class="action-icon">👥</div>
-                    <h4>Class Lists</h4>
-                    <p>View students in your courses</p>
-                </a>
-                
-                <a href="reports/progress.php" class="action-card">
-                    <div class="action-icon">📊</div>
-                    <h4>Progress Reports</h4>
-                    <p>Generate class performance reports</p>
-                </a>
+        <!-- Quick Actions -->
+        <div class="row mb-3">
+            <div class="col-6 col-md-3 mb-2">
+                <a href="<?php echo BASE_URL; ?>/views/lecturer/my-courses.php" class="btn btn-primary btn-sm btn-block">📚 My Courses</a>
             </div>
-        </div>
-        
-        <!-- Welcome Message -->
-        <div class="card">
-            <div class="card-body">
-                <h3>Welcome, <?php echo e($lecturerProfile['first_name']); ?>!</h3>
-                <p><strong>Lecturer ID:</strong> <?php echo e($lecturerProfile['lecturer_id']); ?></p>
-                <p><strong>Department:</strong> <?php echo e($lecturerProfile['department'] ?? 'N/A'); ?></p>
-                <p><strong>Specialization:</strong> <?php echo e($lecturerProfile['specialization'] ?? 'N/A'); ?></p>
+            <div class="col-6 col-md-3 mb-2">
+                <a href="<?php echo BASE_URL; ?>/views/lecturer/enter-results.php" class="btn btn-success btn-sm btn-block">✏️ Enter Results</a>
             </div>
-        </div>
-        
-        <!-- Stats Cards -->
-        <div class="row">
-            <div class="col-md-4">
-                <div class="stats-card primary">
-                    <p>Assigned Courses</p>
-                    <h3><?php echo $totalCourses; ?></h3>
-                    <small>This semester</small>
-                </div>
+            <div class="col-6 col-md-3 mb-2">
+                <a href="<?php echo BASE_URL; ?>/views/lecturer/view-results.php" class="btn btn-info btn-sm btn-block">👁️ View Results</a>
             </div>
-            
-            <div class="col-md-4">
-                <div class="stats-card success">
-                    <p>Total Students</p>
-                    <h3><?php echo $totalStudents; ?></h3>
-                    <small>Across all courses</small>
-                </div>
-            </div>
-            
-            <div class="col-md-4">
-                <div class="stats-card <?php echo $pendingResults > 0 ? 'warning' : 'info'; ?>">
-                    <p>Pending Results</p>
-                    <h3><?php echo $pendingResults; ?></h3>
-                    <small>Not yet submitted</small>
-                </div>
-            </div>
-        </div>
-        
-        <div class="row">
-            <!-- Current Semester -->
-            <div class="col-md-6">
-                <?php if ($currentSemester): ?>
-                <div class="card">
-                    <div class="card-header">
-                        Current Semester
-                    </div>
-                    <div class="card-body">
-                        <h5><?php echo e($currentSemester['semester_name']); ?></h5>
-                        <p><strong>Status:</strong> <span class="badge badge-<?php echo Helper::getStatusColor($currentSemester['status']); ?>"><?php echo e($currentSemester['status']); ?></span></p>
-                        <p><strong>Start:</strong> <?php echo Helper::formatDate($currentSemester['start_date']); ?></p>
-                        <p><strong>End:</strong> <?php echo Helper::formatDate($currentSemester['end_date']); ?></p>
-                    </div>
-                </div>
-                <?php endif; ?>
-            </div>
-            
-            <!-- Quick Actions -->
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        Quick Actions
-                    </div>
-                    <div class="card-body">
-                        <a href="<?php echo BASE_URL; ?>/views/lecturer/my-courses.php" class="btn btn-primary mb-2" style="width:100%">📚 View My Courses</a>
-                        <a href="<?php echo BASE_URL; ?>/views/lecturer/enter-results.php" class="btn btn-success mb-2" style="width:100%">✏️ Enter Results</a>
-                        <a href="<?php echo BASE_URL; ?>/views/lecturer/view-results.php" class="btn btn-info mb-2" style="width:100%">👁️ View Submitted Results</a>
-                        <a href="<?php echo BASE_URL; ?>/views/lecturer/reports.php" class="btn btn-warning mb-2" style="width:100%">📑 Generate Reports</a>
-                    </div>
-                </div>
+            <div class="col-6 col-md-3 mb-2">
+                <a href="<?php echo BASE_URL; ?>/views/lecturer/reports.php" class="btn btn-warning btn-sm btn-block">📑 Reports</a>
             </div>
         </div>
         
@@ -295,12 +214,12 @@ include '../../includes/header.php';
             </div>
             <div class="card-body">
                 <?php if (count($myCourses) > 0): ?>
-                    <table class="table table-hover">
+                    <table class="table table-hover table-sm" style="font-size:13px;">
                         <thead>
                             <tr>
                                 <th>Course Code</th>
                                 <th>Course Name</th>
-                                <th>Credit Hours</th>
+                                <th>Credits</th>
                                 <th>Level</th>
                                 <th>Actions</th>
                             </tr>
@@ -313,15 +232,15 @@ include '../../includes/header.php';
                                     <td><?php echo $course['credit_hours']; ?></td>
                                     <td>Year <?php echo $course['level_year']; ?></td>
                                     <td>
-                                        <a href="<?php echo BASE_URL; ?>/views/lecturer/course-details.php?id=<?php echo $course['id']; ?>" class="btn btn-sm btn-info">View</a>
-                                        <a href="<?php echo BASE_URL; ?>/views/lecturer/enter-results.php?course_id=<?php echo $course['id']; ?>" class="btn btn-sm btn-success">Enter Results</a>
+                                        <a href="<?php echo BASE_URL; ?>/views/lecturer/course-details.php?id=<?php echo $course['id']; ?>" class="btn btn-sm btn-info py-0 px-2">View</a>
+                                        <a href="<?php echo BASE_URL; ?>/views/lecturer/enter-results.php?course_id=<?php echo $course['id']; ?>" class="btn btn-sm btn-success py-0 px-2">Results</a>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
                 <?php else: ?>
-                    <p class="text-center">No courses assigned for this semester</p>
+                    <p class="text-center text-muted mb-0">No courses assigned for this semester</p>
                 <?php endif; ?>
             </div>
         </div>

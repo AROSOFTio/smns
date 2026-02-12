@@ -136,9 +136,13 @@ include '../../includes/header.php';
         <?php endif; ?>
         
         <!-- Welcome Section -->
-        <div class="welcome-section mb-4">
-            <h2>Good <?php echo date('H') < 12 ? 'Morning' : (date('H') < 17 ? 'Afternoon' : 'Evening'); ?>, <?php echo e($studentProfile['first_name']); ?>!</h2>
-            <p class="text-muted">Welcome to your student dashboard. Here's your academic overview.</p>
+        <div class="welcome-section mb-3">
+            <h5>Good <?php echo date('H') < 12 ? 'Morning' : (date('H') < 17 ? 'Afternoon' : 'Evening'); ?>, <?php echo e($studentProfile['first_name']); ?>!</h5>
+            <p class="text-muted mb-0" style="font-size:13px;">
+                <strong>ID:</strong> <?php echo e($studentProfile['student_id']); ?> &nbsp;|&nbsp;
+                <strong>Program:</strong> <?php echo e($studentProfile['program_name'] ?? 'N/A'); ?> &nbsp;|&nbsp;
+                Year <?php echo e($studentProfile['level_year']); ?>
+            </p>
         </div>
         
         <!-- Student Stats Cards -->
@@ -186,75 +190,24 @@ include '../../includes/header.php';
             </div>
         </div>
         
-        <!-- Quick Actions Section -->
-        <div class="quick-actions-section">
-            <h3>Quick Actions</h3>
-            <div class="action-grid">
-                <a href="courses/registration.php" class="action-card">
-                    <div class="action-icon">📝</div>
-                    <h4>Course Registration</h4>
-                    <p>Register for new courses this semester</p>
-                </a>
-                
-                <a href="results/view.php" class="action-card">
-                    <div class="action-icon">📊</div>
-                    <h4>View Results</h4>
-                    <p>Check your academic performance and grades</p>
-                </a>
-                
-                <a href="fees/statement.php" class="action-card">
-                    <div class="action-icon">💰</div>
-                    <h4>Fee Statement</h4>
-                    <p>View and pay outstanding fees</p>
-                </a>
-                
-                <a href="timetable/view.php" class="action-card">
-                    <div class="action-icon">🗓️</div>
-                    <h4>Class Timetable</h4>
-                    <p>View your class schedule and timings</p>
-                </a>
+        <!-- Quick Actions -->
+        <div class="row mb-3">
+            <div class="col-6 col-md-3 mb-2">
+                <a href="<?php echo BASE_URL; ?>/views/student/course-registration.php" class="btn btn-primary btn-sm btn-block">📝 Register Courses</a>
+            </div>
+            <div class="col-6 col-md-3 mb-2">
+                <a href="<?php echo BASE_URL; ?>/views/student/results.php" class="btn btn-success btn-sm btn-block">📊 View Results</a>
+            </div>
+            <div class="col-6 col-md-3 mb-2">
+                <a href="<?php echo BASE_URL; ?>/views/student/transcript.php" class="btn btn-info btn-sm btn-block">📄 Transcript</a>
+            </div>
+            <div class="col-6 col-md-3 mb-2">
+                <a href="<?php echo BASE_URL; ?>/views/student/fees.php" class="btn btn-warning btn-sm btn-block">💰 View Fees</a>
             </div>
         </div>
-        
-        <!-- Welcome Message -->
-        <div class="card">
-            <div class="card-body">
-                <h3>Welcome, <?php echo e($studentProfile['first_name']); ?>!</h3>
-                <p><strong>Student ID:</strong> <?php echo e($studentProfile['student_id']); ?></p>
-                <p><strong>Program:</strong> <?php echo e($studentProfile['program_name'] ?? 'N/A'); ?></p>
-                <p><strong>Level:</strong> Year <?php echo e($studentProfile['level_year']); ?></p>
-            </div>
-        </div>
-        
-        <!-- Stats Cards -->
+
+        <!-- Current Semester -->
         <div class="row">
-            <div class="col-md-4">
-                <div class="stats-card primary">
-                    <p>Registered Courses</p>
-                    <h3><?php echo $registeredCourses; ?></h3>
-                    <small>This semester</small>
-                </div>
-            </div>
-            
-            <div class="col-md-4">
-                <div class="stats-card <?php echo Helper::getGPAColor($cumulativeGPA); ?>">
-                    <p>Cumulative GPA</p>
-                    <h3><?php echo number_format($cumulativeGPA, 2); ?></h3>
-                    <small>Current standing</small>
-                </div>
-            </div>
-            
-            <div class="col-md-4">
-                <div class="stats-card <?php echo $outstandingBalance > 0 ? 'danger' : 'success'; ?>">
-                    <p>Fee Balance</p>
-                    <h3><?php echo Helper::formatCurrency($outstandingBalance); ?></h3>
-                    <small><?php echo $outstandingBalance > 0 ? 'Outstanding' : 'Fully Paid'; ?></small>
-                </div>
-            </div>
-        </div>
-        
-        <div class="row">
-            <!-- Current Semester Info -->
             <div class="col-md-6">
                 <?php if ($currentSemester): ?>
                 <div class="card">
@@ -273,79 +226,42 @@ include '../../includes/header.php';
                 </div>
                 <?php endif; ?>
             </div>
-            
-            <!-- Quick Actions -->
+
+            <!-- Recent Results -->
             <div class="col-md-6">
+                <?php if (count($recentResults) > 0): ?>
                 <div class="card">
-                    <div class="card-header">
-                        Quick Actions
-                    </div>
-                    <div class="card-body">
-                        <a href="<?php echo BASE_URL; ?>/views/student/course-registration.php" class="btn btn-primary mb-2" style="width:100%">📝 Register for Courses</a>
-                        <a href="<?php echo BASE_URL; ?>/views/student/results.php" class="btn btn-success mb-2" style="width:100%">📊 View Results</a>
-                        <a href="<?php echo BASE_URL; ?>/views/student/transcript.php" class="btn btn-info mb-2" style="width:100%">📄 Download Transcript</a>
-                        <a href="<?php echo BASE_URL; ?>/views/student/fees.php" class="btn btn-warning mb-2" style="width:100%">💰 View Fees</a>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Recent Results -->
-        <?php if (count($recentResults) > 0): ?>
-        <div class="card">
-            <div class="card-header">
-                Recent Results
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>Course Code</th>
-                                <th>Course Name</th>
-                                <th>Semester</th>
-                                <th>Total Marks</th>
-                                <th>Grade</th>
-                                <th>Credit Hours</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach($recentResults as $result): ?>
+                    <div class="card-header">Recent Results</div>
+                    <div class="card-body p-0">
+                        <table class="table table-hover table-sm mb-0" style="font-size:13px;">
+                            <thead>
                                 <tr>
-                                    <td><?php echo e($result['course_code']); ?></td>
-                                    <td><?php echo e($result['course_name']); ?></td>
-                                    <td><?php echo e($result['semester_name']); ?></td>
-                                    <td><?php echo number_format($result['total_marks'], 2); ?>%</td>
-                                    <td><span class="badge badge-<?php echo Helper::getGPAColor($result['grade_points'] ?? 0); ?>"><?php echo e($result['grade'] ?? 'N/A'); ?></span></td>
-                                    <td><?php echo $result['credit_hours']; ?></td>
+                                    <th>Course</th>
+                                    <th>Marks</th>
+                                    <th>Grade</th>
                                 </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-                <a href="<?php echo BASE_URL; ?>/views/student/results.php" class="btn btn-sm btn-primary">View All Results</a>
-            </div>
-        </div>
-        <?php endif; ?>
-        
-        <!-- Notifications -->
-        <?php if (count($unreadNotifications) > 0): ?>
-        <div class="card">
-            <div class="card-header">
-                Unread Notifications <span class="badge badge-danger"><?php echo count($unreadNotifications); ?></span>
-            </div>
-            <div class="card-body">
-                <?php foreach($unreadNotifications as $notification): ?>
-                    <div class="alert alert-<?php echo $notification['type']; ?>">
-                        <strong><?php echo e($notification['title']); ?></strong><br>
-                        <?php echo e($notification['message']); ?><br>
-                        <small><?php echo Helper::timeAgo($notification['created_at']); ?></small>
+                            </thead>
+                            <tbody>
+                                <?php foreach($recentResults as $result): ?>
+                                <tr>
+                                    <td><?php echo e($result['course_code']); ?><br><small class="text-muted"><?php echo e($result['course_name']); ?></small></td>
+                                    <td><?php echo number_format($result['total_marks'], 1); ?>%</td>
+                                    <td><span class="badge badge-<?php echo Helper::getGPAColor($result['grade_points'] ?? 0); ?>"><?php echo e($result['grade'] ?? 'N/A'); ?></span></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     </div>
-                <?php endforeach; ?>
-                <a href="<?php echo BASE_URL; ?>/views/student/notifications.php" class="btn btn-sm btn-primary">View All Notifications</a>
+                </div>
+                <?php else: ?>
+                <div class="card">
+                    <div class="card-body text-center text-muted py-3">
+                        <small>No results published yet</small>
+                    </div>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
-        <?php endif; ?>
     </div>
 </div>
 

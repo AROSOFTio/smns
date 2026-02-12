@@ -130,153 +130,83 @@ include '../../includes/header.php';
         <?php endif; ?>
         
         <!-- Welcome Section -->
-        <div class="welcome-section mb-4">
-            <h2>Finance Dashboard</h2>
-            <p class="text-muted">Monitor payments, manage invoices, and track financial performance.</p>
+        <div class="welcome-section mb-3">
+            <h5>Welcome, <?php echo e($financeProfile['first_name']); ?> — Finance Dashboard</h5>
+            <p class="text-muted mb-0" style="font-size:13px;">
+                <strong>Semester:</strong> <?php echo e($currentSemester['semester_name'] ?? 'N/A'); ?> &nbsp;|&nbsp; <?php echo date('l, M d, Y'); ?>
+            </p>
         </div>
         
         <!-- Finance Stats Cards -->
-        <div class="stats-grid">
-            <div class="stat-card payments">
+        <div class="stats-grid finance-stats">
+            <div class="stat-card">
                 <div class="stat-icon">💰</div>
                 <div class="stat-details">
-                    <h3>UGX <?php echo number_format($paymentsToday, 0); ?></h3>
-                    <p>Total Payments Today</p>
-                    <div class="stat-change positive">⭡ Collected</div>
+                    <h3><?php echo Helper::formatCurrency($paymentsToday); ?></h3>
+                    <p>Today's Collections</p>
                 </div>
             </div>
             
-            <div class="stat-card outstanding">
+            <div class="stat-card">
+                <div class="stat-icon">📈</div>
+                <div class="stat-details">
+                    <h3><?php echo Helper::formatCurrency($totalCollections); ?></h3>
+                    <p>Semester Collections</p>
+                </div>
+            </div>
+            
+            <div class="stat-card">
                 <div class="stat-icon">⏰</div>
                 <div class="stat-details">
-                    <h3>UGX <?php echo number_format($outstandingBalance, 0); ?></h3>
+                    <h3><?php echo Helper::formatCurrency($outstandingBalance); ?></h3>
                     <p>Outstanding Balances</p>
-                    <div class="stat-change negative">⚠️ Pending</div>
                 </div>
             </div>
             
-            <div class="stat-card invoices">
+            <div class="stat-card">
                 <div class="stat-icon">📄</div>
                 <div class="stat-details">
                     <h3><?php echo number_format($totalInvoices); ?></h3>
                     <p>Active Invoices</p>
-                    <div class="stat-change neutral">—— Current</div>
                 </div>
             </div>
             
-            <div class="stat-card students">
+            <div class="stat-card">
                 <div class="stat-icon">👥</div>
                 <div class="stat-details">
                     <h3><?php echo number_format($studentsWithBalance); ?></h3>
                     <p>Students w/ Balance</p>
-                    <div class="stat-change negative">💳 Outstanding</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Collection Progress -->
+        <?php $collectionRate = ($totalCollections + $outstandingBalance) > 0 ? (($totalCollections / ($totalCollections + $outstandingBalance)) * 100) : 0; ?>
+        <div class="card mb-3">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <small class="font-weight-bold">Collection Rate</small>
+                    <small class="text-muted"><?php echo number_format($collectionRate, 1); ?>%</small>
+                </div>
+                <div class="progress" style="height: 8px;">
+                    <div class="progress-bar bg-success" role="progressbar" style="width: <?php echo $collectionRate; ?>%"></div>
                 </div>
             </div>
         </div>
         
-        <!-- Quick Actions Section -->
-        <div class="quick-actions-section">
-            <h3>Quick Actions</h3>
-            <div class="action-grid">
-                <a href="payments/record.php" class="action-card">
-                    <div class="action-icon">💳</div>
-                    <h4>Record Payment</h4>
-                    <p>Process student fee payments</p>
-                </a>
-                
-                <a href="invoices/generate.php" class="action-card">
-                    <div class="action-icon">📋</div>
-                    <h4>Generate Invoices</h4>
-                    <p>Create fee invoices for students</p>
-                </a>
-                
-                <a href="reports/financial.php" class="action-card">
-                    <div class="action-icon">📊</div>
-                    <h4>Financial Reports</h4>
-                    <p>View payment and revenue reports</p>
-                </a>
-                
-                <a href="statements/student.php" class="action-card">
-                    <div class="action-icon">🧾</div>
-                    <h4>Student Statements</h4>
-                    <p>Generate fee statements for students</p>
-                </a>
+        <!-- Quick Actions -->
+        <div class="row mb-3">
+            <div class="col-6 col-md-3 mb-2">
+                <a href="<?php echo BASE_URL; ?>/views/finance/payments/record.php" class="btn btn-primary btn-sm btn-block">💳 Record Payment</a>
             </div>
-        </div>
-        
-        <!-- Welcome Message -->
-        <div class="card">
-            <div class="card-body">
-                <h3>Welcome, <?php echo e($financeProfile['first_name']); ?>!</h3>
-                <p><strong>Department:</strong> Finance</p>
-                <p><strong>Current Semester:</strong> <?php echo e($currentSemester['semester_name'] ?? 'N/A'); ?></p>
+            <div class="col-6 col-md-3 mb-2">
+                <a href="<?php echo BASE_URL; ?>/views/finance/invoices/generate.php" class="btn btn-success btn-sm btn-block">⚡ Generate Invoice</a>
             </div>
-        </div>
-        
-        <!-- Stats Cards -->
-        <div class="row">
-            <div class="col-md-4">
-                <div class="stats-card success">
-                    <p>Total Collections</p>
-                    <h3><?php echo Helper::formatCurrency($totalCollections); ?></h3>
-                    <small>This semester</small>
-                </div>
+            <div class="col-6 col-md-3 mb-2">
+                <a href="<?php echo BASE_URL; ?>/views/finance/balances/student-balances.php" class="btn btn-info btn-sm btn-block">⚖️ View Balances</a>
             </div>
-            
-            <div class="col-md-4">
-                <div class="stats-card danger">
-                    <p>Outstanding Balance</p>
-                    <h3><?php echo Helper::formatCurrency($outstandingBalance); ?></h3>
-                    <small>Unpaid fees</small>
-                </div>
-            </div>
-            
-            <div class="col-md-4">
-                <div class="stats-card primary">
-                    <p>Today's Collections</p>
-                    <h3><?php echo Helper::formatCurrency($paymentsToday); ?></h3>
-                    <small><?php echo date('M d, Y'); ?></small>
-                </div>
-            </div>
-        </div>
-        
-        <div class="row">
-            <!-- Quick Actions -->
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        Quick Actions
-                    </div>
-                    <div class="card-body">
-                        <a href="<?php echo BASE_URL; ?>/views/finance/payments/record.php" class="btn btn-primary mb-2" style="width:100%">💳 Record New Payment</a>
-                        <a href="<?php echo BASE_URL; ?>/views/finance/invoices/generate.php" class="btn btn-success mb-2" style="width:100%">⚡ Generate Invoice</a>
-                        <a href="<?php echo BASE_URL; ?>/views/finance/balances/student-balances.php" class="btn btn-info mb-2" style="width:100%">⚖️ View Balances</a>
-                        <a href="<?php echo BASE_URL; ?>/views/finance/reports/collections.php" class="btn btn-warning mb-2" style="width:100%">📑 Generate Report</a>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Financial Summary -->
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        Financial Summary
-                    </div>
-                    <div class="card-body">
-                        <?php
-                        $collectionRate = $totalCollections > 0 ? (($totalCollections / ($totalCollections + $outstandingBalance)) * 100) : 0;
-                        ?>
-                        <p><strong>Collection Rate:</strong> <?php echo number_format($collectionRate, 1); ?>%</p>
-                        <div class="progress mb-3" style="height: 25px;">
-                            <div class="progress-bar bg-success" role="progressbar" style="width: <?php echo $collectionRate; ?>%" aria-valuenow="<?php echo $collectionRate; ?>" aria-valuemin="0" aria-valuemax="100">
-                                <?php echo number_format($collectionRate, 1); ?>%
-                            </div>
-                        </div>
-                        <p><strong>Total Expected:</strong> <?php echo Helper::formatCurrency($totalCollections + $outstandingBalance); ?></p>
-                        <p><strong>Collected:</strong> <span class="text-success"><?php echo Helper::formatCurrency($totalCollections); ?></span></p>
-                        <p><strong>Outstanding:</strong> <span class="text-danger"><?php echo Helper::formatCurrency($outstandingBalance); ?></span></p>
-                    </div>
-                </div>
+            <div class="col-6 col-md-3 mb-2">
+                <a href="<?php echo BASE_URL; ?>/views/finance/reports/collections.php" class="btn btn-warning btn-sm btn-block">📑 Reports</a>
             </div>
         </div>
         
@@ -287,7 +217,7 @@ include '../../includes/header.php';
             </div>
             <div class="card-body">
                 <?php if (count($recentPayments) > 0): ?>
-                    <table class="table table-hover">
+                    <table class="table table-hover table-sm" style="font-size:13px;">
                         <thead>
                             <tr>
                                 <th>Payment ID</th>

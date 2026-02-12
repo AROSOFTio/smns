@@ -384,23 +384,23 @@ include '../../includes/header.php';
 .quick-links-card,
 .semester-card {
     background: white;
-    border-radius: 16px;
-    padding: 24px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
-    margin-bottom: 20px;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    margin-bottom: 16px;
 }
 
 .quick-links-card h3,
 .semester-card h3 {
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
     color: #1a1a2e;
-    margin-bottom: 20px;
-    padding-bottom: 12px;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
     border-bottom: 2px solid #f0f0f0;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
 }
 
 .quick-links-card h3 i,
@@ -417,14 +417,14 @@ include '../../includes/header.php';
 .quick-link-item {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
+    gap: 10px;
+    padding: 8px 12px;
     background: #f8f9fa;
-    border-radius: 10px;
+    border-radius: 8px;
     color: #495057;
     text-decoration: none;
     transition: all 0.3s;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
 }
 
@@ -445,19 +445,19 @@ include '../../includes/header.php';
 }
 
 .semester-name {
-    font-size: 20px;
-    font-weight: 700;
+    font-size: 16px;
+    font-weight: 600;
     color: #1a1a2e;
-    margin-bottom: 15px;
+    margin-bottom: 10px;
 }
 
 .semester-dates {
     display: flex;
     justify-content: center;
-    gap: 20px;
-    font-size: 13px;
+    gap: 16px;
+    font-size: 12px;
     color: #6c757d;
-    margin-bottom: 15px;
+    margin-bottom: 10px;
 }
 
 .semester-dates span {
@@ -481,7 +481,7 @@ include '../../includes/header.php';
 .activity-item {
     display: flex;
     align-items: flex-start;
-    padding: 15px 0;
+    padding: 10px 0;
     border-bottom: 1px solid #eee;
 }
 
@@ -490,28 +490,29 @@ include '../../includes/header.php';
 }
 
 .activity-icon {
-    width: 40px;
-    height: 40px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     background: linear-gradient(135deg, #e4102f, #c60f28);
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-right: 15px;
+    margin-right: 12px;
     flex-shrink: 0;
+    font-size: 12px;
 }
 
 .activity-details h5 {
-    margin: 0 0 5px;
-    font-size: 14px;
+    margin: 0 0 3px;
+    font-size: 13px;
     font-weight: 600;
     color: #1a1a2e;
 }
 
 .activity-details p {
     margin: 0;
-    font-size: 12px;
+    font-size: 11px;
     color: #6c757d;
     display: flex;
     align-items: center;
@@ -549,43 +550,44 @@ include '../../includes/header.php';
 /* Empty State */
 .empty-state {
     text-align: center;
-    padding: 40px 20px;
+    padding: 30px 16px;
     color: #6c757d;
 }
 
 .empty-state i {
-    font-size: 48px;
-    margin-bottom: 15px;
+    font-size: 36px;
+    margin-bottom: 10px;
     color: #dee2e6;
 }
 
 .empty-state h4 {
-    margin: 0 0 10px;
+    margin: 0 0 6px;
     color: #495057;
+    font-size: 14px;
 }
 
 .empty-state p {
     margin: 0;
-    font-size: 14px;
+    font-size: 12px;
 }
 
 /* User Sessions Card */
 .user-sessions-card {
     background: white;
     border-radius: 12px;
-    padding: 25px;
-    margin-top: 25px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    padding: 16px;
+    margin-top: 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
 }
 
 .user-sessions-card h3 {
-    margin: 0 0 20px;
-    font-size: 16px;
+    margin: 0 0 14px;
+    font-size: 14px;
     font-weight: 700;
     color: #1a1a2e;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
 }
 
 .sessions-table {
@@ -670,19 +672,19 @@ include '../../includes/header.php';
 .system-status {
     background: white;
     border-radius: 12px;
-    padding: 25px;
-    margin-bottom: 25px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
 }
 
 .system-status h3 {
-    margin: 0 0 20px;
-    font-size: 16px;
+    margin: 0 0 14px;
+    font-size: 14px;
     font-weight: 700;
     color: #1a1a2e;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
 }
 
 .status-item {
@@ -700,13 +702,13 @@ include '../../includes/header.php';
 .status-item span:first-child {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     color: #495057;
-    font-size: 13px;
+    font-size: 12px;
 }
 
 .status-indicator {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -729,19 +731,19 @@ include '../../includes/header.php';
 .recent-activity {
     background: white;
     border-radius: 12px;
-    padding: 25px;
-    margin-bottom: 25px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
 }
 
 .recent-activity h3 {
-    margin: 0 0 20px;
-    font-size: 16px;
+    margin: 0 0 14px;
+    font-size: 14px;
     font-weight: 700;
     color: #1a1a2e;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
 }
 
 /* Responsive fixes */
