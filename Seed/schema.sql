@@ -5,11 +5,11 @@
 -- ============================================================================
 
 -- Create Database
-CREATE DATABASE IF NOT EXISTS seminary_results_db 
+CREATE DATABASE IF NOT EXISTS smns 
 CHARACTER SET utf8mb4 
 COLLATE utf8mb4_unicode_ci;
 
-USE seminary_results_db;
+USE smns;
 
 -- ============================================================================
 -- CORE USER TABLES
@@ -304,7 +304,6 @@ CREATE TABLE course_registrations (
     INDEX idx_semester (semester_id),
     INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 
 
 -- ============================================================================
