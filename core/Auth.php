@@ -84,6 +84,16 @@ class Auth {
             if (!$user) {
                 return ['success' => false, 'message' => 'Invalid credentials'];
             }
+
+            // Ensure 'require_password_change' column exists
+            $col = $this->db->query("SHOW COLUMNS FROM users LIKE 'require_password_change'")->fetch();
+            if (!$col) {
+                $this->db->exec("ALTER TABLE users ADD COLUMN require_password_change TINYINT(1) DEFAULT 0 AFTER account_locked_until");
+                // refresh user record
+                $stmt = $this->db->prepare($sql);
+                $stmt->execute(['username' => $username, 'email' => $username]);
+                $user = $stmt->fetch();
+            }
             
             // Check if account is locked
             if ($user['account_locked_until'] && strtotime($user['account_locked_until']) > time()) {
@@ -143,8 +153,11 @@ class Auth {
             
             // Log activity
             $this->logActivity($user['id'], 'login', 'authentication', 'User logged in to ' . $modulePrefix . ' module');
-            
-            return ['success' => true, 'role' => $user['role'], 'user' => $profile];
+
+            // If user requires password change, include flag in return value
+            $requireChange = isset($user['require_password_change']) && $user['require_password_change'] == 1;
+
+            return ['success' => true, 'role' => $user['role'], 'user' => $profile, 'require_password_change' => $requireChange];
         } catch(Exception $e) {
             error_log("Login error: " . $e->getMessage());
             // Show detailed error in development mode

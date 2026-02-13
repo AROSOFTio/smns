@@ -1,6 +1,6 @@
 <?php
 /**
- * Students List - Admin
+ * Students List - Admin (Fixed Version)
  */
 require_once '../../../config.php';
 
@@ -13,7 +13,7 @@ if (session_status() === PHP_SESSION_NONE) {
 $session = new Session('admin');
 $auth = new Auth('admin');
 
-// Verify admin access (using module-specific session keys)
+// Verify admin access
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true || $_SESSION['admin_role'] !== 'admin') {
     header('Location: ' . BASE_URL . '/views/admin/login.php?error=unauthorized');
     exit;
@@ -70,7 +70,7 @@ $students = $stmt->fetchAll();
 $stmt = $conn->query("SELECT * FROM programs WHERE status = 'active' ORDER BY program_name");
 $programs = $stmt->fetchAll();
 
-// Notifications (admin sees all system notifications)
+// Notifications
 $stmt = $conn->prepare("SELECT * FROM notifications WHERE read_status = 'unread' ORDER BY created_at DESC LIMIT 10");
 $stmt->execute();
 $unreadNotifications = $stmt->fetchAll();
@@ -78,6 +78,67 @@ $unreadNotifications = $stmt->fetchAll();
 $pageTitle = 'Students List - ' . APP_NAME;
 include '../../../includes/header.php';
 ?>
+
+<style>
+/* Prevent horizontal scrolling */
+body {
+    overflow-x: hidden;
+}
+
+.main-content {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+.table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Ensure table cells don't expand beyond container */
+.table td, .table th {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Custom width constraints */
+.email-cell {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.name-cell {
+    max-width: 150px;
+}
+
+.program-cell {
+    max-width: 120px;
+}
+
+/* Compact action buttons */
+.btn-group .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.dropdown-menu {
+    min-width: 180px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+    .table {
+        font-size: 0.85rem;
+    }
+    
+    .btn-sm {
+        padding: 0.2rem 0.4rem;
+        font-size: 0.75rem;
+    }
+}
+</style>
 
 <?php include '../../../includes/admin/sidebar.php'; ?>
 
@@ -93,7 +154,6 @@ include '../../../includes/header.php';
                     <div class="date-display"><?php echo date('l, F j, Y'); ?></div>
                 </div>
             </div>
-            <a href="add.php" class="btn btn-primary">➕ Add New Student</a>
             <?php include '../../../includes/notification_bell.php'; ?>
             <div class="user-dropdown">
                 <button class="user-dropdown-toggle" id="userDropdown">
@@ -120,51 +180,57 @@ include '../../../includes/header.php';
     
     <div class="content-area">
         <?php if ($session->getFlash('success')): ?>
-            <div class="alert alert-success">
-                <?php echo e($session->getFlash('success')); ?>
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <?php echo $session->getFlash('success'); ?>
+                <button type="button" class="close" data-dismiss="alert">&times;</button>
             </div>
         <?php endif; ?>
         
         <!-- Filters -->
-        <div class="card">
+        <div class="card mb-3">
             <div class="card-body">
-                <form method="GET" action="">
-                    <div class="row">
-                        <div class="col-md-3">
-                            <input type="text" name="search" class="form-control" placeholder="Search..." value="<?php echo e($search); ?>">
-                        </div>
-                        <div class="col-md-2">
-                            <select name="program" class="form-control">
-                                <option value="">All Programs</option>
-                                <?php foreach($programs as $prog): ?>
-                                    <option value="<?php echo $prog['id']; ?>" <?php echo $program == $prog['id'] ? 'selected' : ''; ?>>
-                                        <?php echo e($prog['program_code']); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <select name="status" class="form-control">
-                                <option value="">All Status</option>
-                                <option value="active" <?php echo $status == 'active' ? 'selected' : ''; ?>>Active</option>
-                                <option value="inactive" <?php echo $status == 'inactive' ? 'selected' : ''; ?>>Inactive</option>
-                                <option value="graduated" <?php echo $status == 'graduated' ? 'selected' : ''; ?>>Graduated</option>
-                                <option value="suspended" <?php echo $status == 'suspended' ? 'selected' : ''; ?>>Suspended</option>
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <select name="level" class="form-control">
-                                <option value="">All Levels</option>
-                                <option value="1" <?php echo $level == '1' ? 'selected' : ''; ?>>Year 1</option>
-                                <option value="2" <?php echo $level == '2' ? 'selected' : ''; ?>>Year 2</option>
-                                <option value="3" <?php echo $level == '3' ? 'selected' : ''; ?>>Year 3</option>
-                                <option value="4" <?php echo $level == '4' ? 'selected' : ''; ?>>Year 4</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <button type="submit" class="btn btn-primary">Filter</button>
-                            <a href="list.php" class="btn btn-secondary">Reset</a>
-                        </div>
+                <form method="GET" action="" class="form-row">
+                    <div class="col-md-3 mb-2">
+                        <input type="text" name="search" class="form-control form-control-sm" placeholder="Search students..." value="<?php echo e($search); ?>">
+                    </div>
+                    <div class="col-md-2 mb-2">
+                        <select name="program" class="form-control form-control-sm">
+                            <option value="">All Programs</option>
+                            <?php foreach($programs as $prog): ?>
+                                <option value="<?php echo $prog['id']; ?>" <?php echo $program == $prog['id'] ? 'selected' : ''; ?>>
+                                    <?php echo e($prog['program_code']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-2 mb-2">
+                        <select name="status" class="form-control form-control-sm">
+                            <option value="">All Status</option>
+                            <option value="active" <?php echo $status == 'active' ? 'selected' : ''; ?>>Active</option>
+                            <option value="inactive" <?php echo $status == 'inactive' ? 'selected' : ''; ?>>Inactive</option>
+                            <option value="graduated" <?php echo $status == 'graduated' ? 'selected' : ''; ?>>Graduated</option>
+                            <option value="suspended" <?php echo $status == 'suspended' ? 'selected' : ''; ?>>Suspended</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 mb-2">
+                        <select name="level" class="form-control form-control-sm">
+                            <option value="">All Levels</option>
+                            <option value="1" <?php echo $level == '1' ? 'selected' : ''; ?>>Year 1</option>
+                            <option value="2" <?php echo $level == '2' ? 'selected' : ''; ?>>Year 2</option>
+                            <option value="3" <?php echo $level == '3' ? 'selected' : ''; ?>>Year 3</option>
+                            <option value="4" <?php echo $level == '4' ? 'selected' : ''; ?>>Year 4</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <button type="submit" class="btn btn-primary btn-sm mr-1">
+                            <i class="fas fa-filter"></i> Filter
+                        </button>
+                        <a href="list.php" class="btn btn-secondary btn-sm mr-1">
+                            <i class="fas fa-redo"></i> Reset
+                        </a>
+                        <a href="add.php" class="btn btn-success btn-sm">
+                            <i class="fas fa-plus"></i> Add New
+                        </a>
                     </div>
                 </form>
             </div>
@@ -173,45 +239,78 @@ include '../../../includes/header.php';
         <!-- Students Table -->
         <div class="card">
             <div class="card-header">
-                Students (<?php echo count($students); ?>)
+                <div class="d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-users"></i> Students (<?php echo count($students); ?>)</span>
+                </div>
             </div>
-            <div class="card-body">
+            <div class="card-body p-0">
                 <?php if (count($students) > 0): ?>
                     <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
+                        <table class="table table-hover table-sm mb-0">
+                            <thead class="thead-light">
                                 <tr>
-                                    <th>Student ID</th>
-                                    <th>Name</th>
-                                    <th>Email</th>
-                                    <th>Program</th>
-                                    <th>Level</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
+                                    <th style="width: 100px;">Student ID</th>
+                                    <th style="width: 150px;">Name</th>
+                                    <th style="width: 110px;">Admission #</th>
+                                    <th style="width: 180px;">Email</th>
+                                    <th style="width: 100px;">Program</th>
+                                    <th style="width: 60px;">Level</th>
+                                    <th style="width: 90px;">Status</th>
+                                    <th style="width: 160px;" class="text-center">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php foreach($students as $student): ?>
                                     <tr>
                                         <td><strong><?php echo e($student['student_id']); ?></strong></td>
-                                        <td>
-                                            <?php echo e($student['first_name'] . ' ' . $student['last_name']); ?>
-                                            <br><small class="text-muted"><?php echo e($student['gender']); ?></small>
+                                        <td class="name-cell">
+                                            <div style="overflow: hidden; text-overflow: ellipsis;" title="<?php echo e($student['first_name'] . ' ' . $student['last_name']); ?>">
+                                                <?php echo e($student['first_name'] . ' ' . $student['last_name']); ?>
+                                            </div>
+                                            <small class="text-muted"><?php echo e($student['gender']); ?></small>
                                         </td>
-                                        <td><?php echo e($student['email']); ?></td>
-                                        <td>
-                                            <?php echo e($student['program_code']); ?>
-                                            <br><small class="text-muted"><?php echo e($student['program_name']); ?></small>
+                                        <td><?php echo e($student['admission_number'] ?? 'N/A'); ?></td>
+                                        <td class="email-cell" title="<?php echo e($student['email']); ?>">
+                                            <?php echo e($student['email']); ?>
                                         </td>
-                                        <td>Year <?php echo $student['level_year']; ?></td>
+                                        <td class="program-cell">
+                                            <div style="overflow: hidden; text-overflow: ellipsis;" title="<?php echo e($student['program_name']); ?>">
+                                                <strong><?php echo e($student['program_code']); ?></strong>
+                                            </div>
+                                            <small class="text-muted" style="overflow: hidden; text-overflow: ellipsis; display: block;"><?php echo e($student['program_name']); ?></small>
+                                        </td>
+                                        <td><span class="badge badge-secondary">Y<?php echo $student['level_year']; ?></span></td>
                                         <td>
                                             <span class="badge badge-<?php echo Helper::getStatusColor($student['status']); ?>">
-                                                <?php echo e($student['status']); ?>
+                                                <?php echo e(ucfirst($student['status'])); ?>
                                             </span>
                                         </td>
-                                        <td>
-                                            <a href="view.php?id=<?php echo $student['id']; ?>" class="btn btn-sm btn-info">View</a>
-                                            <a href="edit.php?id=<?php echo $student['id']; ?>" class="btn btn-sm btn-warning">Edit</a>
+                                        <td class="text-center">
+                                            <div class="btn-group btn-group-sm" role="group">
+                                                <a href="view.php?id=<?php echo $student['id']; ?>" class="btn btn-info" title="View Details">
+                                                    <i class="fas fa-eye"></i>
+                                                </a>
+                                                <a href="edit.php?id=<?php echo $student['id']; ?>" class="btn btn-warning" title="Edit Student">
+                                                    <i class="fas fa-edit"></i>
+                                                </a>
+                                                <div class="btn-group btn-group-sm" role="group">
+                                                    <button type="button" class="btn btn-secondary dropdown-toggle" data-toggle="dropdown" title="More Actions">
+                                                        <i class="fas fa-ellipsis-v"></i>
+                                                    </button>
+                                                    <div class="dropdown-menu dropdown-menu-right">
+                                                        <a class="dropdown-item" href="reset_password.php?id=<?php echo $student['id']; ?>">
+                                                            <i class="fas fa-key"></i> Reset Password
+                                                        </a>
+                                                        <a class="dropdown-item" href="send_invite.php?id=<?php echo $student['id']; ?>">
+                                                            <i class="fas fa-envelope"></i> Send Invite
+                                                        </a>
+                                                        <div class="dropdown-divider"></div>
+                                                        <a class="dropdown-item text-danger" href="delete.php?id=<?php echo $student['id']; ?>" onclick="return confirm('Are you sure you want to delete this student?')">
+                                                            <i class="fas fa-trash"></i> Delete
+                                                        </a>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -219,7 +318,10 @@ include '../../../includes/header.php';
                         </table>
                     </div>
                 <?php else: ?>
-                    <p class="text-center">No students found</p>
+                    <div class="text-center py-5">
+                        <i class="fas fa-users fa-3x text-muted mb-3"></i>
+                        <p class="text-muted mb-0">No students found matching your criteria</p>
+                    </div>
                 <?php endif; ?>
             </div>
         </div>

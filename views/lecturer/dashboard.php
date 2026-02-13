@@ -123,6 +123,9 @@ include '../../includes/header.php';
                         <a href="reports.php" class="dropdown-item">
                             <i>📁</i> Reports
                         </a>
+                        <a href="change-password.php" class="dropdown-item">
+                            <i class="fas fa-key"></i> Change Password
+                        </a>
                         <div class="dropdown-divider"></div>
                         <a href="<?php echo BASE_URL; ?>/views/lecturer/logout.php" class="dropdown-item logout-item">
                             <i class="fas fa-sign-out-alt"></i> Logout

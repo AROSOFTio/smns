@@ -98,6 +98,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $result = $auth->login($entered_username, $password);
             
             if ($result['success'] && $result['role'] === 'student') {
+                // Login successful - check if password change required
+                if (!empty($result['require_password_change'])) {
+                    // User must change password first
+                    // Keep user logged in and redirect to change-password page
+                    header('Location: change-password.php');
+                    exit;
+                }
                 // Login successful - redirect to dashboard
                 header('Location: dashboard.php');
                 exit;

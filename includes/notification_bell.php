@@ -6,6 +6,182 @@
             <span class="notification-badge"><?php echo count($unreadNotifications); ?></span>
         <?php endif; ?>
     </button>
+    <?php
+    // Show change-password quick dropdown for logged-in students, admins, lecturers, or finance next to the bell
+    $isAdmin = isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true;
+    $isStudent = isset($_SESSION['student_logged_in']) && $_SESSION['student_logged_in'] === true;
+    $isLecturer = isset($_SESSION['lecturer_logged_in']) && $_SESSION['lecturer_logged_in'] === true;
+    $isFinance = isset($_SESSION['finance_logged_in']) && $_SESSION['finance_logged_in'] === true;
+    if ($isAdmin || $isStudent || $isLecturer || $isFinance):
+        $csrf = Security::generateCSRFToken();
+        $role = $isAdmin ? 'admin' : ($isStudent ? 'student' : ($isLecturer ? 'lecturer' : ($isFinance ? 'finance' : '')));
+        if ($isAdmin) {
+            $changePwdEndpoint = BASE_URL . '/views/admin/change-password.php';
+        } elseif ($isStudent) {
+            $changePwdEndpoint = BASE_URL . '/views/student/change-password.php';
+        } elseif ($isLecturer) {
+            $changePwdEndpoint = BASE_URL . '/views/lecturer/change-password.php';
+        } elseif ($isFinance) {
+            $changePwdEndpoint = BASE_URL . '/views/finance/change-password.php';
+        } else {
+            $changePwdEndpoint = '';
+        }
+        $toggleId = 'changePasswordToggle_' . $role;
+        $panelId = 'changePasswordPanel_' . $role;
+        $formId = 'headerChangePasswordForm_' . $role;
+        $msgId = 'headerChangePwdMsg_' . $role;
+        ?>
+        <div class="change-password-wrapper" style="display:inline-block;position:relative;margin-left:12px;">
+            <button id="<?php echo $toggleId; ?>" class="change-password-btn" title="Change Password" aria-label="Change Password" style="background:rgba(220,220,220,0.4) !important;color:#fff !important;border:1px solid rgba(200,200,200,0.5) !important;width:36px !important;height:36px !important;display:inline-flex !important;align-items:center !important;justify-content:center !important;border-radius:50% !important;font-size:14px !important;padding:0 !important;transition:all 0.3s !important;box-shadow:0 2px 4px rgba(0,0,0,0.1) !important;">
+                <i class="fas fa-key" style="color:#fff !important;font-size:14px !important;"></i>
+            </button>
+            <div id="<?php echo $panelId; ?>" class="change-password-panel" style="display:none;position:absolute;right:0;top:40px;z-index:1200;width:320px;background:#fff;color:#333;border:1px solid #ddd;border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:auto;max-height:360px;padding:12px;">
+                <h6 class="mb-3" style="font-size:14px;font-weight:600;">Change Password</h6>
+                <form id="<?php echo $formId; ?>">
+                    <input type="hidden" name="csrf_token" value="<?php echo e($csrf); ?>">
+                    <input type="hidden" name="ajax" value="1">
+                    <div class="form-group mb-2">
+                        <label class="mb-1" style="font-size:13px;">Current password</label>
+                        <input type="password" name="current_password" class="form-control form-control-sm" required autocomplete="current-password">
+                    </div>
+                    <div class="form-group mb-2">
+                        <label class="mb-1" style="font-size:13px;">New password</label>
+                        <input type="password" name="new_password" class="form-control form-control-sm" required autocomplete="new-password">
+                    </div>
+                    <div class="form-group mb-2">
+                        <label class="mb-1" style="font-size:13px;">Confirm new password</label>
+                        <input type="password" name="confirm_password" class="form-control form-control-sm" required autocomplete="new-password">
+                    </div>
+                    <div id="<?php echo $msgId; ?>" style="font-size:13px;margin-bottom:6px;padding:6px;border-radius:3px;"></div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('<?php echo $panelId; ?>').style.display='none'">Cancel</button>
+                        <button type="submit" class="btn btn-primary btn-sm">Change Password</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script>
+            (function(){
+                var toggle = document.getElementById('<?php echo $toggleId; ?>');
+                var panel = document.getElementById('<?php echo $panelId; ?>');
+                var form = document.getElementById('<?php echo $formId; ?>');
+                var msg = document.getElementById('<?php echo $msgId; ?>');
+
+                // Add hover effect
+                toggle.addEventListener('mouseenter', function(){
+                    toggle.style.setProperty('background', 'rgba(235,235,235,0.5)', 'important');
+                    toggle.style.setProperty('transform', 'scale(1.1)', 'important');
+                    toggle.style.setProperty('box-shadow', '0 4px 8px rgba(0,0,0,0.15)', 'important');
+                });
+                toggle.addEventListener('mouseleave', function(){
+                    toggle.style.setProperty('background', 'rgba(220,220,220,0.4)', 'important');
+                    toggle.style.setProperty('transform', 'scale(1)', 'important');
+                    toggle.style.setProperty('box-shadow', '0 2px 4px rgba(0,0,0,0.1)', 'important');
+                });
+
+                function closePanel(e){
+                    if (!panel.contains(e.target) && e.target !== toggle) {
+                        panel.style.display = 'none';
+                        document.removeEventListener('click', closePanel);
+                    }
+                }
+
+                toggle.addEventListener('click', function(e){
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var isVisible = panel.style.display === 'block';
+                    panel.style.display = isVisible ? 'none' : 'block';
+                    
+                    if (!isVisible) {
+                        // Clear previous messages
+                        msg.textContent = '';
+                        msg.style.backgroundColor = '';
+                        msg.style.color = '';
+                        // Add click listener after a small delay
+                        setTimeout(function(){ 
+                            document.addEventListener('click', closePanel); 
+                        }, 100);
+                    } else {
+                        document.removeEventListener('click', closePanel);
+                    }
+                });
+
+                form.addEventListener('submit', function(e){
+                    e.preventDefault();
+                    
+                    // Clear previous messages
+                    msg.textContent = '';
+                    msg.style.backgroundColor = '';
+                    msg.style.color = '';
+                    
+                    // Get form data
+                    var formData = new FormData(form);
+                    
+                    // Validate passwords match
+                    var newPassword = formData.get('new_password');
+                    var confirmPassword = formData.get('confirm_password');
+                    
+                    if (newPassword !== confirmPassword) {
+                        msg.style.backgroundColor = '#fee';
+                        msg.style.color = '#c00';
+                        msg.textContent = 'New passwords do not match';
+                        return;
+                    }
+                    
+                    if (newPassword.length < 6) {
+                        msg.style.backgroundColor = '#fee';
+                        msg.style.color = '#c00';
+                        msg.textContent = 'Password must be at least 6 characters';
+                        return;
+                    }
+                    
+                    // Show loading
+                    msg.style.backgroundColor = '#e7f3ff';
+                    msg.style.color = '#0066cc';
+                    msg.textContent = 'Changing password...';
+                    
+                    // Submit via AJAX
+                    fetch('<?php echo "' + $changePwdEndpoint + '"; ?>', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: formData
+                    })
+                    .then(function(response){
+                        return response.json().catch(function(){
+                            throw new Error('Invalid response from server');
+                        });
+                    })
+                    .then(function(data){
+                        if (data.success) {
+                            msg.style.backgroundColor = '#d4edda';
+                            msg.style.color = '#155724';
+                            msg.textContent = data.message || 'Password changed successfully!';
+                            form.reset();
+                            setTimeout(function(){ 
+                                panel.style.display = 'none';
+                                msg.textContent = '';
+                                msg.style.backgroundColor = '';
+                                msg.style.color = '';
+                            }, 1500);
+                        } else {
+                            msg.style.backgroundColor = '#fee';
+                            msg.style.color = '#c00';
+                            msg.textContent = data.error || data.message || 'Failed to change password';
+                        }
+                    })
+                    .catch(function(error){
+                        console.error('Change password error:', error);
+                        msg.style.backgroundColor = '#fee';
+                        msg.style.color = '#c00';
+                        msg.textContent = 'Network error. Please try again.';
+                    });
+                });
+            })();
+        </script>
+    <?php endif; ?>
     <div class="notification-dropdown" id="notificationDropdown">
         <div class="notification-header">
             <h6>Notifications</h6>

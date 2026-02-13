@@ -112,6 +112,7 @@ include '../../includes/header.php';
                         <a href="profile.php" class="dropdown-item">
                             <i>👤</i> My Profile
                         </a>
+                        <!-- change-password moved to header quick dropdown -->
                         <a href="transcript.php" class="dropdown-item">
                             <i>📄</i> My Transcript
                         </a>

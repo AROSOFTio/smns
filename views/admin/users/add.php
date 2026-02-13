@@ -72,15 +72,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     // Create user
                     $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-                    
+                    $requireChange = in_array($role, ['lecturer', 'finance']) ? 1 : 0;
+                    // Ensure require_password_change column exists
+                    $col = $conn->query("SHOW COLUMNS FROM users LIKE 'require_password_change'")->fetch();
+                    if (!$col) {
+                        $conn->exec("ALTER TABLE users ADD COLUMN require_password_change TINYINT(1) DEFAULT 0 AFTER account_locked_until");
+                    }
                     $stmt = $conn->prepare("
-                        INSERT INTO users (username, email, password_hash, role, status, created_at) 
-                        VALUES (?, ?, ?, ?, 'active', NOW())
+                        INSERT INTO users (username, email, password_hash, role, status, require_password_change, created_at) 
+                        VALUES (?, ?, ?, ?, 'active', ?, NOW())
                     ");
-                    
-                    if ($stmt->execute([$username, $email, $passwordHash, $role])) {
+                    if ($stmt->execute([$username, $email, $passwordHash, $role, $requireChange])) {
                         $userId = $conn->lastInsertId();
-                        
                         // Create role-specific profile
                         switch ($role) {
                             case 'admin':
@@ -90,7 +93,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 ");
                                 $stmt->execute([$userId, $firstName, $lastName, $phone, $email]);
                                 break;
-                                
                             case 'lecturer':
                                 $lecturerId = 'LEC' . str_pad($userId, 3, '0', STR_PAD_LEFT);
                                 $stmt = $conn->prepare("
@@ -99,7 +101,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 ");
                                 $stmt->execute([$userId, $lecturerId, $firstName, $lastName, $phone, $email]);
                                 break;
-                                
                             case 'student':
                                 $studentId = 'STD' . date('Y') . str_pad($userId, 3, '0', STR_PAD_LEFT);
                                 $stmt = $conn->prepare("
@@ -108,7 +109,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 ");
                                 $stmt->execute([$userId, $studentId, $firstName, $lastName, $phone, $email, date('Y')]);
                                 break;
-                                
                             case 'finance':
                                 $stmt = $conn->prepare("
                                     INSERT INTO finance_staff (user_id, first_name, last_name, phone, email) 
@@ -116,6 +116,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 ");
                                 $stmt->execute([$userId, $firstName, $lastName, $phone, $email]);
                                 break;
+                        }
+                        // Show credentials to admin for lecturer/finance
+                        if (in_array($role, ['lecturer', 'finance'])) {
+                            $success = "<strong>User created successfully!</strong><br><br>";
+                            $success .= "<div style='background:#e7f3ff;padding:15px;border-radius:5px;border-left:4px solid #007bff;margin:10px 0;'>";
+                            $success .= "<strong>Login Credentials:</strong><br>";
+                            $success .= "<strong>Username:</strong> <code style='background:#fff;padding:2px 8px;border-radius:3px;'>{$username}</code><br>";
+                            $success .= "<strong>Password:</strong> <code style='background:#fff;padding:2px 8px;border-radius:3px;'>{$password}</code><br>";
+                            $success .= "<strong>Login URL:</strong> <a href='" . BASE_URL . "/views/{$role}/login.php' target='_blank'>" . ucfirst($role) . " Portal Login</a>";
+                            $success .= "</div>";
+                            $success .= "<div style='color:#ffc107;margin-top:10px;'><i class='fas fa-exclamation-triangle'></i> Staff will be required to change password on first login.</div>";
+                        } else {
+                            $success = "User created successfully! Username: $username, Role: $role";
                         }
                         
                         // Log activity
