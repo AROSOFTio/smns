@@ -26,6 +26,9 @@ if (isset($_SESSION['flash_error'])) {
 // Check for URL error parameters
 if (isset($_GET['error'])) {
     switch($_GET['error']) {
+        case 'session_expired':
+            $error = 'Your session expired due to inactivity. Please login again.';
+            break;
         case 'invalid_session':
             $error = 'Your session has expired or is invalid. Please login again.';
             break;

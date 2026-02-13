@@ -8,6 +8,25 @@ require_once __DIR__ . '/Database.php';
 require_once __DIR__ . '/Session.php';
 
 class Auth {
+        /**
+         * Check if a username or email exists in the users table
+         * Returns user info if found, otherwise false
+         */
+        public function usernameExists($username) {
+            try {
+                $sql = "SELECT * FROM users WHERE username = :username OR email = :email LIMIT 1";
+                $stmt = $this->db->prepare($sql);
+                $stmt->execute(['username' => $username, 'email' => $username]);
+                $user = $stmt->fetch();
+                if ($user) {
+                    return $user;
+                }
+                return false;
+            } catch (Exception $e) {
+                error_log("usernameExists error: " . $e->getMessage());
+                return false;
+            }
+        }
     private $db;
     private $session;
     private $module; // The current module context (admin, student, lecturer, finance)

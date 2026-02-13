@@ -188,11 +188,15 @@ include '../../includes/header.php';
         </div>
 
         
-        <!-- Recent Activity -->
+        <!-- Recent Activity & Sessions - Full Width, Collapsible -->
         <div class="row">
-            <div class="col-md-8">
-                <div class="recent-activity">
-                    <h3><i class="fas fa-history"></i> Recent System Activity</h3>
+            <div class="col-md-7">
+                <div class="recent-activity foldable-card">
+                    <h3 class="foldable-header" data-target="activityBody">
+                        <span><i class="fas fa-history"></i> Recent System Activity</span>
+                        <i class="fas fa-chevron-up fold-arrow"></i>
+                    </h3>
+                    <div class="foldable-body" id="activityBody">
                     <?php if (!empty($recentActivities)): ?>
                         <?php foreach ($recentActivities as $activity): ?>
                             <div class="activity-item">
@@ -233,11 +237,18 @@ include '../../includes/header.php';
                             <p>System activities will appear here as they occur.</p>
                         </div>
                     <?php endif; ?>
+                    </div>
                 </div>
-                
+            </div>
+            
+            <div class="col-md-5">
                 <!-- User Sessions Section -->
-                <div class="user-sessions-card">
-                    <h3><i class="fas fa-user-clock"></i> User Login Sessions</h3>
+                <div class="user-sessions-card foldable-card">
+                    <h3 class="foldable-header" data-target="sessionsBody">
+                        <span><i class="fas fa-user-clock"></i> User Login Sessions</span>
+                        <i class="fas fa-chevron-up fold-arrow"></i>
+                    </h3>
+                    <div class="foldable-body" id="sessionsBody">
                     <div class="table-responsive">
                         <table class="sessions-table">
                             <thead>
@@ -303,9 +314,13 @@ include '../../includes/header.php';
                             </tbody>
                         </table>
                     </div>
+                    </div>
                 </div>
             </div>
-            
+        </div>
+
+        <!-- System Info Row -->
+        <div class="row mt-3">
             <div class="col-md-4">
                 <div class="system-status">
                     <h3><i class="fas fa-server"></i> System Status</h3>
@@ -355,7 +370,9 @@ include '../../includes/header.php';
                         </a>
                     </div>
                 </div>
+            </div>
                 
+            <div class="col-md-4">
                 <!-- Current Semester -->
                 <?php if ($currentSemester): ?>
                 <div class="semester-card">
@@ -575,13 +592,14 @@ include '../../includes/header.php';
 .user-sessions-card {
     background: white;
     border-radius: 12px;
-    padding: 16px;
-    margin-top: 16px;
+    padding: 20px;
+    margin-bottom: 16px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    min-height: 300px;
 }
 
 .user-sessions-card h3 {
-    margin: 0 0 14px;
+    margin: 0 0 0 0;
     font-size: 14px;
     font-weight: 700;
     color: #1a1a2e;
@@ -731,13 +749,14 @@ include '../../includes/header.php';
 .recent-activity {
     background: white;
     border-radius: 12px;
-    padding: 16px;
+    padding: 20px;
     margin-bottom: 16px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    min-height: 300px;
 }
 
 .recent-activity h3 {
-    margin: 0 0 14px;
+    margin: 0 0 0 0;
     font-size: 14px;
     font-weight: 700;
     color: #1a1a2e;
@@ -767,6 +786,83 @@ include '../../includes/header.php';
         grid-template-columns: 1fr;
     }
 }
+
+/* Foldable Card Styles */
+.foldable-card {
+    min-height: 60px;
+}
+
+.foldable-header {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0 !important;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #f0f0f0;
+    transition: margin 0.3s;
+}
+
+.foldable-header span {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.foldable-header:hover {
+    color: #667eea;
+}
+
+.fold-arrow {
+    font-size: 12px;
+    color: #999;
+    transition: transform 0.3s ease;
+}
+
+.foldable-header.collapsed .fold-arrow {
+    transform: rotate(180deg);
+}
+
+.foldable-header.collapsed {
+    border-bottom-color: transparent;
+    margin-bottom: 0 !important;
+    padding-bottom: 0;
+}
+
+.foldable-body {
+    overflow: hidden;
+    max-height: 2000px;
+    transition: max-height 0.4s ease, opacity 0.3s ease, padding 0.3s ease;
+    opacity: 1;
+    padding-top: 10px;
+}
+
+.foldable-body.folded {
+    max-height: 0;
+    opacity: 0;
+    padding-top: 0;
+}
 </style>
+
+<script>
+// Foldable card toggle
+document.querySelectorAll('.foldable-header').forEach(function(header) {
+    var targetId = header.getAttribute('data-target');
+    var body = document.getElementById(targetId);
+    // Restore state from localStorage (default: collapsed)
+    var key = 'fold_' + targetId;
+    var state = localStorage.getItem(key);
+    if (state !== 'expanded') {
+        header.classList.add('collapsed');
+        body.classList.add('folded');
+    }
+    header.addEventListener('click', function() {
+        header.classList.toggle('collapsed');
+        body.classList.toggle('folded');
+        localStorage.setItem(key, header.classList.contains('collapsed') ? 'collapsed' : 'expanded');
+    });
+});
+</script>
 
 <?php include '../../includes/footer.php'; ?>
