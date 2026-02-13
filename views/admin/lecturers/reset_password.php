@@ -1,8 +1,8 @@
 <?php
 /**
- * Reset Student Password - Admin
+ * Reset Lecturer Password - Admin
  */
-require_once '../../../config.php';
+require_once dirname(__DIR__, 3) . '/config.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -13,33 +13,33 @@ $auth = new Auth('admin');
 
 // Verify admin access
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true || $_SESSION['admin_role'] !== 'admin') {
-    header('Location: ' . BASE_URL . '/views/admin/login.php?error=unauthorized');
+    header('Location: ../login.php?error=unauthorized');
     exit;
 }
 
 $db = new Database();
 $conn = $db->getConnection();
 
-$studentId = (int)($_GET['id'] ?? 0);
+$lecturerId = (int)($_GET['id'] ?? 0);
 
-if (!$studentId) {
-    $session->setFlash('error', 'Invalid student ID');
+if (!$lecturerId) {
+    $session->setFlash('error', 'Invalid lecturer ID');
     header('Location: list.php');
     exit;
 }
 
-// Get student details
+// Get lecturer details
 $stmt = $conn->prepare("
-    SELECT s.*, u.username, u.email
-    FROM students s
-    INNER JOIN users u ON s.user_id = u.id
-    WHERE s.id = :id
+    SELECT l.*, u.username, u.email
+    FROM lecturers l
+    INNER JOIN users u ON l.user_id = u.id
+    WHERE l.id = :id
 ");
-$stmt->execute(['id' => $studentId]);
-$student = $stmt->fetch();
+$stmt->execute(['id' => $lecturerId]);
+$lecturer = $stmt->fetch();
 
-if (!$student) {
-    $session->setFlash('error', 'Student not found');
+if (!$lecturer) {
+    $session->setFlash('error', 'Lecturer not found');
     header('Location: list.php');
     exit;
 }
@@ -56,13 +56,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             // Update password
             $stmt = $conn->prepare("UPDATE users SET password_hash = :password, require_password_change = 1, status = 'active' WHERE id = :id");
-            $stmt->execute(['password' => $passwordHash, 'id' => $student['user_id']]);
+            $stmt->execute(['password' => $passwordHash, 'id' => $lecturer['user_id']]);
 
             // Store new password in session for display
             $_SESSION['generated_password'] = $newPassword;
 
-            $session->setFlash('success', 'New password generated successfully. Click "Send Email" to notify the student.');
-            header('Location: reset_password.php?id=' . $studentId);
+            $session->setFlash('success', 'New password generated successfully. Click "Send Email" to notify the lecturer.');
+            header('Location: reset_password.php?id=' . $lecturerId);
             exit;
 
         } catch (Exception $e) {
@@ -78,12 +78,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Send email with new password
             $subject = APP_NAME . ' - Password Reset';
             $message = "
-Dear {$student['first_name']} {$student['last_name']},
+Dear {$lecturer['first_name']} {$lecturer['last_name']},
 
 Your password has been reset by an administrator.
 
 Your new login credentials are:
-Username: {$student['username']}
+Username: {$lecturer['username']}
 Password: {$newPassword}
 
 Please log in and change your password immediately for security reasons.
@@ -92,13 +92,13 @@ Best regards,
 " . APP_NAME . " Administration
             ";
 
-            $emailSent = Helper::sendEmail($student['email'], $subject, $message);
+            $emailSent = Helper::sendEmail($lecturer['email'], $subject, $message);
 
             if ($emailSent) {
                 // Clear the generated password from session
                 unset($_SESSION['generated_password']);
-                $session->setFlash('success', 'Password reset email sent successfully to ' . $student['email']);
-                header('Location: view.php?id=' . $studentId);
+                $session->setFlash('success', 'Password reset email sent successfully to ' . $lecturer['email']);
+                header('Location: view.php?id=' . $lecturerId);
                 exit;
             } else {
                 $session->setFlash('error', 'Failed to send email. Please try again.');
@@ -108,20 +108,20 @@ Best regards,
 }
 
 $pageTitle = 'Reset Password - ' . APP_NAME;
-include '../../../includes/header.php';
+include dirname(__DIR__, 3) . '/includes/header.php';
 ?>
 
-<?php include '../../../includes/admin/sidebar.php'; ?>
+<?php include dirname(__DIR__, 3) . '/includes/admin/sidebar.php'; ?>
 
 <div class="main-content">
     <div class="topbar d-flex justify-content-between align-items-center">
         <div class="topbar-left">
-            <h4>Reset Student Password</h4>
+            <h4>Reset Lecturer Password</h4>
         </div>
         <div class="topbar-right d-flex align-items-center">
-            <a href="view.php?id=<?php echo $student['id']; ?>" class="btn btn-secondary mr-2">👁️ View Student</a>
+            <a href="view.php?id=<?php echo $lecturer['id']; ?>" class="btn btn-secondary mr-2">👁️ View Lecturer</a>
             <a href="list.php" class="btn btn-secondary mr-2">← Back to List</a>
-            <?php include '../../../includes/notification_bell.php'; ?>
+            <?php include dirname(__DIR__, 3) . '/includes/notification_bell.php'; ?>
         </div>
     </div>
 
@@ -142,13 +142,13 @@ include '../../../includes/header.php';
             <div class="col-md-6">
                 <div class="card">
                     <div class="card-header">
-                        <h5>Student Information</h5>
+                        <h5>Lecturer Information</h5>
                     </div>
                     <div class="card-body">
-                        <p><strong>Name:</strong> <?php echo e($student['first_name'] . ' ' . $student['last_name']); ?></p>
-                        <p><strong>Email:</strong> <?php echo e($student['email']); ?></p>
-                        <p><strong>Username:</strong> <?php echo e($student['username']); ?></p>
-                        <p><strong>Student ID:</strong> <?php echo e($student['student_id']); ?></p>
+                        <p><strong>Name:</strong> <?php echo e($lecturer['first_name'] . ' ' . $lecturer['last_name']); ?></p>
+                        <p><strong>Email:</strong> <?php echo e($lecturer['email']); ?></p>
+                        <p><strong>Username:</strong> <?php echo e($lecturer['username']); ?></p>
+                        <p><strong>Lecturer ID:</strong> <?php echo e($lecturer['lecturer_id']); ?></p>
                     </div>
                 </div>
             </div>
@@ -162,7 +162,7 @@ include '../../../includes/header.php';
                         <form method="POST">
                             <input type="hidden" name="action" value="generate">
 
-                            <p>This will generate a new random password for the student.</p>
+                            <p>This will generate a new random password for the lecturer.</p>
 
                             <button type="submit" class="btn btn-warning btn-block">
                                 🔑 Generate New Password
@@ -181,8 +181,25 @@ include '../../../includes/header.php';
                                         </button>
                                     </div>
                                 </div>
-                                <small class="text-muted">Click the eye icon to hide/show the password. Copy this password and send it to the student securely.</small>
+                                <small class="text-muted">Click the eye icon to hide/show the password. Copy this password and send it to the lecturer securely.</small>
                             </div>
+
+                            <script>
+                            document.getElementById('togglePassword').addEventListener('click', function() {
+                                const passwordField = document.getElementById('generatedPassword');
+                                const icon = this.querySelector('i');
+
+                                if (passwordField.type === 'password') {
+                                    passwordField.type = 'text';
+                                    icon.className = 'fas fa-eye';
+                                    this.title = 'Hide Password';
+                                } else {
+                                    passwordField.type = 'password';
+                                    icon.className = 'fas fa-eye-slash';
+                                    this.title = 'Show Password';
+                                }
+                            });
+                            </script>
 
                             <form method="POST">
                                 <input type="hidden" name="action" value="send_email">
@@ -205,8 +222,8 @@ include '../../../includes/header.php';
                 <div class="alert alert-warning">
                     <strong>Important:</strong>
                     <ul class="mb-0">
-                        <li>The student will be required to change their password on first login after reset.</li>
-                        <li>Make sure to communicate the new password securely to the student.</li>
+                        <li>The lecturer will be required to change their password on first login after reset.</li>
+                        <li>Make sure to communicate the new password securely to the lecturer.</li>
                         <li>This action cannot be undone.</li>
                     </ul>
                 </div>
@@ -215,21 +232,4 @@ include '../../../includes/header.php';
     </div>
 </div>
 
-<script>
-document.getElementById('togglePassword')?.addEventListener('click', function() {
-    const passwordField = document.getElementById('generatedPassword');
-    const icon = this.querySelector('i');
-
-    if (passwordField.type === 'password') {
-        passwordField.type = 'text';
-        icon.className = 'fas fa-eye';
-        this.title = 'Hide Password';
-    } else {
-        passwordField.type = 'password';
-        icon.className = 'fas fa-eye-slash';
-        this.title = 'Show Password';
-    }
-});
-</script>
-
-<?php include '../../../includes/footer.php'; ?>
+<?php include dirname(__DIR__, 3) . '/includes/footer.php'; ?>

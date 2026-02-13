@@ -55,12 +55,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Handle final submit
     if (isset($_POST['action']) && $_POST['action'] === 'complete') {
-        // CSRF
-        if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
-            $errors[] = 'Invalid request (CSRF).';
-        } else {
-            // Get all data from session
-            $data = $_SESSION['add_student_data'];
+        // Get all data from session
+        $data = $_SESSION['add_student_data'];
             
             // Debug: Check what email value we have
             // Uncomment next line if you need to debug
@@ -91,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $enrollment_type = Security::sanitize($data['enrollment_type'] ?? 'Day');
 
             // Portal/account will be generated automatically
-            $account_status = 'enabled';
+            $account_status = 'active';
 
             // Validate required fields
             $missing = [];
@@ -267,11 +263,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // ignore mail errors
                     }
 
-                    // Clear session data
-                    unset($_SESSION['add_student_data']);
-
                     // Store credentials in session for admin to view
-                    $_SESSION['new_student_credentials'] = [
+                    $_SESSION['new_user_credentials'] = [
                         'student_name' => $first_name . ' ' . $last_name,
                         'student_id' => $studentCode,
                         'admission_number' => $admissionNumber,
@@ -282,22 +275,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'level' => $level_year,
                         'mail_sent' => $mailSent
                     ];
+                    $_SESSION['new_user_type'] = 'student';
 
-                    // Set success flash with credentials prominently displayed
-                    $msg = "<strong>Student added successfully!</strong><br><br>";
-                    $msg .= "<div style='background:#e7f3ff;padding:15px;border-radius:5px;border-left:4px solid #007bff;margin:10px 0;'>";
-                    $msg .= "<strong>Login Credentials:</strong><br>";
-                    $msg .= "<strong>Username:</strong> <code style='background:#fff;padding:2px 8px;border-radius:3px;'>{$username}</code><br>";
-                    $msg .= "<strong>Temporary Password:</strong> <code style='background:#fff;padding:2px 8px;border-radius:3px;'>{$tempPassword}</code><br>";
-                    $msg .= "<strong>Login URL:</strong> <a href='" . BASE_URL . "/views/student/login.php' target='_blank'>Student Portal Login</a>";
-                    $msg .= "</div>";
-                    if ($mailSent) {
-                        $msg .= "<div style='color:#28a745;margin-top:10px;'><i class='fas fa-check-circle'></i> Credentials have been emailed to the student.</div>";
-                    } else {
-                        $msg .= "<div style='color:#ffc107;margin-top:10px;'><i class='fas fa-exclamation-triangle'></i> Email was not sent. Please communicate these credentials to the student.</div>";
-                    }
-                    $session->setFlash('success', $msg);
-                    header('Location: list.php?show_credentials=1');
+                    $session->setFlash('success', 'Student account created successfully! Redirecting to credentials page...');
+                    header('Location: ../credentials.php');
                     exit;
                 } catch (Exception $e) {
                     if ($transactionStarted && $conn->inTransaction()) {
@@ -398,7 +379,6 @@ include '../../../includes/header.php';
                 </div>
 
                 <form method="POST" action="" enctype="multipart/form-data" id="studentForm">
-                    <?php echo csrfField(); ?>
                     <input type="hidden" name="step" id="stepInput" value="<?php echo $step; ?>">
 
                     <?php if ($step == 1): ?>

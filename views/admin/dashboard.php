@@ -45,6 +45,27 @@ $pendingRegistrations = $stmt->fetch()['count'];
 $stmt = $conn->query("SELECT COUNT(*) as count FROM results WHERE status = 'submitted'");
 $pendingResults = $stmt->fetch()['count'];
 
+// Get assigned courses with lecturers
+$stmt = $conn->prepare("
+    SELECT ca.*, c.course_code, c.course_name, l.first_name, l.last_name, l.lecturer_id,
+           s.semester_name, ay.year_name, p.program_code, p.program_name
+    FROM course_assignments ca
+    INNER JOIN courses c ON ca.course_id = c.id
+    INNER JOIN lecturers l ON ca.lecturer_id = l.id
+    INNER JOIN semesters s ON ca.semester_id = s.id
+    INNER JOIN academic_years ay ON s.academic_year_id = ay.id
+    INNER JOIN programs p ON c.program_id = p.id
+    WHERE ca.status = 'active' AND c.status = 'active' AND l.status = 'active'
+    ORDER BY ca.assigned_date DESC
+    LIMIT 4
+");
+$stmt->execute();
+$assignedCourses = $stmt->fetchAll();
+
+// Pending lecturer approvals
+$stmt = $conn->query("SELECT COUNT(*) as count FROM lecturers WHERE status = 'pending'");
+$pendingLecturerApprovals = $stmt->fetch()['count'];
+
 // Recent activities
 $logger = new Logger();
 $recentActivities = $logger->getRecentActivities(10);
@@ -85,12 +106,12 @@ include '../../includes/header.php';
             <div class="user-info">
                 <div class="user-dropdown">
                     <button class="user-dropdown-toggle" id="userDropdown">
-                        <div class="user-avatar">
+                        <div class="user-avatar" style="width: 35px; height: 35px; font-size: 14px; margin-bottom: 5px;">
                             <?php echo strtoupper(substr($currentUser['profile']['first_name'] ?? 'A', 0, 1) . substr($currentUser['profile']['last_name'] ?? 'D', 0, 1)); ?>
                         </div>
-                        <div>
+                        <div style="text-align: center;">
                             <strong><?php echo e($currentUser['profile']['first_name'] ?? ''); ?> <?php echo e($currentUser['profile']['last_name'] ?? ''); ?></strong>
-                            <br><small>Administrator</small>
+                            <br><small>Admin</small>
                         </div>
                         <i class="dropdown-arrow">▼</i>
                     </button>
@@ -155,6 +176,18 @@ include '../../includes/header.php';
                     <div class="stat-change"><i class="fas fa-exclamation-circle"></i> Needs Review</div>
                 </div>
             </div>
+
+            <div class="stat-card">
+                <div class="stat-icon approval-icon"><i class="fas fa-user-check"></i></div>
+                <div class="stat-details">
+                    <h3><?php echo number_format($pendingLecturerApprovals); ?></h3>
+                    <p>Lecturer Approvals</p>
+                    <div class="stat-change <?php echo $pendingLecturerApprovals > 0 ? 'warning' : 'positive'; ?>">
+                        <i class="fas fa-<?php echo $pendingLecturerApprovals > 0 ? 'exclamation-triangle' : 'check-circle'; ?>"></i>
+                        <?php echo $pendingLecturerApprovals > 0 ? 'Pending' : 'All Clear'; ?>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Quick Actions Section -->
@@ -187,7 +220,56 @@ include '../../includes/header.php';
             </div>
         </div>
 
-        
+        <!-- Assigned Courses Section -->
+        <div class="assigned-courses-section">
+            <div class="section-header">
+                <h3><i class="fas fa-graduation-cap"></i> Recent Courses</h3>
+                <a href="courses/list.php" class="btn btn-sm btn-outline-primary">View All Courses</a>
+            </div>
+            <div class="assigned-courses-grid">
+                <?php if (!empty($assignedCourses)): ?>
+                    <?php foreach ($assignedCourses as $assignment): ?>
+                        <div class="assignment-card">
+                            <div class="assignment-header">
+                                <div class="course-info">
+                                    <h5><?php echo e($assignment['course_code']); ?></h5>
+                                    <p><?php echo e($assignment['course_name']); ?></p>
+                                    <small class="text-muted"><?php echo e($assignment['program_code'] . ' - ' . $assignment['program_name']); ?></small>
+                                </div>
+                                <div class="assignment-status">
+                                    <span class="badge badge-<?php echo Helper::getStatusColor($assignment['status']); ?>">
+                                        <?php echo e(ucfirst($assignment['status'])); ?>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="assignment-details">
+                                <div class="lecturer-info">
+                                    <i class="fas fa-chalkboard-teacher"></i>
+                                    <strong><?php echo e($assignment['first_name'] . ' ' . $assignment['last_name']); ?></strong>
+                                    <br><small class="text-muted"><?php echo e($assignment['lecturer_id']); ?></small>
+                                </div>
+                                <div class="semester-info">
+                                    <i class="fas fa-calendar-alt"></i>
+                                    <?php echo e($assignment['year_name'] . ' - ' . $assignment['semester_name']); ?>
+                                </div>
+                                <div class="assignment-date">
+                                    <i class="fas fa-clock"></i>
+                                    <?php echo Helper::formatDate($assignment['assigned_date']); ?>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <div class="empty-state">
+                        <i class="fas fa-graduation-cap"></i>
+                        <h4>No Course Assignments</h4>
+                        <p>No courses have been assigned to lecturers yet.</p>
+                        <a href="courses/assign.php" class="btn btn-primary">Assign First Course</a>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
         <!-- Recent Activity & Sessions - Full Width, Collapsible -->
         <div class="row">
             <div class="col-md-7">
@@ -838,10 +920,200 @@ include '../../includes/header.php';
     padding-top: 10px;
 }
 
+/* Add scrolling for activity section */
+.recent-activity .foldable-body {
+    max-height: 400px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.recent-activity .foldable-body::-webkit-scrollbar {
+    width: 6px;
+}
+
+.recent-activity .foldable-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+.recent-activity .foldable-body::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+}
+
+.recent-activity .foldable-body::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* Add scrolling for sessions section */
+.user-sessions-card .foldable-body {
+    max-height: 350px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.user-sessions-card .foldable-body::-webkit-scrollbar {
+    width: 6px;
+}
+
+.user-sessions-card .foldable-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+.user-sessions-card .foldable-body::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+}
+
+.user-sessions-card .foldable-body::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
 .foldable-body.folded {
     max-height: 0;
     opacity: 0;
     padding-top: 0;
+}
+
+/* Assigned Courses Section */
+.assigned-courses-section {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #f0f0f0;
+}
+
+.section-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: #1a1a2e;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.section-header h3 i {
+    color: #667eea;
+}
+
+.assigned-courses-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+}
+
+.assignment-card {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 16px;
+    border: 1px solid #e9ecef;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.assignment-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    border-color: #667eea;
+}
+
+.assignment-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.course-info h5 {
+    margin: 0 0 4px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a1a2e;
+}
+
+.course-info p {
+    margin: 0 0 4px 0;
+    font-size: 13px;
+    color: #495057;
+    font-weight: 500;
+}
+
+.course-info small {
+    color: #6c757d;
+    font-size: 11px;
+}
+
+.assignment-status {
+    flex-shrink: 0;
+}
+
+.assignment-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.lecturer-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #495057;
+}
+
+.lecturer-info i {
+    color: #28a745;
+    width: 14px;
+}
+
+.lecturer-info strong {
+    color: #1a1a2e;
+}
+
+.semester-info,
+.assignment-date {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #6c757d;
+}
+
+.semester-info i,
+.assignment-date i {
+    width: 12px;
+    color: #667eea;
+}
+
+/* Responsive adjustments for assigned courses */
+@media (max-width: 768px) {
+    .assigned-courses-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .assignment-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
 }
 </style>
 
@@ -1382,6 +1654,92 @@ function renderAdminNotificationBell() {
             }
         });
     }
+
+    // Auto-refresh recent activities
+    let activityRefreshInterval;
+
+    function refreshRecentActivities() {
+        const activityBody = document.getElementById('activityBody');
+        if (!activityBody) return;
+
+        // Show loading indicator
+        const originalContent = activityBody.innerHTML;
+        activityBody.innerHTML = '<div class="text-center" style="padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Refreshing...</div>';
+
+        fetch('<?php echo BASE_URL; ?>/api/activities.php?limit=10')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success && data.activities && data.activities.length > 0) {
+                    let html = '';
+                    data.activities.forEach(activity => {
+                        let icon = '';
+                        switch(activity.action) {
+                            case 'login': icon = '<i class="fas fa-sign-in-alt"></i>'; break;
+                            case 'logout': icon = '<i class="fas fa-sign-out-alt"></i>'; break;
+                            case 'create': icon = '<i class="fas fa-plus"></i>'; break;
+                            case 'update': icon = '<i class="fas fa-edit"></i>'; break;
+                            case 'delete': icon = '<i class="fas fa-trash"></i>'; break;
+                            case 'approve': icon = '<i class="fas fa-check"></i>'; break;
+                            case 'submit': icon = '<i class="fas fa-paper-plane"></i>'; break;
+                            default: icon = '<i class="fas fa-circle"></i>';
+                        }
+
+                        const description = activity.description || 'Unknown activity';
+                        const module = activity.module || 'system';
+                        const time = activity.formatted_time || '';
+                        const date = activity.formatted_date || '';
+                        const username = activity.username || '';
+
+                        html += `
+                            <div class="activity-item">
+                                <div class="activity-icon">
+                                    ${icon}
+                                </div>
+                                <div class="activity-details">
+                                    <h5>${description.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</h5>
+                                    <p>
+                                        <i class="fas fa-clock"></i>
+                                        <span class="activity-time" title="${date} ${time}">
+                                            ${time}
+                                        </span>
+                                        <span class="activity-date">${date}</span>
+                                        <span class="activity-module">${module}</span>
+                                        ${username ? `<span class="activity-user"><i class="fas fa-user"></i> ${username.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>` : ''}
+                                    </p>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    activityBody.innerHTML = html;
+                } else {
+                    // Restore original content if no activities or error
+                    activityBody.innerHTML = originalContent;
+                }
+            })
+            .catch(error => {
+                console.log('Error refreshing activities:', error);
+                // Restore original content on error
+                activityBody.innerHTML = originalContent;
+            });
+    }
+
+    // Auto-refresh every 30 seconds
+    activityRefreshInterval = setInterval(refreshRecentActivities, 30000);
+
+    // Initial refresh after 5 seconds
+    setTimeout(refreshRecentActivities, 5000);
+
+    // Clear interval when page unloads
+    window.addEventListener('beforeunload', function() {
+        if (activityRefreshInterval) {
+            clearInterval(activityRefreshInterval);
+        }
+    });
     </script>
     
     <?php

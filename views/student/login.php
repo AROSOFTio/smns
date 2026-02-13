@@ -70,7 +70,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($user && $user['role'] === 'student') {
                 $username_valid = true;
                 $step = 2;
-                $profile_name = $user['fullname'] ?? $user['username'];
+                // Get student profile for full name
+                $db = new Database();
+                $conn = $db->getConnection();
+                $stmt = $conn->prepare("SELECT first_name, last_name FROM students WHERE user_id = :user_id");
+                $stmt->execute(['user_id' => $user['id']]);
+                $student = $stmt->fetch();
+                if ($student) {
+                    $profile_name = trim($student['first_name'] . ' ' . $student['last_name']);
+                } else {
+                    $profile_name = $user['username'];
+                }
             } else {
                 $error = 'Invalid credentials';
             }
@@ -90,7 +100,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $auth = new Auth('student');
             $user = $auth->usernameExists($entered_username);
             if (is_array($user)) {
-                $profile_name = $user['fullname'] ?? $user['username'];
+                // Get student profile for full name
+                $db = new Database();
+                $conn = $db->getConnection();
+                $stmt = $conn->prepare("SELECT first_name, last_name FROM students WHERE user_id = :user_id");
+                $stmt->execute(['user_id' => $user['id']]);
+                $student = $stmt->fetch();
+                if ($student) {
+                    $profile_name = trim($student['first_name'] . ' ' . $student['last_name']);
+                } else {
+                    $profile_name = $user['username'];
+                }
             }
         } else {
             // Attempt login
@@ -116,7 +136,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Re-fetch user for profile name
                 $user = $auth->usernameExists($entered_username);
                 if (is_array($user)) {
-                    $profile_name = $user['fullname'] ?? $user['username'];
+                    // Get student profile for full name
+                    $db = new Database();
+                    $conn = $db->getConnection();
+                    $stmt = $conn->prepare("SELECT first_name, last_name FROM students WHERE user_id = :user_id");
+                    $stmt->execute(['user_id' => $user['id']]);
+                    $student = $stmt->fetch();
+                    if ($student) {
+                        $profile_name = trim($student['first_name'] . ' ' . $student['last_name']);
+                    } else {
+                        $profile_name = $user['username'];
+                    }
                 } else {
                     $profile_name = $entered_username;
                 }
@@ -210,6 +240,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php endif; ?>
             </form>
             
+            <script>
+                // Auto-hide success message after 30 seconds
+                setTimeout(function() {
+                    const successAlert = document.querySelector('.alert-success');
+                    if (successAlert) {
+                        successAlert.style.transition = 'opacity 0.5s ease-out';
+                        successAlert.style.opacity = '0';
+                        setTimeout(function() {
+                            successAlert.style.display = 'none';
+                        }, 500);
+                    }
+                }, 30000);
+            </script>
             
         </div>
     </div>

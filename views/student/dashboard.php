@@ -100,7 +100,11 @@ include '../../includes/header.php';
                 <div class="user-dropdown">
                     <button class="user-dropdown-toggle" id="userDropdown">
                         <div class="user-avatar">
-                            <?php echo strtoupper(substr($studentProfile['first_name'], 0, 1) . substr($studentProfile['last_name'], 0, 1)); ?>
+                            <?php if (!empty($studentProfile['photo'])): ?>
+                                <img src="<?php echo BASE_URL . '/' . $studentProfile['photo']; ?>" alt="Profile Photo" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
+                            <?php else: ?>
+                                <?php echo strtoupper(substr($studentProfile['first_name'], 0, 1) . substr($studentProfile['last_name'], 0, 1)); ?>
+                            <?php endif; ?>
                         </div>
                         <div>
                             <strong><?php echo e($studentProfile['first_name']); ?> <?php echo e($studentProfile['last_name']); ?></strong>

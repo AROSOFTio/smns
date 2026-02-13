@@ -26,11 +26,8 @@ $error = '';
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $csrf_token = $_POST['csrf_token'] ?? '';
-    if (Security::verifyCSRFToken($csrf_token)) {
-        
-        $username = Security::sanitize($_POST['username'] ?? '');
-        $email = Security::sanitize($_POST['email'] ?? '');
+    
+    $username = Security::sanitize($_POST['username'] ?? '');
         $password = $_POST['password'] ?? '';
         $confirmPassword = $_POST['confirm_password'] ?? '';
         $role = Security::sanitize($_POST['role'] ?? '');
@@ -119,14 +116,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                         // Show credentials to admin for lecturer/finance
                         if (in_array($role, ['lecturer', 'finance'])) {
-                            $success = "<strong>User created successfully!</strong><br><br>";
-                            $success .= "<div style='background:#e7f3ff;padding:15px;border-radius:5px;border-left:4px solid #007bff;margin:10px 0;'>";
-                            $success .= "<strong>Login Credentials:</strong><br>";
-                            $success .= "<strong>Username:</strong> <code style='background:#fff;padding:2px 8px;border-radius:3px;'>{$username}</code><br>";
-                            $success .= "<strong>Password:</strong> <code style='background:#fff;padding:2px 8px;border-radius:3px;'>{$password}</code><br>";
-                            $success .= "<strong>Login URL:</strong> <a href='" . BASE_URL . "/views/{$role}/login.php' target='_blank'>" . ucfirst($role) . " Portal Login</a>";
-                            $success .= "</div>";
-                            $success .= "<div style='color:#ffc107;margin-top:10px;'><i class='fas fa-exclamation-triangle'></i> Staff will be required to change password on first login.</div>";
+                            // Store credentials in session for display
+                            $_SESSION['new_user_credentials'] = [
+                                'user_name' => $firstName . ' ' . $lastName,
+                                'username' => $username,
+                                'password' => $password,
+                                'email' => $email,
+                                'role' => $role,
+                                'mail_sent' => false // Admin users don't get emails
+                            ];
+                            $_SESSION['new_user_type'] = $role;
+
+                            $session->setFlash('success', ucfirst($role) . ' account created successfully! Redirecting to credentials page...');
+                            header('Location: ../credentials.php');
+                            exit;
                         } else {
                             $success = "User created successfully! Username: $username, Role: $role";
                         }
@@ -152,10 +155,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $error = $validator->firstError();
         }
-    } else {
-        $error = 'Invalid request. Please try again.';
     }
 }
+
+$db = new Database();
+$conn = $db->getConnection();
+
+// Notifications (admin sees all system notifications)
+$stmt = $conn->prepare("SELECT * FROM notifications WHERE read_status = 'unread' ORDER BY created_at DESC LIMIT 10");
+$stmt->execute();
+$unreadNotifications = $stmt->fetchAll();
 
 $pageTitle = 'Add User - ' . APP_NAME;
 $additionalCSS = ['admin.css'];
@@ -165,12 +174,15 @@ include '../../../includes/header.php';
 <?php include '../../../includes/admin/sidebar.php'; ?>
 
 <div class="main-content">
-    <div class="topbar">
+    <div class="topbar d-flex justify-content-between align-items-center">
         <div class="topbar-left">
             <h4>
                 <a href="../dashboard.php" class="btn btn-link">← Back to Dashboard</a>
                 Add User
             </h4>
+        </div>
+        <div class="topbar-right d-flex align-items-center">
+            <?php include '../../../includes/notification_bell.php'; ?>
         </div>
     </div>
     
@@ -200,7 +212,6 @@ include '../../../includes/header.php';
                         </div>
                         <div class="card-body">
                             <form method="POST" action="">
-                                <?php echo csrfField(); ?>
                                 
                                 <!-- Role Selection -->
                                 <div class="form-group">

@@ -7,9 +7,6 @@ $currentDir = basename(dirname($_SERVER['PHP_SELF']));
 ?>
 <div class="sidebar finance-sidebar" id="sidebar">
     <div class="sidebar-header">
-        <div class="sidebar-logo">
-            <i class="fas fa-coins"></i>
-        </div>
         <h3><?php echo APP_SHORT_NAME; ?></h3>
         <p><small>Finance Portal</small></p>
     </div>

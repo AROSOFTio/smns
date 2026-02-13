@@ -32,6 +32,45 @@ $db = new Database();
 $conn = $db->getConnection();
 
 switch ($action) {
+    case 'fetch':
+        // Fetch notifications for the current user
+        $isAdmin = !empty($_SESSION['admin_logged_in']);
+        $limit = intval($_GET['limit'] ?? 10);
+        
+        if ($isAdmin) {
+            // Admin sees all system notifications
+            $stmt = $conn->prepare("SELECT * FROM notifications WHERE read_status = 'unread' ORDER BY created_at DESC LIMIT :limit");
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        } else {
+            // Others see only their notifications
+            $stmt = $conn->prepare("SELECT * FROM notifications WHERE user_id = :user_id AND read_status = 'unread' ORDER BY created_at DESC LIMIT :limit");
+            $stmt->bindValue(':user_id', $userId, PDO::PARAM_INT);
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+        $notifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Format notifications for JSON response
+        $formattedNotifications = [];
+        foreach ($notifications as $notif) {
+            $formattedNotifications[] = [
+                'id' => $notif['id'],
+                'type' => $notif['type'],
+                'title' => $notif['title'],
+                'message' => $notif['message'],
+                'link' => $notif['link'],
+                'created_at' => $notif['created_at'],
+                'time_ago' => Helper::timeAgo($notif['created_at'])
+            ];
+        }
+        
+        echo json_encode([
+            'success' => true,
+            'count' => count($formattedNotifications),
+            'notifications' => $formattedNotifications
+        ]);
+        break;
+
     case 'mark_all_read':
         // Admin marks all, others mark only their own
         $isAdmin = !empty($_SESSION['admin_logged_in']);

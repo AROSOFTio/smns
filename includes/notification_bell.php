@@ -156,16 +156,8 @@
                     })
                     .then(function(data){
                         if (data.success) {
-                            msg.style.backgroundColor = '#d4edda';
-                            msg.style.color = '#155724';
-                            msg.textContent = data.message || 'Password changed successfully!';
                             form.reset();
-                            setTimeout(function(){ 
-                                panel.style.display = 'none';
-                                msg.textContent = '';
-                                msg.style.backgroundColor = '';
-                                msg.style.color = '';
-                            }, 1500);
+                            panel.style.display = 'none';
                         } else {
                             msg.style.backgroundColor = '#fee';
                             msg.style.color = '#c00';
@@ -182,6 +174,216 @@
             })();
         </script>
     <?php endif; ?>
+    
+    <script>
+    (function() {
+        const bell = document.getElementById('notificationBell');
+        const dropdown = document.getElementById('notificationDropdown');
+        const markAllBtn = document.getElementById('markAllRead');
+        
+        if (!bell || !dropdown) return;
+        
+        bell.addEventListener('click', function(e) {
+            e.stopPropagation();
+            dropdown.classList.toggle('show');
+        });
+        
+        document.addEventListener('click', function(e) {
+            if (!dropdown.contains(e.target) && e.target !== bell) {
+                dropdown.classList.remove('show');
+            }
+        });
+        
+        if (markAllBtn) {
+            markAllBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                fetch('<?php echo BASE_URL; ?>/api/notifications.php?action=mark_all_read', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin'
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        document.querySelectorAll('.notification-item.unread').forEach(item => {
+                            item.classList.remove('unread');
+                        });
+                        const badge = bell.querySelector('.notification-badge');
+                        if (badge) badge.remove();
+                        markAllBtn.style.display = 'none';
+                    }
+                });
+            });
+        }
+        
+        // Auto-refresh notifications
+        let notificationRefreshInterval;
+        
+        function refreshNotifications() {
+            fetch('<?php echo BASE_URL; ?>/api/notifications.php?action=fetch&limit=10')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        updateNotificationBell(data.count, data.notifications);
+                    }
+                })
+                .catch(error => {
+                    console.log('Error refreshing notifications:', error);
+                });
+        }
+        
+        function updateNotificationBell(count, notifications) {
+            const badge = bell.querySelector('.notification-badge');
+            
+            if (count > 0) {
+                if (!badge) {
+                    const newBadge = document.createElement('span');
+                    newBadge.className = 'notification-badge';
+                    newBadge.textContent = count;
+                    bell.appendChild(newBadge);
+                } else {
+                    badge.textContent = count;
+                }
+                
+                // Update dropdown content
+                const list = dropdown.querySelector('.notification-list');
+                if (list && notifications.length > 0) {
+                    let html = '';
+                    notifications.forEach(notif => {
+                        const iconMap = {
+                            'info': 'info-circle',
+                            'success': 'check-circle',
+                            'warning': 'exclamation-triangle',
+                            'error': 'times-circle'
+                        };
+                        const icon = iconMap[notif.type] || 'info-circle';
+                        
+                        html += `
+                            <a href="${notif.link || '#'}" class="notification-item unread" data-id="${notif.id}">
+                                <div class="notif-icon notif-${notif.type}">
+                                    <i class="fas fa-${icon}"></i>
+                                </div>
+                                <div class="notif-content">
+                                    <p class="notif-title">${notif.title.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+                                    <p class="notif-text">${notif.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+                                    <span class="notif-time">${notif.time_ago}</span>
+                                </div>
+                            </a>
+                        `;
+                    });
+                    list.innerHTML = html;
+                    
+                    // Show mark all read link
+                    const header = dropdown.querySelector('.notification-header');
+                    const markAllLink = header.querySelector('#markAllRead');
+                    if (!markAllLink) {
+                        const newLink = document.createElement('a');
+                        newLink.href = '#';
+                        newLink.id = 'markAllRead';
+                        newLink.textContent = 'Mark all read';
+                        header.appendChild(newLink);
+                        
+                        // Re-attach event listener
+                        newLink.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            fetch('<?php echo BASE_URL; ?>/api/notifications.php?action=mark_all_read', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'same-origin'
+                            })
+                            .then(r => r.json())
+                            .then(data => {
+                                if (data.success) {
+                                    document.querySelectorAll('.notification-item.unread').forEach(item => {
+                                        item.classList.remove('unread');
+                                    });
+                                    const badge = bell.querySelector('.notification-badge');
+                                    if (badge) badge.remove();
+                                    newLink.style.display = 'none';
+                                }
+                            });
+                        });
+                    } else {
+                        markAllLink.style.display = 'inline';
+                    }
+                }
+            } else {
+                if (badge) badge.remove();
+                
+                // Update dropdown to show empty state
+                const list = dropdown.querySelector('.notification-list');
+                if (list) {
+                    list.innerHTML = `
+                        <div class="notification-empty">
+                            <i class="fas fa-bell-slash"></i>
+                            <p>No new notifications</p>
+                        </div>
+                    `;
+                }
+                
+                // Hide mark all read link
+                const markAllLink = dropdown.querySelector('#markAllRead');
+                if (markAllLink) markAllLink.style.display = 'none';
+            }
+        }
+        
+        // Auto-refresh every 30 seconds
+        notificationRefreshInterval = setInterval(refreshNotifications, 30000);
+        
+        // Initial refresh after 10 seconds (to avoid immediate load)
+        setTimeout(refreshNotifications, 10000);
+        
+        // Clear interval when page unloads
+        window.addEventListener('beforeunload', function() {
+            if (notificationRefreshInterval) {
+                clearInterval(notificationRefreshInterval);
+            }
+        });
+        
+        // Function to mark individual notification as read
+        window.markNotificationRead = function(notifId) {
+            fetch('<?php echo BASE_URL; ?>/api/notifications.php?action=mark_read&id=' + notifId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin'
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const badge = bell.querySelector('.notification-badge');
+                    if (badge) {
+                        const count = parseInt(badge.textContent) - 1;
+                        if (count <= 0) badge.remove();
+                        else badge.textContent = count;
+                    }
+                    
+                    // Mark the item as read in the dropdown
+                    const item = dropdown.querySelector(`[data-id="${notifId}"]`);
+                    if (item) {
+                        item.classList.remove('unread');
+                    }
+                }
+            });
+        };
+        
+        // Add click listeners to notification items
+        document.addEventListener('click', function(e) {
+            const item = e.target.closest('.notification-item');
+            if (item && item.classList.contains('unread')) {
+                const notifId = item.getAttribute('data-id');
+                if (notifId) {
+                    markNotificationRead(notifId);
+                }
+            }
+        });
+    })();
+    </script>
     <div class="notification-dropdown" id="notificationDropdown">
         <div class="notification-header">
             <h6>Notifications</h6>

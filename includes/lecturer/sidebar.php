@@ -3,14 +3,34 @@
  * Lecturer Sidebar Navigation
  */
 $currentPage = basename($_SERVER['PHP_SELF']);
+
+// Get current lecturer profile for sidebar
+$session = new Session('lecturer');
+$auth = new Auth('lecturer');
+$currentUser = $auth->getCurrentUser();
+$lecturerProfile = $currentUser['profile'];
 ?>
 <div class="sidebar lecturer-sidebar" id="sidebar">
     <div class="sidebar-header">
-        <div class="sidebar-logo">
-            <i class="fas fa-chalkboard-teacher"></i>
-        </div>
         <h3><?php echo APP_SHORT_NAME; ?></h3>
         <p><small>Faculty Portal</small></p>
+
+        <!-- Lecturer Profile Section -->
+        <div class="sidebar-profile">
+            <div class="sidebar-profile-avatar">
+                <?php if (!empty($lecturerProfile['photo'])): ?>
+                    <img src="<?php echo BASE_URL . '/' . $lecturerProfile['photo']; ?>" alt="Profile Photo">
+                <?php else: ?>
+                    <div class="sidebar-profile-initials">
+                        <?php echo strtoupper(substr($lecturerProfile['first_name'], 0, 1) . substr($lecturerProfile['last_name'], 0, 1)); ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+            <div class="sidebar-profile-info">
+                <div class="sidebar-profile-name"><?php echo e($lecturerProfile['first_name'] . ' ' . $lecturerProfile['last_name']); ?></div>
+                <div class="sidebar-profile-id"><?php echo e($lecturerProfile['lecturer_id']); ?></div>
+            </div>
+        </div>
     </div>
     
     <div class="sidebar-menu">

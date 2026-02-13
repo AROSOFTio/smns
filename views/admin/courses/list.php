@@ -62,6 +62,10 @@ $courses = $stmt->fetchAll();
 $stmt = $conn->query("SELECT * FROM programs WHERE status = 'active' ORDER BY program_name");
 $programs = $stmt->fetchAll();
 
+// Get academic years for filter
+$stmt = $conn->query("SELECT DISTINCT level_year FROM courses WHERE level_year IS NOT NULL AND level_year != '' ORDER BY level_year DESC");
+$academicYears = $stmt->fetchAll();
+
 // Notifications (admin sees all system notifications)
 $stmt = $conn->prepare("SELECT * FROM notifications WHERE read_status = 'unread' ORDER BY created_at DESC LIMIT 10");
 $stmt->execute();
@@ -70,6 +74,86 @@ $unreadNotifications = $stmt->fetchAll();
 $pageTitle = 'Courses List - ' . APP_NAME;
 include '../../../includes/header.php';
 ?>
+
+<style>
+/* Override global overflow-x hidden for table scrolling */
+.content-area .table-responsive {
+    overflow-x: auto !important;
+    max-width: 100% !important;
+}
+
+.content-area .card-body {
+    overflow-x: visible !important;
+}
+
+/* Ensure vertical scrolling works */
+html, body {
+    overflow-y: auto !important;
+    height: auto !important;
+}
+
+.main-content {
+    overflow-y: auto !important;
+    min-height: 100vh !important;
+}
+
+.content-area {
+    overflow-y: visible !important;
+}
+
+.table-responsive table {
+    min-width: 800px;
+    white-space: nowrap;
+}
+
+/* Ensure table cells don't break words unnecessarily */
+.table-responsive table th,
+.table-responsive table td {
+    white-space: nowrap;
+    padding: 8px 12px;
+}
+
+/* Allow course names to wrap if needed */
+.table-responsive table td:nth-child(2) {
+    white-space: normal;
+    max-width: 200px;
+    word-wrap: break-word;
+}
+
+/* Allow program names to wrap */
+.table-responsive table td:nth-child(3) {
+    white-space: normal;
+    max-width: 150px;
+    word-wrap: break-word;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+    .content-area .card-body .row .col-md-4,
+    .content-area .card-body .row .col-md-3,
+    .content-area .card-body .row .col-md-2 {
+        margin-bottom: 10px;
+    }
+    
+    .table-responsive table {
+        min-width: 600px;
+        font-size: 12px;
+    }
+    
+    .table-responsive table th,
+    .table-responsive table td {
+        padding: 6px 8px;
+    }
+    
+    /* Hide less critical columns on mobile */
+    .table-responsive table th:nth-child(5),
+    .table-responsive table td:nth-child(5),
+    .table-responsive table th:nth-child(6),
+    .table-responsive table td:nth-child(6) {
+        display: none;
+    }
+}
+</style>
 
 <?php include '../../../includes/admin/sidebar.php'; ?>
 
@@ -138,10 +222,11 @@ include '../../../includes/header.php';
                         <div class="col-md-2">
                             <select name="level" class="form-control">
                                 <option value="">All Levels</option>
-                                <option value="1" <?php echo $level == '1' ? 'selected' : ''; ?>>Year 1</option>
-                                <option value="2" <?php echo $level == '2' ? 'selected' : ''; ?>>Year 2</option>
-                                <option value="3" <?php echo $level == '3' ? 'selected' : ''; ?>>Year 3</option>
-                                <option value="4" <?php echo $level == '4' ? 'selected' : ''; ?>>Year 4</option>
+                                <?php foreach($academicYears as $year): ?>
+                                    <option value="<?php echo $year['level_year']; ?>" <?php echo $level == $year['level_year'] ? 'selected' : ''; ?>>
+                                        Year <?php echo e($year['level_year']); ?>
+                                    </option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="col-md-3">
@@ -160,14 +245,14 @@ include '../../../includes/header.php';
             </div>
             <div class="card-body">
                 <?php if (count($courses) > 0): ?>
-                    <div class="table-responsive">
-                        <table class="table table-hover">
+                    <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
+                        <table class="table table-hover" style="min-width: 800px;">
                             <thead>
                                 <tr>
                                     <th>Course Code</th>
                                     <th>Course Name</th>
                                     <th>Program</th>
-                                    <th>Level</th>
+                                    <th>Level/Year</th>
                                     <th>Credit Hours</th>
                                     <th>Semester</th>
                                     <th>Status</th>
@@ -183,7 +268,7 @@ include '../../../includes/header.php';
                                             <?php echo e($course['program_code']); ?>
                                             <br><small class="text-muted"><?php echo e($course['program_name']); ?></small>
                                         </td>
-                                        <td>Year <?php echo $course['level_year']; ?></td>
+                                        <td>Year <?php echo e($course['level_year']); ?></td>
                                         <td><?php echo $course['credit_hours']; ?></td>
                                         <td>
                                             <?php
@@ -199,6 +284,7 @@ include '../../../includes/header.php';
                                         <td>
                                             <a href="view.php?id=<?php echo $course['id']; ?>" class="btn btn-sm btn-info">View</a>
                                             <a href="edit.php?id=<?php echo $course['id']; ?>" class="btn btn-sm btn-warning">Edit</a>
+                                            <a href="assign.php?id=<?php echo $course['id']; ?>" class="btn btn-sm btn-success">Assign</a>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>

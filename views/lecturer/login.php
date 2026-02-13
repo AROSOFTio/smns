@@ -199,6 +199,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </form>
             
             
+            <script>
+                // Auto-hide success message after 30 seconds
+                setTimeout(function() {
+                    const successAlert = document.querySelector('.alert-success');
+                    if (successAlert) {
+                        successAlert.style.transition = 'opacity 0.5s ease-out';
+                        successAlert.style.opacity = '0';
+                        setTimeout(function() {
+                            successAlert.style.display = 'none';
+                        }, 500);
+                    }
+                }, 30000);
+            </script>
+            
         </div>
     </div>
 </body>

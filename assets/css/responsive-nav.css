@@ -182,6 +182,22 @@
     display: none;
 }
 
+.sidebar.collapsed .sidebar-profile {
+    flex-direction: column;
+    align-items: center;
+    padding: 8px;
+    margin-top: 10px;
+}
+
+.sidebar.collapsed .sidebar-profile-info {
+    display: none;
+}
+
+.sidebar.collapsed .sidebar-profile-avatar {
+    width: 40px;
+    height: 40px;
+}
+
 /* Sidebar Footer */
 .sidebar-footer {
     position: absolute;
@@ -290,7 +306,7 @@
 /* Large Screen Optimizations */
 @media (min-width: 1200px) {
     .stats-grid {
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(5, 1fr);
     }
     
     .action-grid {

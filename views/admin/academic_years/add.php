@@ -20,11 +20,7 @@ $error = '';
 $success = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
-        $error = 'Invalid request';
-    } else {
-        $year_name = Security::sanitize($_POST['year_name'] ?? '');
-        $start_date = $_POST['start_date'] ?? null;
+    $year_name = Security::sanitize($_POST['year_name'] ?? '');
         $end_date = $_POST['end_date'] ?? null;
         $status = Security::sanitize($_POST['status'] ?? 'active');
 
@@ -36,7 +32,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $success = 'Academic year added';
         }
     }
-}
 
 $pageTitle = 'Add Academic Year - ' . APP_NAME;
 include '../../../includes/header.php';
@@ -52,7 +47,6 @@ include '../../../includes/header.php';
         <?php if ($error): ?><div class="alert alert-danger"><?php echo e($error); ?></div><?php endif; ?>
         <div class="card"><div class="card-body">
             <form method="POST">
-                <?php echo csrfField(); ?>
                 <div class="form-group"><label>Year Name (e.g., 2025/2026)</label><input type="text" name="year_name" class="form-control" required></div>
                 <div class="form-row"><div class="form-group col-md-6"><label>Start Date</label><input type="date" name="start_date" class="form-control" required></div>
                 <div class="form-group col-md-6"><label>End Date</label><input type="date" name="end_date" class="form-control" required></div></div>

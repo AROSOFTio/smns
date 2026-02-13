@@ -3,14 +3,34 @@
  * Student Sidebar Navigation
  */
 $currentPage = basename($_SERVER['PHP_SELF']);
+
+// Get current student profile for sidebar
+$session = new Session('student');
+$auth = new Auth('student');
+$currentUser = $auth->getCurrentUser();
+$studentProfile = $currentUser['profile'];
 ?>
 <div class="sidebar student-sidebar" id="sidebar">
     <div class="sidebar-header">
-        <div class="sidebar-logo">
-            <i class="fas fa-graduation-cap"></i>
-        </div>
         <h3><?php echo APP_SHORT_NAME; ?></h3>
         <p><small>Student Portal</small></p>
+
+        <!-- Student Profile Section -->
+        <div class="sidebar-profile">
+            <div class="sidebar-profile-avatar">
+                <?php if (!empty($studentProfile['photo'])): ?>
+                    <img src="<?php echo BASE_URL . '/' . $studentProfile['photo']; ?>" alt="Profile Photo">
+                <?php else: ?>
+                    <div class="sidebar-profile-initials">
+                        <?php echo strtoupper(substr($studentProfile['first_name'], 0, 1) . substr($studentProfile['last_name'], 0, 1)); ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+            <div class="sidebar-profile-info">
+                <div class="sidebar-profile-name"><?php echo e($studentProfile['first_name'] . ' ' . $studentProfile['last_name']); ?></div>
+                <div class="sidebar-profile-id"><?php echo e($studentProfile['student_id']); ?></div>
+            </div>
+        </div>
     </div>
     
     <div class="sidebar-menu">

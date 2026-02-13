@@ -103,12 +103,6 @@ body {
 }
 
 /* Custom width constraints */
-.email-cell {
-    max-width: 180px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
 .name-cell {
     max-width: 150px;
 }
@@ -125,6 +119,44 @@ body {
 
 .dropdown-menu {
     min-width: 180px;
+    z-index: 9999;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    border: 1px solid #dee2e6;
+}
+
+/* Ensure dropdown appears above everything */
+.table-responsive {
+    position: relative;
+    overflow: visible !important;
+}
+
+.table {
+    position: relative;
+    overflow: visible !important;
+}
+
+.table td {
+    position: relative;
+    overflow: visible !important;
+}
+
+/* Force dropdown to be visible */
+.dropdown {
+    position: relative;
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: 100% !important;
+    right: 0 !important;
+    left: auto !important;
+    transform: none !important;
+    margin-top: 2px !important;
+}
+
+/* Ensure Bootstrap dropdown works */
+.show > .dropdown-menu {
+    display: block;
 }
 
 /* Responsive adjustments */
@@ -252,8 +284,7 @@ body {
                                     <th style="width: 100px;">Student ID</th>
                                     <th style="width: 150px;">Name</th>
                                     <th style="width: 110px;">Admission #</th>
-                                    <th style="width: 180px;">Email</th>
-                                    <th style="width: 100px;">Program</th>
+                                    <th style="width: 120px;">Program</th>
                                     <th style="width: 60px;">Level</th>
                                     <th style="width: 90px;">Status</th>
                                     <th style="width: 160px;" class="text-center">Actions</th>
@@ -270,9 +301,6 @@ body {
                                             <small class="text-muted"><?php echo e($student['gender']); ?></small>
                                         </td>
                                         <td><?php echo e($student['admission_number'] ?? 'N/A'); ?></td>
-                                        <td class="email-cell" title="<?php echo e($student['email']); ?>">
-                                            <?php echo e($student['email']); ?>
-                                        </td>
                                         <td class="program-cell">
                                             <div style="overflow: hidden; text-overflow: ellipsis;" title="<?php echo e($student['program_name']); ?>">
                                                 <strong><?php echo e($student['program_code']); ?></strong>
@@ -294,10 +322,10 @@ body {
                                                     <i class="fas fa-edit"></i>
                                                 </a>
                                                 <div class="btn-group btn-group-sm" role="group">
-                                                    <button type="button" class="btn btn-secondary dropdown-toggle" data-toggle="dropdown" title="More Actions">
+                                                    <button type="button" class="btn btn-secondary dropdown-toggle" data-toggle="dropdown" title="More Actions" data-boundary="viewport">
                                                         <i class="fas fa-ellipsis-v"></i>
                                                     </button>
-                                                    <div class="dropdown-menu dropdown-menu-right">
+                                                    <div class="dropdown-menu dropdown-menu-right" style="position: fixed !important; z-index: 9999 !important;">
                                                         <a class="dropdown-item" href="reset_password.php?id=<?php echo $student['id']; ?>">
                                                             <i class="fas fa-key"></i> Reset Password
                                                         </a>
@@ -327,5 +355,43 @@ body {
         </div>
     </div>
 </div>
+
+<script>
+// Fix dropdown positioning in table
+$(document).ready(function() {
+    $('.dropdown-toggle').on('click', function(e) {
+        e.stopPropagation();
+        
+        // Close other dropdowns
+        $('.dropdown-menu').not($(this).siblings('.dropdown-menu')).removeClass('show');
+        
+        // Toggle current dropdown
+        var dropdown = $(this).siblings('.dropdown-menu');
+        dropdown.toggleClass('show');
+        
+        // Position the dropdown
+        if (dropdown.hasClass('show')) {
+            var button = $(this);
+            var buttonOffset = button.offset();
+            var buttonHeight = button.outerHeight();
+            var buttonWidth = button.outerWidth();
+            
+            dropdown.css({
+                'position': 'fixed',
+                'top': (buttonOffset.top + buttonHeight) + 'px',
+                'left': (buttonOffset.left + buttonWidth - dropdown.outerWidth()) + 'px',
+                'z-index': '9999'
+            });
+        }
+    });
+    
+    // Close dropdown when clicking outside
+    $(document).on('click', function(e) {
+        if (!$(e.target).closest('.btn-group').length) {
+            $('.dropdown-menu').removeClass('show');
+        }
+    });
+});
+</script>
 
 <?php include '../../../includes/footer.php'; ?>

@@ -139,22 +139,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
 } else {
     echo "<h3>Test Login Form</h3>";
-    $csrf_token = '';
-    if (function_exists('csrfField')) {
-        try {
-            require_once '../../config.php';
-            session_start();
-            $csrf_token = Security::generateCSRFToken();
-        } catch (Exception $e) {
-            echo "Error generating CSRF token: " . $e->getMessage();
-        }
-    }
     ?>
     
     <form method="POST" action="" style="max-width: 400px;">
-        <?php if ($csrf_token): ?>
-            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-        <?php endif; ?>
         
         <p>
             <label>Username:</label><br>
