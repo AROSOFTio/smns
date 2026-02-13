@@ -174,9 +174,14 @@ class Security {
             exit;
         }
         
-        // Validate session token exists
-        if (!$session->has('session_token')) {
-            // Invalid session, force logout
+        // Validate session token exists (check module-prefixed or legacy token)
+        $hasToken = false;
+        if ($detectedRole && $session->hasModule('session_token')) {
+            $hasToken = true;
+        } elseif ($session->has('session_token')) {
+            $hasToken = true;
+        }
+        if (!$hasToken) {
             $auth->logout();
             header('Location: ' . BASE_URL . '/views/auth/login.php?error=invalid_session');
             exit;

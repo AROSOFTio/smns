@@ -19,6 +19,6 @@ $auth->logout();
 // Set success message
 $_SESSION['flash_success'] = 'You have been logged out successfully.';
 
-// Redirect to finance login page
-header('Location: login.php?action=logout');
+// Redirect to finance login page (flash message already set)
+header('Location: login.php');
 exit;

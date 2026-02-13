@@ -46,9 +46,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = Security::sanitize($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
     
-    // Temporarily disable CSRF for login to avoid session conflicts
-    // TODO: Fix CSRF implementation to work with custom Session class
-    $csrf_valid = true;
+    // Verify CSRF token
+    $csrf_valid = Security::verifyCSRFToken($_POST['csrf_token'] ?? '');
     
     if (!$csrf_valid) {
         $error = 'Invalid request. Please try again.';
@@ -120,7 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
             
             <form method="POST" action="" class="login-form">
-                <?php // echo csrfField(); // Temporarily disabled ?>
+                <?php echo csrfField(); ?>
                 
                 <div class="form-group">
                     <label for="username"><i class="fas fa-user"></i> Username or Email</label>

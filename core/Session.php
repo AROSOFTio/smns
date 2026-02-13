@@ -51,9 +51,27 @@ class Session {
             // Update last activity
             $_SESSION['last_activity'] = time();
         } else {
-            // Session already started, set role if provided
-            if ($role && !$this->role) {
+            // Session already started, set role if provided and ensure initialization
+            if ($role) {
                 $this->role = $role;
+            }
+            if (!isset($_SESSION['initialized'])) {
+                $this->initializeSession();
+            }
+            // If a role is provided, validate session for that role
+            if ($this->role) {
+                if (!$this->validateSession()) {
+                    $this->destroy();
+                    session_start();
+                    $this->initializeSession();
+                }
+
+                // Regenerate session ID periodically
+                if (isset($_SESSION['created'])) {
+                    if (time() - $_SESSION['created'] > 1800) { // 30 minutes
+                        $this->regenerateId();
+                    }
+                }
             }
         }
     }

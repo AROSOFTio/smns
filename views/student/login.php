@@ -22,12 +22,11 @@ $success = '';
 $step = 1;
 $username_valid = false;
 $entered_username = '';
+$profile_name = '';
 
 // Check for flash messages
-    $profile_name = '';
 if (isset($_SESSION['flash_success'])) {
     $success = $_SESSION['flash_success'];
-    unset($_SESSION['flash_success']);
     unset($_SESSION['flash_success']);
 }
 if (isset($_SESSION['flash_error'])) {
@@ -50,11 +49,17 @@ if (isset($_GET['error'])) {
     }
 }
 
+// Check for action messages (e.g., after logout)
+if (isset($_GET['action']) && $_GET['action'] === 'logout') {
+    $success = 'You have been logged out successfully.';
+}
+
 
 // Two-step login process
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $step = intval($_POST['step'] ?? 1);
     $entered_username = Security::sanitize($_POST['username'] ?? '');
+    
     if ($step === 1) {
         // Step 1: Check if username exists
         if (empty($entered_username)) {
@@ -73,29 +78,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($step === 2) {
         // Step 2: Validate password
         $password = $_POST['password'] ?? '';
-        $auth = new Auth('student');
-        $user = $auth->usernameExists($entered_username);
-        if (is_array($user)) {
-            $profile_name = $user['fullname'] ?? $user['username'];
-        } else {
-            $profile_name = $entered_username;
-        }
-        if (!$user || $user['role'] !== 'student') {
-            $error = 'Invalid credentials';
+        
+        if (empty($entered_username)) {
+            $error = 'Session expired. Please start again.';
             $step = 1;
         } elseif (empty($password)) {
             $error = 'Password is required.';
             $username_valid = true;
             $step = 2;
+            // Re-fetch user for profile name
+            $auth = new Auth('student');
+            $user = $auth->usernameExists($entered_username);
+            if (is_array($user)) {
+                $profile_name = $user['fullname'] ?? $user['username'];
+            }
         } else {
+            // Attempt login
+            $auth = new Auth('student');
             $result = $auth->login($entered_username, $password);
+            
             if ($result['success'] && $result['role'] === 'student') {
+                // Login successful - redirect to dashboard
                 header('Location: dashboard.php');
                 exit;
             } else {
-                $error = $result['message'] ?? 'Login failed.';
+                // Login failed - show error and stay on step 2
+                $error = $result['message'] ?? 'Invalid password. Please try again.';
                 $username_valid = true;
                 $step = 2;
+                // Re-fetch user for profile name
+                $user = $auth->usernameExists($entered_username);
+                if (is_array($user)) {
+                    $profile_name = $user['fullname'] ?? $user['username'];
+                } else {
+                    $profile_name = $entered_username;
+                }
             }
         }
     }
@@ -137,6 +154,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <form method="POST" action="" class="login-form" autocomplete="off">
                 <?php echo csrfField(); ?>
                 <input type="hidden" name="step" value="<?php echo $step; ?>">
+                <input type="hidden" name="username" value="<?php echo htmlspecialchars($entered_username); ?>">
+                
                 <?php if ($step === 1): ?>
                     <div class="form-group">
                         <label for="username"> Username</label>
@@ -148,18 +167,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                    value="<?php echo htmlspecialchars($entered_username); ?>"
                                    placeholder="Enter student ID or username"
                                    required autofocus>
-                            
+                            <span class="input-icon"></span>
                         </div>
                     </div>
                     <button type="submit" class="btn btn-primary btn-block">
                         <i class="fas fa-arrow-right"></i> Next
                     </button>
                 <?php elseif ($step === 2): ?>
-                    <div class="form-group text-center mb-2">
-                        <span class="badge badge-info" style="font-size:13px;padding:6px 16px;">Welcome, <?php echo htmlspecialchars($entered_username); ?></span>
+                    <div class="form-group text-center mb-3">
+                        
+                        <span class="badge badge-info" style="font-size:14px;padding:8px 20px;">
+                            Welcome, <?php echo htmlspecialchars($profile_name ?: $entered_username); ?>
+                        </span>
                     </div>
                     <div class="form-group">
-                        <label for="password"><i class="fas fa-lock"></i> Password</label>
+                        <label for="password"> Password</label>
                         <div class="input-wrapper">
                             <input type="password"
                                    class="form-control"
@@ -173,16 +195,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <button type="submit" class="btn btn-primary btn-block">
                         <i class="fas fa-sign-in-alt"></i> Sign In
                     </button>
+                    <div class="text-center mt-3">
+                        <a href="login.php" class="btn btn-link btn-sm">
+                            <i class="fas fa-arrow-left"></i> Not you? Use different account
+                        </a>
+                    </div>
                 <?php endif; ?>
             </form>
             
-            <div class="login-footer">
-                <!-- Footer content (if any) -->
-            </div>
-                <div class="form-group">
-                <a href="../auth/login.php"><i class="fas fa-arrow-left"></i> Back to Login</a>
-                
-            </div>
+            
         </div>
     </div>
 </body>

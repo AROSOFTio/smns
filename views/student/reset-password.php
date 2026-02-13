@@ -10,24 +10,30 @@ $error = '';
 $success = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username = trim($_POST['username'] ?? '');
+    $csrf_valid = Security::verifyCSRFToken($_POST['csrf_token'] ?? '');
+    $username = Security::sanitize(trim($_POST['username'] ?? ''));
     $new_password = $_POST['new_password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
 
-    if (empty($username) || empty($new_password) || empty($confirm_password)) {
+    if (!$csrf_valid) {
+        $error = 'Invalid request. Please try again.';
+    } elseif (empty($username) || empty($new_password) || empty($confirm_password)) {
         $error = 'All fields are required.';
     } elseif ($new_password !== $confirm_password) {
         $error = 'Passwords do not match.';
+    } elseif (strlen($new_password) < 8) {
+        $error = 'Password must be at least 8 characters.';
     } else {
         $auth = new Auth('student');
         $user = $auth->usernameExists($username);
         if (!$user || $user['role'] !== 'student') {
             $error = 'Invalid username.';
         } else {
-            // Update password
-            $db = $auth->db;
+            // Update password using Database connection
+            $db = new Database();
+            $conn = $db->getConnection();
             $hash = password_hash($new_password, PASSWORD_DEFAULT);
-            $stmt = $db->prepare('UPDATE users SET password_hash = :hash WHERE id = :id');
+            $stmt = $conn->prepare('UPDATE users SET password_hash = :hash WHERE id = :id');
             $stmt->execute(['hash' => $hash, 'id' => $user['id']]);
             $success = 'Password reset successful.';
         }
@@ -55,6 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="alert alert-success"><?php echo htmlspecialchars($success); ?></div>
                     <?php endif; ?>
                     <form method="POST">
+                        <?php echo csrfField(); ?>
                         <div class="form-group">
                             <label for="username">Student Username</label>
                             <input type="text" class="form-control" id="username" name="username" required>
