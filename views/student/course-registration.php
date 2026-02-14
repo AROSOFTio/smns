@@ -27,14 +27,47 @@ $conn = $db->getConnection();
 $sstmt = $conn->query("SELECT s.*, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id ORDER BY ay.year_name DESC, s.semester_number DESC");
 $semesters = $sstmt->fetchAll();
 
-// Default semester (current)
+// Academic years for dropdown
+$academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_years ORDER BY start_date DESC")->fetchAll();
+
+// Default semester & academic year (current)
 $currentSemester = Helper::getCurrentSemester();
 $defaultSemesterId = $currentSemester['id'] ?? 0;
+$defaultAcademicYearId = Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0);
 
-// Determine selected semester (GET or POST)
-$semesterId = isset($_GET['semester_id']) ? (int)$_GET['semester_id'] : ($defaultSemesterId ?: 0);
+// Determine selected academic year & semester number from GET (or fallbacks)
+$selectedAcademicYearId = isset($_GET['academic_year_id']) ? (int)$_GET['academic_year_id'] : $defaultAcademicYearId;
+$selectedSemesterNumber = isset($_GET['semester_number']) ? (int)$_GET['semester_number'] : ($currentSemester['semester_number'] ?? 1);
+
+// Map academic_year + semester_number to a semester id (preserve old semester_id GET if provided)
+$semesterId = 0;
+if (isset($_GET['semester_id']) && (int)$_GET['semester_id'] > 0) {
+    $semesterId = (int)$_GET['semester_id'];
+} else {
+    $mapStmt = $conn->prepare("SELECT id FROM semesters WHERE academic_year_id = :ay AND semester_number = :sn LIMIT 1");
+    $mapStmt->execute(['ay' => $selectedAcademicYearId, 'sn' => $selectedSemesterNumber]);
+    $row = $mapStmt->fetch();
+    $semesterId = $row['id'] ?? $defaultSemesterId;
+}
+
 if (isset($_POST['semester_id'])) {
     $semesterId = (int)$_POST['semester_id'];
+}
+
+// Compute Year of study (auto-generated from student's entry_year when available)
+$yearOfStudy = (int)($studentProfile['level_year'] ?? 1);
+if (!empty($studentProfile['entry_year']) && $selectedAcademicYearId) {
+    $ayStmt = $conn->prepare("SELECT start_date FROM academic_years WHERE id = :id LIMIT 1");
+    $ayStmt->execute(['id' => $selectedAcademicYearId]);
+    $ayRow = $ayStmt->fetch();
+    if ($ayRow && !empty($ayRow['start_date'])) {
+        $startYear = (int)date('Y', strtotime($ayRow['start_date']));
+        $entryYear = (int)$studentProfile['entry_year'];
+        $calc = ($startYear - $entryYear) + 1;
+        $yearOfStudy = max(1, min(10, $calc));
+    }
+} else {
+    $yearOfStudy = (int)($studentProfile['level_year'] ?? $yearOfStudy);
 }
 
 // Handle registration submission
@@ -51,7 +84,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $semRow = $semCheck->fetch();
     if ($semRow && !empty($semRow['registration_start_date']) && !empty($semRow['registration_end_date'])) {
         $today = date('Y-m-d');
-        if ($today < $semRow['registration_start_date'] || $today > $semRow['registration_end_date']) {
+        // allow continuing students to register even when window is closed
+        if (!($isContinuing) && ($today < $semRow['registration_start_date'] || $today > $semRow['registration_end_date'])) {
             $session->setFlash('error', 'Registration for the selected semester is currently closed.');
             header('Location: course-registration.php?semester_id=' . $semesterId);
             exit;
@@ -72,7 +106,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $checkStmt = $conn->prepare("SELECT id FROM course_registrations WHERE student_id = :student_id AND course_id = :course_id AND semester_id = :semester_id");
 
     // Auto-approve registrations on student submit (configurable in Settings)
-    $autoApprove = getSetting('auto_approve_registrations', '0') === '1';
+    // ALSO: automatically approve registrations submitted by continuing students (Year > 1)
+    $isContinuing = (isset($studentProfile['level_year']) && (int)$studentProfile['level_year'] > 1 && ($studentProfile['status'] ?? '') === 'active');
+    $autoApprove = getSetting('auto_approve_registrations', '0') === '1' || $isContinuing;
 
     if ($autoApprove) {
         $insStmt = $conn->prepare("INSERT INTO course_registrations (student_id, course_id, semester_id, registration_date, status, approved_by, approved_date, created_at) VALUES (:student_id, :course_id, :semester_id, NOW(), 'approved', NULL, NOW(), NOW())");
@@ -170,7 +206,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     if (empty($msgParts)) $msgParts[] = 'No changes were made.';
 
     $session->setFlash('success', implode(' ', $msgParts));
-    header('Location: course-registration.php?semester_id=' . $semesterId);
+    // After successful registration redirect student to My Courses and select the semester
+    header('Location: my-courses.php?semester_id=' . $semesterId);
     exit;
 }
 
@@ -218,7 +255,7 @@ include '../../includes/header.php';
             <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar">
                 <i class="fas fa-bars"></i>
             </button>
-            <h4>Course Registration</h4>
+            <h4>Register for semester</h4>
         </div>
         <div class="topbar-right">
             <?php include '../../includes/notification_bell.php'; ?>
@@ -235,14 +272,46 @@ include '../../includes/header.php';
 
         <div class="card mb-3">
             <div class="card-body">
-                <form method="GET" class="form-inline mb-3">
-                    <label class="mr-2">Select Semester:</label>
-                    <select name="semester_id" class="form-control mr-2" onchange="this.form.submit();">
-                        <?php foreach ($semesters as $sem): ?>
-                            <option value="<?php echo $sem['id']; ?>" <?php echo $semesterId == $sem['id'] ? 'selected' : ''; ?>><?php echo e($sem['year_name'] . ' - ' . $sem['semester_name']); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                    <a href="<?php echo BASE_URL; ?>/views/student/registrations.php?semester_id=<?php echo $semesterId; ?>" class="btn btn-secondary">View My Registrations</a>
+                <form method="GET" class="mb-3">
+                    <?php echo csrfField(); ?>
+                    <input type="hidden" id="current_semester_id" value="<?php echo e($semesterId); ?>">
+                    <div class="d-flex flex-wrap align-items-center">
+                        <div style="flex:1; min-width:280px; max-width:880px;">
+                            <div class="form-row">
+                                <div class="form-group col-12 col-md-4 d-flex align-items-center">
+                                    <label class="mb-0 mr-3" style="min-width:140px; color:#374151; font-weight:600;">Academic year</label>
+                                    <select name="academic_year_id" class="form-control" onchange="this.form.submit();">
+                                        <?php foreach ($academicYears as $ay): ?>
+                                            <option value="<?php echo $ay['id']; ?>" <?php echo $selectedAcademicYearId == $ay['id'] ? 'selected' : ''; ?>><?php echo e($ay['year_name']); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+
+                                <div class="form-group col-12 col-md-4 d-flex align-items-center">
+                                    <label class="mb-0 mr-3" style="min-width:140px; color:#374151; font-weight:600;">Semester</label>
+                                    <select name="semester_number" class="form-control" onchange="this.form.submit();">
+                                        <?php for ($i = 1; $i <= 4; $i++): ?>
+                                            <option value="<?php echo $i; ?>" <?php echo $selectedSemesterNumber == $i ? 'selected' : ''; ?>>Semester <?php echo $i; ?></option>
+                                        <?php endfor; ?>
+                                    </select>
+                                </div>
+
+                                <div class="form-group col-12 col-md-4 d-flex align-items-center">
+                                    <label class="mb-0 mr-3" style="min-width:140px; color:#374151; font-weight:600;">Year of study</label>
+                                    <input type="text" class="form-control" value="<?php echo 'Year ' . e($yearOfStudy); ?>" readonly>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ml-3 mt-2 mt-md-0">
+                            <button id="requestRegisterBtn" type="button" class="btn btn-success" style="min-width:110px; height:48px;">Register</button>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <a href="<?php echo BASE_URL; ?>/views/student/registrations.php?semester_id=<?php echo $semesterId; ?>" class="text-muted mr-3">View My Registrations</a>
+                        <a href="<?php echo BASE_URL; ?>/views/student/my-courses.php?academic_year_id=<?php echo $selectedAcademicYearId; ?>&semester_number=<?php echo $selectedSemesterNumber; ?>" class="text-muted">My Courses</a>
+                    </div>
                 </form>
 
                 <?php if (!$semesterId): ?>
@@ -257,7 +326,8 @@ include '../../includes/header.php';
                     $canRegister = true;
                     if ($semInfo && !empty($semInfo['registration_start_date']) && !empty($semInfo['registration_end_date'])) {
                         $today = date('Y-m-d');
-                        if ($today < $semInfo['registration_start_date'] || $today > $semInfo['registration_end_date']) {
+                        // allow continuing students to register even when the window is closed
+                        if (!($isContinuing) && ($today < $semInfo['registration_start_date'] || $today > $semInfo['registration_end_date'])) {
                             $canRegister = false;
                         }
                     }
@@ -327,5 +397,80 @@ include '../../includes/header.php';
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+    // map of registration dates for academic_year_id + '_' + semester_number
+    const semesterMap = <?php
+        $map = [];
+        foreach ($semesters as $s) {
+            $key = ($s['academic_year_id'] ?? '') . '_' . ($s['semester_number'] ?? '');
+            $map[$key] = [
+                'start' => $s['registration_start_date'] ?? '',
+                'end' => $s['registration_end_date'] ?? '',
+                'year_name' => $s['year_name'] ?? '',
+                'semester_name' => $s['semester_name'] ?? ''
+            ];
+        }
+        echo json_encode($map);
+    ?>;
+
+    const btn = document.getElementById('requestRegisterBtn');
+    if (!btn) return;
+
+    btn.addEventListener('click', function(e){
+        const form = btn.closest('form');
+        const aySelect = form.querySelector('select[name="academic_year_id"]');
+        const snSelect = form.querySelector('select[name="semester_number"]');
+        const ay = aySelect ? aySelect.value : '';
+        const sn = snSelect ? snSelect.value : '';
+        const key = ay + '_' + sn;
+        const entry = semesterMap[key] || {};
+
+        // determine if registration window is open (if dates configured)
+        let registrationOpen = true;
+        if (entry.start && entry.end) {
+            const today = new Date().toISOString().slice(0,10);
+            if (today < entry.start || today > entry.end) registrationOpen = false;
+        }
+
+        if (registrationOpen) {
+            // registration is open — submit GET to show registration table
+            form.submit();
+            return;
+        }
+
+        // registration closed — confirm and send a student request to admin
+        const label = (entry.year_name ? entry.year_name + ' - ' : '') + (entry.semester_name ? entry.semester_name : ('Semester ' + sn));
+        if (!confirm('Registration for ' + label + ' is currently closed. Send a request to the administrator to enable registration?')) return;
+
+        // send request via POST to submit-request.php
+        btn.disabled = true;
+        const originalText = btn.innerText;
+        btn.innerText = 'Requesting...';
+
+        const reason = 'Please enable registration for ' + label + '. Year of study: ' + (form.querySelector('input[readonly]') ? form.querySelector('input[readonly]').value : 'N/A');
+        const fd = new FormData();
+        fd.append('request_type', 'enable_registration');
+        fd.append('reason', reason);
+        // include current semester id so server can guard duplicates
+        const semEl = document.getElementById('current_semester_id');
+        if (semEl && semEl.value) fd.append('semester_id', semEl.value);
+        const csrfEl = form.querySelector('input[name="csrf_token"]');
+        if (csrfEl) fd.append('csrf_token', csrfEl.value);
+
+        fetch('<?php echo BASE_URL; ?>/views/student/submit-request.php', { method: 'POST', body: fd, credentials: 'same-origin' })
+            .then(function(res){
+                // redirect to dashboard where flash message will be shown
+                window.location = '<?php echo BASE_URL; ?>/views/student/dashboard.php';
+            })
+            .catch(function(err){
+                alert('Failed to send request. Please try again later.');
+                btn.disabled = false;
+                btn.innerText = originalText;
+            });
+    });
+});
+</script>
 
 <?php include '../../includes/footer.php';

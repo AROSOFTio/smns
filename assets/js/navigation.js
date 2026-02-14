@@ -187,8 +187,8 @@
 
     // Notification handling
     function initNotificationHandling() {
-        // Auto-dismiss alerts
-        const alerts = document.querySelectorAll('.alert');
+        // Auto-dismiss alerts (skip success alerts and any explicitly marked with data-auto-dismiss="false")
+        const alerts = document.querySelectorAll('.alert:not(.alert-success):not([data-auto-dismiss="false"])');
         alerts.forEach(alert => {
             setTimeout(() => {
                 alert.style.opacity = '0';
@@ -198,10 +198,9 @@
             }, 5000);
         });
         
-        // Add close buttons to alerts
-        alerts.forEach(alert => {
-            if (!alert.querySelector('.close')) {
-                const closeBtn = document.createElement('button');
+        // Add close buttons to alerts (including non-auto-dismissable ones)
+        const allAlerts = document.querySelectorAll('.alert');
+        allAlerts.forEach(alert => {
                 closeBtn.innerHTML = '×';
                 closeBtn.className = 'close';
                 closeBtn.style.cssText = `

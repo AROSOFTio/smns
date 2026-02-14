@@ -71,25 +71,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// Fetch pending grouped by student + semester
+// Optional semester filter from GET
+$filterSemesterId = isset($_GET['semester_filter_id']) ? (int)$_GET['semester_filter_id'] : 0;
+
+// Enrollment summary (admins need to see enrollments)
+$enrollments = $conn->query("SELECT sem.id, sem.semester_number, sem.semester_name, ay.year_name, COUNT(cr.id) as total_registrations, SUM(CASE WHEN cr.status = 'pending' THEN 1 ELSE 0 END) AS pending_count, SUM(CASE WHEN cr.status = 'approved' THEN 1 ELSE 0 END) AS approved_count FROM course_registrations cr JOIN semesters sem ON cr.semester_id = sem.id JOIN academic_years ay ON sem.academic_year_id = ay.id GROUP BY sem.id ORDER BY ay.start_date DESC, sem.semester_number DESC")->fetchAll();
+
+// If no filter selected and Semester 1 was removed, default the filter to the first non-Semester-1 enrollment
+if (empty($filterSemesterId)) {
+    foreach ($enrollments as $e) {
+        if (isset($e['semester_number']) && (int)$e['semester_number'] === 1) continue; // skip Semester 1
+        $filterSemesterId = (int)$e['id'];
+        break;
+    }
+}
+
+// Fetch pending grouped by student + semester (apply optional semester filter)
 $pendingSql = "SELECT cr.student_id, cr.semester_id, s.first_name, s.last_name, s.student_id as student_code, sem.semester_name, COUNT(*) as course_count
                FROM course_registrations cr
                JOIN students s ON cr.student_id = s.id
                JOIN semesters sem ON cr.semester_id = sem.id
-               WHERE cr.status = 'pending'
+               WHERE cr.status = 'pending' " . ($filterSemesterId ? "AND cr.semester_id = :filter " : "") . "
                GROUP BY cr.student_id, cr.semester_id
                ORDER BY cr.created_at DESC";
-$pending = $conn->query($pendingSql)->fetchAll();
+$pendingStmt = $conn->prepare($pendingSql);
+if ($filterSemesterId) $pendingStmt->execute(['filter' => $filterSemesterId]); else $pendingStmt->execute();
+$pending = $pendingStmt->fetchAll();
 
-// Fetch approved (reported) grouped by student + semester
+// Fetch approved (reported) grouped by student + semester (apply optional semester filter)
 $approvedSql = "SELECT cr.student_id, cr.semester_id, s.first_name, s.last_name, s.student_id as student_code, sem.semester_name, COUNT(*) as course_count
                FROM course_registrations cr
                JOIN students s ON cr.student_id = s.id
                JOIN semesters sem ON cr.semester_id = sem.id
-               WHERE cr.status = 'approved'
+               WHERE cr.status = 'approved' " . ($filterSemesterId ? "AND cr.semester_id = :filter " : "") . "
                GROUP BY cr.student_id, cr.semester_id
                ORDER BY cr.approved_date DESC";
-$approved = $conn->query($approvedSql)->fetchAll();
+$approvedStmt = $conn->prepare($approvedSql);
+if ($filterSemesterId) $approvedStmt->execute(['filter' => $filterSemesterId]); else $approvedStmt->execute();
+$approved = $approvedStmt->fetchAll();
 
 $pageTitle = 'Registrations - ' . APP_NAME;
 include '../../../includes/header.php';
@@ -112,9 +131,29 @@ include '../../../includes/header.php';
 
         <div class="card mb-3">
             <div class="card-body">
+                <!-- Enrollments summary (admin) -->
+                <?php if (!empty($enrollments)): ?>
+                    <div class="mb-3 d-flex flex-wrap">
+                        <?php foreach ($enrollments as $e):
+                                // remove Semester 1 card per request
+                                if (isset($e['semester_number']) && (int)$e['semester_number'] === 1) continue;
+                                $isActive = ($filterSemesterId && $filterSemesterId == $e['id']);
+                        ?>
+                            <div class="mr-3 mb-2 p-2 border rounded" style="min-width:220px;">
+                                <strong><?php echo e($e['year_name'] . ' - ' . $e['semester_name']); ?></strong><br>
+                                <small>Total: <?php echo e($e['total_registrations']); ?> · <span class="text-warning">Pending: <?php echo e($e['pending_count']); ?></span> · <span class="text-success">Approved: <?php echo e($e['approved_count']); ?></span></small>
+                                <div class="mt-1">
+                                    <a href="pending.php?semester_filter_id=<?php echo $e['id']; ?>" class="<?php echo $isActive ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-outline-primary'; ?>" <?php echo $isActive ? 'aria-pressed="true"' : ''; ?>><?php echo $isActive ? 'Filtered' : 'Filter'; ?></a>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php else: ?>
+                    <div class="mb-3"><small class="text-muted">No enrollments recorded yet.</small></div>
+                <?php endif; ?>
+
                 <h5>Pending Registrations</h5>
-                <?php if (empty($pending)): ?>
-                    <p class="text-muted">No pending registrations found.</p>
+                <?php if (empty($pending)): ?> 
                 <?php else: ?>
                     <table class="table table-striped table-hover">
                         <thead>

@@ -318,13 +318,10 @@ $(document).ajaxError(function(event, jqxhr, settings, thrownError) {
 
 // Success message
 function showSuccess(message) {
-    var alert = $('<div class="alert alert-success">' + message + '</div>');
+    // persistent success alert — admin must dismiss manually
+    var alert = $('<div class="alert alert-success" data-auto-dismiss="false">' + message + '</div>');
     $('.content-area').prepend(alert);
-    setTimeout(function() {
-        alert.fadeOut('slow', function() {
-            $(this).remove();
-        });
-    }, 3000);
+    // do NOT auto-dismiss; user will close when ready
 }
 
 // Error message

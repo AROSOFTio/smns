@@ -74,16 +74,100 @@ $recentActivities = $logger->getRecentActivities(10);
 $loginSessions = $logger->getLoginSessions(15);
 
 // Handle semester activation (admin-only)
+// Also support undo (revert activation) via `undo_semester_id` (AJAX-friendly)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['undo_semester_id'])) {
+    if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+            header('Content-Type: application/json'); echo json_encode(['success' => false, 'error' => 'Invalid CSRF token']); exit;
+        }
+        $session->setFlash('error', 'Invalid CSRF token');
+        header('Location: dashboard.php'); exit;
+    }
+
+    $undoId = intval($_POST['undo_semester_id']);
+    try {
+        // capture currently active semester to report as "previous"
+        $currStmt = $conn->prepare("SELECT s.id, s.semester_name, s.start_date, s.end_date, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id WHERE s.status = 'active' LIMIT 1");
+        $currStmt->execute();
+        $currentActive = $currStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+        // ensure target semester exists
+        $targetStmt = $conn->prepare('SELECT s.*, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id WHERE s.id = :id LIMIT 1');
+        $targetStmt->execute(['id' => $undoId]);
+        $targetSem = $targetStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!$targetSem) {
+            if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+                header('Content-Type: application/json'); echo json_encode(['success' => false, 'error' => 'Semester not found']); exit;
+            }
+            $session->setFlash('error', 'Semester not found');
+            header('Location: dashboard.php'); exit;
+        }
+
+        // if already active, nothing to do
+        if ($currentActive && intval($currentActive['id']) === intval($undoId)) {
+            if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+                header('Content-Type: application/json'); echo json_encode(['success' => true, 'action' => 'no_change', 'semester' => $targetSem, 'previous' => $currentActive]); exit;
+            }
+            $session->setFlash('success', 'Semester is already active');
+            header('Location: dashboard.php'); exit;
+        }
+
+        // perform revert: deactivate others, activate requested semester, update academic year
+        $conn->beginTransaction();
+        $conn->exec("UPDATE semesters SET status = 'inactive'");
+        $ust = $conn->prepare("UPDATE semesters SET status = 'active' WHERE id = :id");
+        $ust->execute(['id' => $undoId]);
+
+        $ayStmt = $conn->prepare('SELECT academic_year_id FROM semesters WHERE id = :id LIMIT 1');
+        $ayStmt->execute(['id' => $undoId]);
+        $ayRow = $ayStmt->fetch(PDO::FETCH_ASSOC);
+        if ($ayRow && !empty($ayRow['academic_year_id'])) {
+            $conn->exec("UPDATE academic_years SET status = 'inactive'");
+            $uay = $conn->prepare("UPDATE academic_years SET status = 'active' WHERE id = :id");
+            $uay->execute(['id' => $ayRow['academic_year_id']]);
+        }
+        $conn->commit();
+
+        $session->setFlash('success', 'Semester reverted');
+
+        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+            $s = $conn->prepare('SELECT s.*, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id WHERE s.id = :id LIMIT 1');
+            $s->execute(['id' => $undoId]);
+            $row = $s->fetch(PDO::FETCH_ASSOC) ?: null;
+            header('Content-Type: application/json');
+            echo json_encode(['success' => true, 'action' => 'reverted', 'message' => 'Reverted to ' . (($row['year_name'] ?? '') . ' - ' . ($row['semester_name'] ?? '')), 'semester' => $row, 'previous' => $currentActive]);
+            exit;
+        }
+
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) $conn->rollBack();
+        $session->setFlash('error', 'Failed to revert semester: ' . $e->getMessage());
+        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+            header('Content-Type: application/json'); echo json_encode(['success' => false, 'error' => $e->getMessage()]); exit;
+        }
+    }
+
+    header('Location: dashboard.php'); exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['activate_semester_id'])) {
     if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+            header('Content-Type: application/json'); echo json_encode(['success' => false, 'error' => 'Invalid CSRF token']); exit;
+        }
         $session->setFlash('error', 'Invalid CSRF token');
         header('Location: dashboard.php'); exit;
     }
 
     $activateId = intval($_POST['activate_semester_id']);
     try {
+        // capture previous active semester BEFORE making changes
+        $prevStmt = $conn->prepare("SELECT s.id, s.semester_name, s.start_date, s.end_date, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id WHERE s.status = 'active' LIMIT 1");
+        $prevStmt->execute();
+        $previousSem = $prevStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
         $conn->beginTransaction();
-        // Deactivate other semesters
+        // Deactivate other semesters (limit to same academic year? currently global)
         $conn->exec("UPDATE semesters SET status = 'inactive'");
         // Activate selected semester
         $ust = $conn->prepare("UPDATE semesters SET status = 'active' WHERE id = :id");
@@ -101,9 +185,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['activate_semester_id'
 
         $conn->commit();
         $session->setFlash('success', 'Semester activated');
+
+        // If AJAX request, return JSON with updated semester and previous
+        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+            $s = $conn->prepare('SELECT s.*, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id WHERE s.id = :id LIMIT 1');
+            $s->execute(['id' => $activateId]);
+            $row = $s->fetch(PDO::FETCH_ASSOC) ?: null;
+
+            // Determine action/message
+            $action = 'activated';
+            $message = '';
+            if ($previousSem && intval($previousSem['id']) === intval($activateId)) {
+                $action = 'no_change';
+                $message = ($row['year_name'] ?? '') . ' - ' . ($row['semester_name'] ?? '') . ' is already active';
+            } else {
+                $label = trim(($row['year_name'] ?? '') . ' - ' . ($row['semester_name'] ?? '') . ' (' . ($row['start_date'] ?? '') . ' - ' . ($row['end_date'] ?? '') . ')');
+                if ($previousSem) {
+                    $prevLabel = trim(($previousSem['year_name'] ?? '') . ' - ' . ($previousSem['semester_name'] ?? '') . ' (' . ($previousSem['start_date'] ?? '') . ' - ' . ($previousSem['end_date'] ?? '') . ')');
+                    $message = $label . ' activated; previous ' . $prevLabel . ' deactivated.';
+                } else {
+                    $message = $label . ' activated.';
+                }
+            }
+
+            header('Content-Type: application/json');
+            echo json_encode(['success' => true, 'action' => $action, 'message' => $message, 'semester' => $row, 'previous' => $previousSem]);
+            exit;
+        }
+
     } catch (Exception $e) {
         if ($conn->inTransaction()) $conn->rollBack();
         $session->setFlash('error', 'Failed to activate semester: ' . $e->getMessage());
+        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+            header('Content-Type: application/json'); echo json_encode(['success' => false, 'error' => $e->getMessage()]); exit;
+        }
     }
 
     header('Location: dashboard.php'); exit;
@@ -524,9 +639,26 @@ include '../../includes/header.php';
             <div class="col-md-4">
                 <!-- Current Semester -->
                 <?php if ($currentSemester): ?>
-                <div class="semester-card">
+                <div class="semester-card" tabindex="0" role="button" aria-label="Current Semester — click to open semester selector">
                     <h3><i class="fas fa-calendar-alt"></i> Current Semester</h3>
-                            <div class="semester-info">
+                    <div class="activate-controls">
+                        <form method="POST" style="display:flex;gap:8px;align-items:center;">
+                            <input type="hidden" name="csrf_token" value="<?php echo e(Security::generateCSRFToken()); ?>">
+                            <select name="activate_semester_id" class="form-control form-control-sm" style="min-width:220px;">
+                                <?php
+                                    $sstmt = $conn->query("SELECT s.id, s.semester_name, s.start_date, s.end_date, ay.year_name, s.status FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id ORDER BY s.start_date DESC");
+                                    $allSems = $sstmt->fetchAll();
+                                    foreach ($allSems as $s) {
+                                        $label = $s['year_name'] . ' - ' . $s['semester_name'] . ' (' . date('M d, Y', strtotime($s['start_date'])) . ' - ' . date('M d, Y', strtotime($s['end_date'])) . ')';
+                                        $sel = ($currentSemester && $currentSemester['id'] == $s['id']) ? 'selected' : '';
+                                        echo "<option value=\"{$s['id']}\" {$sel}>" . e($label) . " - " . e(ucfirst($s['status'])) . "</option>";
+                                    }
+                                ?>
+                            </select>
+                            <button class="btn btn-sm btn-primary" type="submit">Activate</button>
+                        </form>
+                    </div>
+                    <div class="semester-info">
                             <div class="semester-name"><?php echo e($currentSemester['semester_name'] ?? 'Not Set'); ?></div>
                             <div class="semester-dates">
                                 <span><i class="fas fa-play"></i> <?php echo Helper::formatDate($currentSemester['start_date'] ?? ''); ?></span>
@@ -538,24 +670,7 @@ include '../../includes/header.php';
                                 </span>
                             </div>
 
-                            <!-- Activate another semester -->
-                            <div style="margin-top:12px;">
-                                <form method="POST" style="display:flex;gap:8px;align-items:center;">
-                                    <input type="hidden" name="csrf_token" value="<?php echo e(Security::generateCSRFToken()); ?>">
-                                    <select name="activate_semester_id" class="form-control form-control-sm" style="min-width:220px;">
-                                        <?php
-                                            $sstmt = $conn->query("SELECT s.id, s.semester_name, s.start_date, s.end_date, ay.year_name, s.status FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id ORDER BY s.start_date DESC");
-                                            $allSems = $sstmt->fetchAll();
-                                            foreach ($allSems as $s) {
-                                                $label = $s['year_name'] . ' - ' . $s['semester_name'] . ' (' . date('M d, Y', strtotime($s['start_date'])) . ' - ' . date('M d, Y', strtotime($s['end_date'])) . ')';
-                                                $sel = ($currentSemester && $currentSemester['id'] == $s['id']) ? 'selected' : '';
-                                                echo "<option value=\"{$s['id']}\" {$sel}>" . e($label) . " - " . e(ucfirst($s['status'])) . "</option>";
-                                            }
-                                        ?>
-                                    </select>
-                                    <button class="btn btn-sm btn-primary" type="submit">Activate</button>
-                                </form>
-                            </div>
+
                         </div>
                 </div>
                 <?php endif; ?>
@@ -591,6 +706,115 @@ include '../../includes/header.php';
         </div>
     </div>
 </div>
+
+<script>
+(function(){
+    var card = document.querySelector('.semester-card');
+    if (!card) return;
+    var select = card.querySelector('select[name="activate_semester_id"]');
+    var form = card.querySelector('form');
+    var btn = form ? form.querySelector('button[type="submit"]') : null;
+
+    function openSelector() {
+        if (!select) return; try { select.focus(); select.click(); } catch(e){}
+    }
+    card.addEventListener('click', function(e){ if (e.target.closest('select')||e.target.closest('button')||e.target.closest('a')) return; openSelector(); });
+    card.addEventListener('keydown', function(e){ if (e.key==='Enter'||e.key===' '||e.key==='Spacebar'){ e.preventDefault(); openSelector(); } });
+
+    if (!form) return;
+    form.addEventListener('submit', function(e){
+        e.preventDefault(); if (!btn) return; btn.disabled = true;
+        var fd = new FormData(form);
+        fetch(window.location.pathname, { method:'POST', credentials:'same-origin', headers:{'X-Requested-With':'XMLHttpRequest'}, body:fd })
+        .then(r=>r.json()).then(function(data){ btn.disabled=false; if (data && data.success){ var sem = data.semester||null; if (sem){ var nameEl=document.querySelector('.semester-name'); if (nameEl) nameEl.textContent = sem.semester_name||nameEl.textContent; var spans=document.querySelectorAll('.semester-dates span'); function fmt(d){ try{ return new Date(d).toLocaleDateString('en-US',{month:'short',day:'2-digit',year:'numeric'}); }catch(e){return d;} } if (spans[0]) spans[0].innerHTML = '<i class="fas fa-play"></i> ' + fmt(sem.start_date); if (spans[1]) spans[1].innerHTML = '<i class="fas fa-stop"></i> ' + fmt(sem.end_date); var badge=document.querySelector('.semester-status .badge'); if (badge){ var st=(sem.status||'').toLowerCase(); badge.textContent = (st.charAt(0).toUpperCase()+st.slice(1))||badge.textContent; badge.className = 'badge ' + (st==='active' ? 'badge-success' : 'badge-secondary'); } var sel = form.querySelector('select[name="activate_semester_id"]'); if (sel){ Array.from(sel.options).forEach(function(opt){ var base = opt.textContent.replace(/\s-\s(Active|Inactive|Completed|Pending|active|inactive|completed|pending)$/i,'').trim(); if (parseInt(opt.value)===parseInt(sem.id)){ opt.textContent = base + ' - Active'; opt.selected = true; } else { opt.textContent = base + ' - Inactive'; } }); } }
+            var existing = document.querySelector('.content-area .alert[data-auto-dismiss="false"]'); if (existing) existing.remove();
+
+// Build distinct alert for activation/no-change
+var a = document.createElement('div');
+if (data && data.action === 'no_change') {
+    a.className = 'alert alert-info';
+    a.setAttribute('data-auto-dismiss', 'false');
+    a.setAttribute('role','alert');
+    a.innerHTML = '<strong>Info:</strong> ' + (data.message || 'No changes were made');
+} else {
+    a.className = 'alert alert-success';
+    a.setAttribute('data-auto-dismiss', 'false');
+    a.setAttribute('role','alert');
+
+    var title = document.createElement('div');
+    title.innerHTML = '<strong><i class="fas fa-check-circle"></i> Activated:</strong> ' + (data.semester && (data.semester.year_name + ' - ' + data.semester.semester_name) ? (data.semester.year_name + ' - ' + data.semester.semester_name) : 'Semester');
+    a.appendChild(title);
+
+    if (data.previous) {
+        var prev = document.createElement('div');
+        prev.style.marginTop = '6px';
+        prev.innerHTML = '<strong><i class="fas fa-times-circle"></i> Deactivated:</strong> ' + (data.previous.year_name + ' - ' + data.previous.semester_name);
+        a.appendChild(prev);
+
+        // add explicit Undo button to revert activation
+        var undoWrap = document.createElement('div');
+        undoWrap.style.marginTop = '8px';
+        var undoBtn = document.createElement('button');
+        undoBtn.className = 'btn btn-sm btn-outline-light undo-activation-btn';
+        undoBtn.style.marginLeft = '6px';
+        undoBtn.textContent = 'Undo';
+        undoBtn.dataset.undoId = data.previous.id;
+        undoWrap.appendChild(undoBtn);
+        a.appendChild(undoWrap);
+
+        // attach handler for Undo
+        undoBtn.addEventListener('click', function(ev){
+            var btn = this; btn.disabled = true;
+            var undoId = btn.dataset.undoId;
+            var tokenEl = document.querySelector('.semester-card form input[name="csrf_token"]');
+            var csrf = tokenEl ? tokenEl.value : '';
+            var fd2 = new FormData();
+            fd2.append('undo_semester_id', undoId);
+            fd2.append('csrf_token', csrf);
+
+            fetch(window.location.pathname, { method: 'POST', credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}, body: fd2 })
+            .then(function(r){ return r.json(); })
+            .then(function(res){
+                if (res && res.success) {
+                    var sem = res.semester || null;
+                    // update semester card UI
+                    if (sem) {
+                        var nameEl = document.querySelector('.semester-name'); if (nameEl) nameEl.textContent = sem.semester_name || nameEl.textContent;
+                        var spans = document.querySelectorAll('.semester-dates span');
+                        function fmt(d){ try{ return new Date(d).toLocaleDateString('en-US',{month:'short',day:'2-digit',year:'numeric'}); }catch(e){return d;} }
+                        if (spans[0]) spans[0].innerHTML = '<i class="fas fa-play"></i> ' + fmt(sem.start_date);
+                        if (spans[1]) spans[1].innerHTML = '<i class="fas fa-stop"></i> ' + fmt(sem.end_date);
+                        var badge = document.querySelector('.semester-status .badge'); if (badge){ var st=(sem.status||'').toLowerCase(); badge.textContent = (st.charAt(0).toUpperCase()+st.slice(1))||badge.textContent; badge.className = 'badge ' + (st==='active' ? 'badge-success' : 'badge-secondary'); }
+                        var sel = form.querySelector('select[name="activate_semester_id"]'); if (sel){ Array.from(sel.options).forEach(function(opt){ var base = opt.textContent.replace(/\s-\s(Active|Inactive|Completed|Pending|active|inactive|completed|pending)$/i,'').trim(); if (parseInt(opt.value)===parseInt(sem.id)){ opt.textContent = base + ' - Active'; opt.selected = true; } else { opt.textContent = base + ' - Inactive'; } }); }
+                    }
+
+                    // replace alert content to show reverted state
+                    a.className = 'alert alert-success';
+                    a.innerHTML = '<strong><i class="fas fa-undo"></i> Reverted to:</strong> ' + (res.semester && (res.semester.year_name + ' - ' + res.semester.semester_name) ? (res.semester.year_name + ' - ' + res.semester.semester_name) : 'Semester');
+                } else {
+                    var content = document.querySelector('.content-area');
+                    var err = document.createElement('div'); err.className='alert alert-danger'; err.textContent = (res && res.error) ? res.error : 'Undo failed'; if (content) content.prepend(err);
+                    btn.disabled = false;
+                }
+            })
+            .catch(function(err){ btn.disabled = false; var content=document.querySelector('.content-area'); var errEl=document.createElement('div'); errEl.className='alert alert-danger'; errEl.textContent='Network error. Please try again.'; if (content) content.prepend(errEl); });
+        });
+    }
+
+    // optional descriptive message
+    var msg = document.createElement('div');
+    msg.style.marginTop = '8px';
+    msg.textContent = data.message || '';
+    if (msg.textContent) a.appendChild(msg);
+}
+
+var content = document.querySelector('.content-area');
+if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'center'}); a.setAttribute('tabindex','-1'); a.focus(); }
+        } else { var msg=(data&&data.error)?data.error:'Activation failed'; var err=document.createElement('div'); err.className='alert alert-danger'; err.textContent = msg; var content=document.querySelector('.content-area'); if (content) content.prepend(err); } })
+        .catch(function(err){ btn.disabled=false; var errEl=document.createElement('div'); errEl.className='alert alert-danger'; errEl.textContent='Network error. Please try again.'; var content=document.querySelector('.content-area'); if (content) content.prepend(errEl); });
+    });
+})();
+</script>
 
 <style>
 /* Admin Dashboard Specific Styles */
@@ -651,6 +875,12 @@ include '../../includes/header.php';
 .saved-body p { margin:6px 0 0; font-size:13px; color:#444; }
 .saved-body .btn-link { padding:0; font-size:12px; }
 
+/* Quick-link appearance */
+.quick-link-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
     background: #f8f9fa;
     border-radius: 8px;
     color: #495057;
@@ -658,6 +888,24 @@ include '../../includes/header.php';
     transition: all 0.3s;
     font-size: 13px;
     font-weight: 500;
+}
+
+/* Semester card — ensure dates are visible and wrap on small screens */
+.semester-card { position: relative; overflow: visible; padding-top: 20px; }
+.activate-controls { position: absolute; top: 12px; right: 16px; display:flex; gap:8px; align-items:center; z-index:2; }
+@media (max-width:768px) {
+    .activate-controls { position: static; flex-direction:column; align-items:stretch; width:100%; margin-bottom:8px; }
+    .activate-controls select, .activate-controls button { width:100%; }
+}
+.semester-dates { display:flex; justify-content:center; gap:12px; flex-wrap:wrap; font-size:13px; color:#6c757d; margin-bottom:10px; }
+.semester-dates span { white-space:nowrap; }
+
+/* Responsive: stack activation controls on narrow screens */
+.semester-card form { display:flex; gap:8px; align-items:center; justify-content:center; margin-top:8px; }
+.semester-card form select { min-width:220px; max-width:100%; }
+@media (max-width:768px) {
+  .semester-card form { flex-direction:column; align-items:stretch; }
+  .semester-card form select, .semester-card form button { width:100%; }
 }
 
 .quick-link-item:hover {

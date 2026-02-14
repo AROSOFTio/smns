@@ -270,7 +270,7 @@ $fullName = trim(($adminProfile['first_name'] ?? '') . ' ' . ($adminProfile['las
 
 <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
-        <h3><?php echo APP_SHORT_NAME; ?></h3>
+        <h3 style="color:#6b7280"><?php echo APP_SHORT_NAME; ?></h3>
         <p>Administration</p>
     </div>
     
@@ -330,6 +330,13 @@ $fullName = trim(($adminProfile['first_name'] ?? '') . ' ' . ($adminProfile['las
                 <a href="<?php echo BASE_URL; ?>/views/admin/results/submitted.php" class="<?php echo $currentDir == 'results' ? 'active' : ''; ?>">
                     <i class="fas fa-chart-bar"></i> 
                     <span>Results</span>
+                </a>
+            </li>
+
+            <li>
+                <a href="<?php echo BASE_URL; ?>/views/admin/student_requests.php" class="<?php echo $currentPage == 'student_requests.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-inbox"></i>
+                    <span>Student Requests</span>
                 </a>
             </li>
             

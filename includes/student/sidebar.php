@@ -12,25 +12,10 @@ $studentProfile = $currentUser['profile'];
 ?>
 <div class="sidebar student-sidebar" id="sidebar">
     <div class="sidebar-header">
-        <h3><?php echo APP_SHORT_NAME; ?></h3>
+        <h3 style="color:#6b7280"><?php echo APP_SHORT_NAME; ?></h3>
         <p><small>Student Portal</small></p>
 
-        <!-- Student Profile Section -->
-        <div class="sidebar-profile">
-            <div class="sidebar-profile-avatar">
-                <?php if (!empty($studentProfile['photo'])): ?>
-                    <img src="<?php echo BASE_URL . '/' . $studentProfile['photo']; ?>" alt="Profile Photo">
-                <?php else: ?>
-                    <div class="sidebar-profile-initials">
-                        <?php echo strtoupper(substr($studentProfile['first_name'], 0, 1) . substr($studentProfile['last_name'], 0, 1)); ?>
-                    </div>
-                <?php endif; ?>
-            </div>
-            <div class="sidebar-profile-info">
-                <div class="sidebar-profile-name"><?php echo e($studentProfile['first_name'] . ' ' . $studentProfile['last_name']); ?></div>
-                <div class="sidebar-profile-id"><?php echo e($studentProfile['student_id']); ?></div>
-            </div>
-        </div>
+
     </div>
     
     <div class="sidebar-menu">
@@ -41,19 +26,11 @@ $studentProfile = $currentUser['profile'];
                 </a>
             </li>
             
-            <li class="menu-section">Personal</li>
-            
-            <li>
-                <a href="<?php echo BASE_URL; ?>/views/student/profile.php" class="<?php echo $currentPage == 'profile.php' ? 'active' : ''; ?>" title="My Profile">
-                    <i class="fas fa-user"></i> <span>My Profile</span>
-                </a>
-            </li>
-            
             <li class="menu-section">Academic</li>
             
             <li>
-                <a href="<?php echo BASE_URL; ?>/views/student/course-registration.php" class="<?php echo $currentPage == 'course-registration.php' ? 'active' : ''; ?>" title="Course Registration">
-                    <i class="fas fa-clipboard-list"></i> <span>Course Registration</span>
+                <a href="<?php echo BASE_URL; ?>/views/student/course-registration.php" class="<?php echo $currentPage == 'course-registration.php' ? 'active' : ''; ?>" title="Semester Registration">
+                    <i class="fas fa-clipboard-list"></i> <span>Semester Registration</span>
                 </a>
             </li>
             

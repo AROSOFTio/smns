@@ -164,7 +164,7 @@ include '../../includes/header.php';
                 <div class="stat-details">
                     <h3><?php echo number_format($totalCourses); ?></h3>
                     <p>Assigned Courses</p>
-                    <div class="stat-change neutral">—— Current Semester</div>
+                    <div class="stat-change neutral"><?php echo $currentSemester['semester_name'] ?? 'Current Semester'; ?></div>
                 </div>
             </div>
             
