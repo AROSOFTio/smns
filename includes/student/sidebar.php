@@ -62,6 +62,12 @@ $studentProfile = $currentUser['profile'];
                     <i class="fas fa-book-open"></i> <span>My Courses</span>
                 </a>
             </li>
+
+            <li>
+                <a href="<?php echo BASE_URL; ?>/views/student/registrations.php" class="<?php echo $currentPage == 'registrations.php' ? 'active' : ''; ?>" title="My Registrations">
+                    <i class="fas fa-clipboard-check"></i> <span>My Registrations</span>
+                </a>
+            </li>
             
             <li>
                 <a href="<?php echo BASE_URL; ?>/views/student/results.php" class="<?php echo $currentPage == 'results.php' ? 'active' : ''; ?>" title="My Results">

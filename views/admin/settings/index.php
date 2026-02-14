@@ -87,6 +87,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $val = Security::sanitize($_POST[$f] ?? '');
             saveSetting($conn, $f, $val);
         }
+        // checkbox: auto_approve_registrations
+        $auto = isset($_POST['auto_approve_registrations']) && ($_POST['auto_approve_registrations'] == '1') ? '1' : '0';
+        saveSetting($conn, 'auto_approve_registrations', $auto);
+
         setFlash('success', 'Security settings updated');
         header('Location: index.php?tab=security');
         exit;
@@ -98,7 +102,7 @@ $settings = [];
 $keys = [
     'institution_name','institution_email','institution_phone','institution_address',
     'academic_year_format','student_id_prefix','admission_prefix','timezone','date_format','session_timeout',
-    'max_login_attempts','account_lockout_duration','min_credit_hours','max_credit_hours','pass_mark'
+    'max_login_attempts','account_lockout_duration','min_credit_hours','max_credit_hours','pass_mark', 'auto_approve_registrations'
 ];
 foreach ($keys as $k) {
     $settings[$k] = getSetting($k, '');
@@ -239,6 +243,13 @@ include '../../../includes/header.php';
                                 <div class="form-group col-md-3">
                                     <label>Max CU</label>
                                     <input type="number" name="max_credit_hours" class="form-control" value="<?php echo e($settings['max_credit_hours'] ?: 21); ?>">
+                                </div>
+                                <div class="form-group col-md-6">
+                                    <div class="form-check mt-2">
+                                        <input class="form-check-input" type="checkbox" id="autoApprove" name="auto_approve_registrations" value="1" <?php echo ($settings['auto_approve_registrations'] ?? '') == '1' ? 'checked' : ''; ?>>
+                                        <label class="form-check-label" for="autoApprove">Auto-approve course registrations on student submit</label>
+                                        <small class="form-text text-muted">When enabled, course registrations submitted by students will be automatically approved.</small>
+                                    </div>
                                 </div>
                                 <div class="form-group col-md-6 align-self-end">
                                     <button type="submit" name="save_security" class="btn btn-primary">Save Security</button>
