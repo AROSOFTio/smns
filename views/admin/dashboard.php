@@ -76,10 +76,9 @@ $loginSessions = $logger->getLoginSessions(15);
 // Current semester
 $currentSemester = Helper::getCurrentSemester();
 
-// Notifications (admin sees all system notifications)
-$stmt = $conn->prepare("SELECT * FROM notifications WHERE read_status = 'unread' ORDER BY created_at DESC LIMIT 10");
-$stmt->execute();
-$unreadNotifications = $stmt->fetchAll();
+// Notifications (per-user + broadcast aware)
+$currentUser = isset($currentUser) ? $currentUser : $auth->getCurrentUser();
+$unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
 
 // Saved (archived) notifications for the current admin (dashboard widget)
 // Ensure the archive table exists (safe to run multiple times)

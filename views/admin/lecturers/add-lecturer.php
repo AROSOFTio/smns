@@ -211,10 +211,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $db = new Database();
 $conn = $db->getConnection();
 
-// Notifications (admin sees all system notifications)
-$stmt = $conn->prepare("SELECT * FROM notifications WHERE read_status = 'unread' ORDER BY created_at DESC LIMIT 10");
-$stmt->execute();
-$unreadNotifications = $stmt->fetchAll();
+// Notifications (per-user + broadcast aware)
+$currentUser = isset($currentUser) ? $currentUser : $auth->getCurrentUser();
+$unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
 
 $pageTitle = 'Add Lecturer - ' . APP_NAME;
 include dirname(__DIR__, 3) . '/includes/header.php';

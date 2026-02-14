@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram name="Seminary ERD" id="seminary-erd">
-        <mxGraphModel dx="2475" dy="1875" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+        <mxGraphModel dx="2100" dy="2024" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -32,7 +32,7 @@
                     <mxGeometry x="1090" y="160" width="200" height="140" as="geometry"/>
                 </mxCell>
                 <mxCell id="course_registrations" value="&lt;b&gt;course_registrations&lt;/b&gt;&lt;hr&gt;PK id: INT&lt;br&gt;FK student_id: INT&lt;br&gt;FK course_id: INT&lt;br&gt;FK semester_id: INT&lt;br&gt;registration_date: DATE&lt;br&gt;status: ENUM&lt;br&gt;FK approved_by: INT" style="rounded=0;whiteSpace=wrap;html=1;align=left;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
-                    <mxGeometry x="600" y="420" width="220" height="140" as="geometry"/>
+                    <mxGeometry x="570" y="240" width="220" height="140" as="geometry"/>
                 </mxCell>
                 <mxCell id="course_assignments" value="&lt;b&gt;course_assignments&lt;/b&gt;&lt;hr&gt;PK id: INT&lt;br&gt;FK lecturer_id: INT&lt;br&gt;FK course_id: INT&lt;br&gt;FK semester_id: INT&lt;br&gt;assigned_date: DATE&lt;br&gt;status: ENUM" style="rounded=0;whiteSpace=wrap;html=1;align=left;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
                     <mxGeometry x="320" y="460" width="200" height="120" as="geometry"/>
@@ -53,7 +53,7 @@
                     <mxGeometry x="280" y="600" width="200" height="160" as="geometry"/>
                 </mxCell>
                 <mxCell id="fees_structure" value="&lt;b&gt;fees_structure&lt;/b&gt;&lt;hr&gt;PK id: INT&lt;br&gt;fee_name: VARCHAR(200)&lt;br&gt;fee_type: VARCHAR(100)&lt;br&gt;amount: DECIMAL&lt;br&gt;FK program_id: INT&lt;br&gt;level_year: INT&lt;br&gt;FK semester_id: INT&lt;br&gt;mandatory: ENUM&lt;br&gt;status: ENUM" style="rounded=0;whiteSpace=wrap;html=1;align=left;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
-                    <mxGeometry x="520" y="610" width="200" height="160" as="geometry"/>
+                    <mxGeometry x="610" y="880" width="200" height="160" as="geometry"/>
                 </mxCell>
                 <mxCell id="student_balances" value="&lt;b&gt;student_balances&lt;/b&gt;&lt;hr&gt;PK id: INT&lt;br&gt;FK student_id: INT&lt;br&gt;FK semester_id: INT&lt;br&gt;total_fees: DECIMAL&lt;br&gt;total_paid: DECIMAL&lt;br&gt;balance: DECIMAL&lt;br&gt;last_payment_date: DATE" style="rounded=0;whiteSpace=wrap;html=1;align=left;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
                     <mxGeometry x="760" y="600" width="200" height="140" as="geometry"/>

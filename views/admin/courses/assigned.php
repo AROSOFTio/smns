@@ -80,10 +80,9 @@ $lecturers = $stmt->fetchAll();
 $stmt = $conn->query("SELECT s.*, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id ORDER BY ay.year_name DESC, s.semester_number DESC");
 $semesters = $stmt->fetchAll();
 
-// Notifications (admin sees all system notifications)
-$stmt = $conn->prepare("SELECT * FROM notifications WHERE read_status = 'unread' ORDER BY created_at DESC LIMIT 10");
-$stmt->execute();
-$unreadNotifications = $stmt->fetchAll();
+// Notifications (per-user + broadcast aware)
+$currentUser = isset($currentUser) ? $currentUser : $auth->getCurrentUser();
+$unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
 
 $pageTitle = 'Assigned Courses - ' . APP_NAME;
 include '../../../includes/header.php';

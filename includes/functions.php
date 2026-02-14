@@ -176,13 +176,14 @@ function fetchUnreadNotificationsForUser($userId, $limit = 10) {
     // Fetch notifications visible to this user: personal (user_id = $userId) or broadcasts (user_id IS NULL or 0)
     $sql = "SELECT n.*, nr.read_at AS my_read_at
             FROM notifications n
-            LEFT JOIN notifications_read nr ON nr.notification_id = n.id AND nr.user_id = :uid
+            LEFT JOIN notifications_read nr ON nr.notification_id = n.id AND nr.user_id = :uid_read
             WHERE (n.user_id = :uid) OR (n.user_id IS NULL) OR (n.user_id = 0)
             ORDER BY n.created_at DESC
             LIMIT :limit";
 
     $stmt = $conn->prepare($sql);
     $stmt->bindValue(':uid', (int)$userId, PDO::PARAM_INT);
+    $stmt->bindValue(':uid_read', (int)$userId, PDO::PARAM_INT);
     $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);

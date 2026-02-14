@@ -53,23 +53,10 @@ $conn->exec("CREATE TABLE IF NOT EXISTS notification_archive (
 
 switch ($action) {
     case 'fetch':
-        // Fetch notifications for the current user
-        $isAdmin = !empty($_SESSION['admin_logged_in']);
+        // Fetch notifications for the current user (honour per-user read markers for broadcasts)
         $limit = intval($_GET['limit'] ?? 10);
-        
-        if ($isAdmin) {
-            // Admin sees all system notifications
-            $stmt = $conn->prepare("SELECT * FROM notifications WHERE read_status = 'unread' ORDER BY created_at DESC LIMIT :limit");
-            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-        } else {
-            // Others see only their notifications
-            $stmt = $conn->prepare("SELECT * FROM notifications WHERE user_id = :user_id AND read_status = 'unread' ORDER BY created_at DESC LIMIT :limit");
-            $stmt->bindValue(':user_id', $userId, PDO::PARAM_INT);
-            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-        }
-        $stmt->execute();
-        $notifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
+        $notifications = fetchUnreadNotificationsForUser($userId, $limit);
+
         // Format notifications for JSON response
         $formattedNotifications = [];
         foreach ($notifications as $notif) {
@@ -134,6 +121,21 @@ switch ($action) {
                 $stmt = $conn->prepare("UPDATE notifications SET read_status = 'read', read_at = NOW() WHERE id = :id AND user_id = :uid");
                 $stmt->execute(['id' => $id, 'uid' => $userId]);
             }
+
+            // Auto-save (archive) this notification for the current user when it's marked read
+            try {
+                $n = $conn->prepare('SELECT id, title, message, link FROM notifications WHERE id = :id');
+                $n->execute(['id' => $id]);
+                $nrow = $n->fetch(PDO::FETCH_ASSOC);
+                if ($nrow) {
+                    $chk = $conn->prepare('SELECT id FROM notification_archive WHERE notification_id = :nid AND user_id = :uid LIMIT 1');
+                    $chk->execute(['nid' => $nrow['id'], 'uid' => $userId]);
+                    if (!$chk->fetch()) {
+                        $a = $conn->prepare('INSERT INTO notification_archive (notification_id, user_id, title, message, link) VALUES (:nid, :uid, :title, :msg, :link)');
+                        $a->execute(['nid' => $nrow['id'], 'uid' => $userId, 'title' => $nrow['title'], 'msg' => $nrow['message'], 'link' => $nrow['link']]);
+                    }
+                }
+            } catch (Exception $e) { /* ignore archive errors */ }
 
             echo json_encode(['success' => true]);
         } else {

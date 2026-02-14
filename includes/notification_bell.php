@@ -390,6 +390,15 @@
                     const item = dropdown.querySelector(`[data-id="${notifId}"]`);
                     if (item) {
                         item.classList.remove('unread');
+
+                        // UI: reflect that the notification was auto-saved (archive)
+                        const saveBtn = item.querySelector('.notif-archive-btn');
+                        if (saveBtn) {
+                            saveBtn.disabled = true;
+                            saveBtn.classList.remove('btn-outline-secondary');
+                            saveBtn.classList.add('btn-success');
+                            saveBtn.textContent = 'Saved';
+                        }
                     }
                 }
             });

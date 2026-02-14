@@ -70,10 +70,9 @@ $students = $stmt->fetchAll();
 $stmt = $conn->query("SELECT * FROM programs WHERE status = 'active' ORDER BY program_name");
 $programs = $stmt->fetchAll();
 
-// Notifications
-$stmt = $conn->prepare("SELECT * FROM notifications WHERE read_status = 'unread' ORDER BY created_at DESC LIMIT 10");
-$stmt->execute();
-$unreadNotifications = $stmt->fetchAll();
+// Notifications (per-user + broadcast aware)
+$currentUser = isset($currentUser) ? $currentUser : $auth->getCurrentUser();
+$unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
 
 $pageTitle = 'Students List - ' . APP_NAME;
 include '../../../includes/header.php';

@@ -73,10 +73,9 @@ foreach ($allCourses as $course) {
 $stmt = $conn->query("SELECT DISTINCT level_year FROM courses WHERE level_year IS NOT NULL AND level_year != '' ORDER BY level_year DESC");
 $academicYears = $stmt->fetchAll();
 
-// Notifications (admin sees all system notifications)
-$stmt = $conn->prepare("SELECT * FROM notifications WHERE read_status = 'unread' ORDER BY created_at DESC LIMIT 10");
-$stmt->execute();
-$unreadNotifications = $stmt->fetchAll();
+// Notifications (per-user + broadcast aware)
+$currentUser = isset($currentUser) ? $currentUser : $auth->getCurrentUser();
+$unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
 
 $pageTitle = 'Courses List - ' . APP_NAME;
 include '../../../includes/header.php';

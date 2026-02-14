@@ -252,7 +252,7 @@ include '../../includes/header.php';
 
                             <div class="mt-3">
                                 <button id="editProfileBtn" class="btn btn-sm btn-outline-primary">Edit profile</button>
-                                <a href="../dashboard.php" class="btn btn-sm btn-secondary">Back to dashboard</a>
+                                <a href="dashboard.php" class="btn btn-sm btn-secondary">Back to dashboard</a>
                             </div>
                         </div>
 
