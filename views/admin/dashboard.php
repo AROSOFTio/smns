@@ -142,6 +142,12 @@ include '../../includes/header.php';
                         <i class="dropdown-arrow">▼</i>
                     </button>
                     <div class="user-dropdown-menu" id="userDropdownMenu">
+                        <div class="user-profile-meta">
+                            <div class="user-fullname"><?php echo e($currentUser['profile']['first_name'] ?? ''); ?> <?php echo e($currentUser['profile']['last_name'] ?? ''); ?></div>
+                            <?php if (!empty($currentUser['profile']['email'])): ?>
+                                <div class="user-email"><i class="fas fa-envelope"></i> <?php echo e($currentUser['profile']['email']); ?></div>
+                            <?php endif; ?>
+                        </div>
                         <a href="profile.php" class="dropdown-item">
                             <i class="fas fa-user"></i> My Profile
                         </a>

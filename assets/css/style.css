@@ -773,6 +773,16 @@ body {
     z-index: 1000;
 }
 
+/* user profile meta shown in dropdown */
+.user-profile-meta {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f4f4f4;
+    background: #fff;
+}
+.user-profile-meta .user-fullname { font-weight:600; font-size:14px; color:#222; margin-bottom:4px; }
+.user-profile-meta .user-email { font-size:13px; color:#666; display:flex; align-items:center; gap:8px; }
+.user-profile-meta .user-email i { color:#888; font-size:12px; }
+
 .user-dropdown.active .user-dropdown-menu {
     opacity: 1;
     visibility: visible;
