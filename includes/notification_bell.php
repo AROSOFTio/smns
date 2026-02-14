@@ -140,8 +140,8 @@
                     msg.style.color = '#0066cc';
                     msg.textContent = 'Changing password...';
                     
-                    // Submit via AJAX
-                    fetch('<?php echo "' + $changePwdEndpoint + '"; ?>', {
+                    // Submit via AJAX to the correct role-specific endpoint
+                    fetch('<?php echo $changePwdEndpoint; ?>', {
                         method: 'POST',
                         credentials: 'same-origin',
                         headers: {
@@ -156,8 +156,11 @@
                     })
                     .then(function(data){
                         if (data.success) {
-                            form.reset();
-                            panel.style.display = 'none';
+                            // show brief success then close
+                            msg.style.backgroundColor = '#e6ffed';
+                            msg.style.color = '#087f23';
+                            msg.textContent = data.message || 'Password changed';
+                            setTimeout(function(){ form.reset(); panel.style.display = 'none'; msg.textContent = ''; }, 900);
                         } else {
                             msg.style.backgroundColor = '#fee';
                             msg.style.color = '#c00';
