@@ -4,6 +4,7 @@
  */
 $currentPage = basename($_SERVER['PHP_SELF']);
 $currentDir = basename(dirname($_SERVER['PHP_SELF']));
+$activeSettingsTab = $_GET['tab'] ?? ''; // used to highlight specific settings tabs
 
 // Get current admin profile for sidebar
 $session = new Session('admin');
@@ -122,6 +123,52 @@ $fullName = trim(($adminProfile['first_name'] ?? '') . ' ' . ($adminProfile['las
 .sidebar-menu a span {
     flex: 1;
     font-size: 13px;
+}
+
+/* Settings submenu — high-contrast text; grey on hover/touch */
+.submenu-menu li a {
+    color: #0f172a; /* near-black for high contrast */
+    font-weight: 700;
+    background: transparent;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+.submenu-menu li a i {
+    color: #0f172a;
+}
+.submenu-menu li a:hover,
+.submenu-menu li a:focus,
+.submenu-menu li a:active {
+    color: #6b7280; /* gray on touch/hover */
+    background: #f3f4f6; /* subtle grey background */
+}
+.submenu-menu li a.active {
+    color: #0f172a; /* keep high contrast when active */
+    background: #e6f2ff; /* subtle active background */
+    font-weight: 800;
+}
+
+/* System section & items (always visible, blue -> grey on hover) */
+.system-section {
+    color: #1d4ed8;
+    font-weight: 800;
+}
+.system-item {
+    color: #1d4ed8;
+    font-weight: 600;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+.system-item i {
+    color: #1d4ed8;
+}
+.system-item:hover,
+.system-item:focus,
+.system-item:active {
+    color: #6b7280;
+    background: #f3f4f6;
+}
+.system-item.active {
+    color: #1e40af;
+    background: #e6f2ff;
 }
 
 /* Menu Sections */
@@ -293,20 +340,18 @@ $fullName = trim(($adminProfile['first_name'] ?? '') . ' ' . ($adminProfile['las
                 </a>
             </li>
             
-            <li class="menu-section">System</li>
-            
+            <li class="menu-section system-section">System</li>
 
-            
             <li>
-                <a href="<?php echo BASE_URL; ?>/views/admin/email-test.php" class="<?php echo $currentPage == 'email-test.php' ? 'active' : ''; ?>">
+                <a href="<?php echo BASE_URL; ?>/views/admin/email-test.php" class="<?php echo ($currentPage == 'email-test.php' ? 'active' : '') ?> system-item">
                     <i class="fas fa-envelope"></i> 
                     <span>Email Test</span>
                 </a>
             </li>
-            
+
             <li>
-                <a href="<?php echo BASE_URL; ?>/views/admin/settings/general.php" class="<?php echo $currentDir == 'settings' ? 'active' : ''; ?>">
-                    <i class="fas fa-cog"></i> 
+                <a href="<?php echo BASE_URL; ?>/views/admin/settings/index.php" class="<?php echo ($currentDir == 'settings' ? 'active' : '') ?> system-item">
+                    <i class="fas fa-cog"></i>
                     <span>Settings</span>
                 </a>
             </li>

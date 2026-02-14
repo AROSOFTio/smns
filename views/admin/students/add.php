@@ -120,14 +120,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $conn->beginTransaction();
                     $transactionStarted = true;
 
-                    // Generate unique student code like 2026-STU-001
+                    // Generate unique student code using configured prefix (e.g. 2026-STD-001)
                     $year = date('Y');
-                    $pattern = $year . '-STU-%';
+                    $rawPrefix = getSetting('student_id_prefix', 'STD');
+                    $prefix = strtoupper(preg_replace('/[^A-Z0-9]/i', '', trim($rawPrefix))) ?: 'STD';
+                    $pattern = $year . '-' . $prefix . '-%';
                     $cstmt = $conn->prepare("SELECT COUNT(*) as cnt FROM students WHERE student_id LIKE :pattern");
                     $cstmt->execute(['pattern' => $pattern]);
                     $cnt = $cstmt->fetch()['cnt'] ?? 0;
                     $seq = intval($cnt) + 1;
-                    $studentCode = $year . '-STU-' . str_pad($seq, 3, '0', STR_PAD_LEFT);
+                    $studentCode = $year . '-' . $prefix . '-' . str_pad($seq, 3, '0', STR_PAD_LEFT);
 
                     // Ensure students.admission_number column exists
                     $colCheck = $conn->query("SHOW COLUMNS FROM students LIKE 'admission_number'")->fetch();
@@ -156,14 +158,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $conn->exec("ALTER TABLE students ADD COLUMN enrollment_type VARCHAR(50) DEFAULT 'Day' AFTER entry_mode");
                     }
 
-                    // Generate system admission number like ADM-2026-0001
+                    // Generate system admission number using configurable prefix (e.g. ADM-2026-0001)
                     $admYear = $entry_year ?: date('Y');
-                    $admPattern = 'ADM-' . $admYear . '-%';
+                    $rawPrefix = getSetting('admission_prefix', 'ADM-');
+                    $admissionPrefix = rtrim(trim($rawPrefix), '-'); // normalize (remove trailing dash if any)
+                    $admPattern = $admissionPrefix . '-' . $admYear . '-%';
                     $ac = $conn->prepare("SELECT COUNT(*) as cnt FROM students WHERE admission_number LIKE :pattern");
                     $ac->execute(['pattern' => $admPattern]);
                     $acnt = $ac->fetch()['cnt'] ?? 0;
                     $aseq = intval($acnt) + 1;
-                    $admissionNumber = 'ADM-' . $admYear . '-' . str_pad($aseq, 4, '0', STR_PAD_LEFT);
+                    $admissionNumber = $admissionPrefix . '-' . $admYear . '-' . str_pad($aseq, 4, '0', STR_PAD_LEFT);
 
                     // Generate portal username
                     $ucheck = new Auth();
