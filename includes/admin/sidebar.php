@@ -334,8 +334,8 @@ $fullName = trim(($adminProfile['first_name'] ?? '') . ' ' . ($adminProfile['las
             </li>
             
             <li>
-                <a href="<?php echo BASE_URL; ?>/views/admin/reports/students.php" class="<?php echo $currentDir == 'reports' ? 'active' : ''; ?>">
-                    <i class="fas fa-file-alt"></i> 
+                <a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php" class="<?php echo $currentDir == 'reports' ? 'active' : ''; ?>">
+                    <i class="fas fa-chart-bar"></i> 
                     <span>Reports</span>
                 </a>
             </li>
