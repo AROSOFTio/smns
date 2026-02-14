@@ -73,6 +73,42 @@ $recentActivities = $logger->getRecentActivities(10);
 // Login sessions with duration
 $loginSessions = $logger->getLoginSessions(15);
 
+// Handle semester activation (admin-only)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['activate_semester_id'])) {
+    if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $session->setFlash('error', 'Invalid CSRF token');
+        header('Location: dashboard.php'); exit;
+    }
+
+    $activateId = intval($_POST['activate_semester_id']);
+    try {
+        $conn->beginTransaction();
+        // Deactivate other semesters
+        $conn->exec("UPDATE semesters SET status = 'inactive'");
+        // Activate selected semester
+        $ust = $conn->prepare("UPDATE semesters SET status = 'active' WHERE id = :id");
+        $ust->execute(['id' => $activateId]);
+
+        // Ensure corresponding academic year is active
+        $ayStmt = $conn->prepare('SELECT academic_year_id FROM semesters WHERE id = :id LIMIT 1');
+        $ayStmt->execute(['id' => $activateId]);
+        $ayRow = $ayStmt->fetch(PDO::FETCH_ASSOC);
+        if ($ayRow && !empty($ayRow['academic_year_id'])) {
+            $conn->exec("UPDATE academic_years SET status = 'inactive'");
+            $uay = $conn->prepare("UPDATE academic_years SET status = 'active' WHERE id = :id");
+            $uay->execute(['id' => $ayRow['academic_year_id']]);
+        }
+
+        $conn->commit();
+        $session->setFlash('success', 'Semester activated');
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) $conn->rollBack();
+        $session->setFlash('error', 'Failed to activate semester: ' . $e->getMessage());
+    }
+
+    header('Location: dashboard.php'); exit;
+}
+
 // Current semester
 $currentSemester = Helper::getCurrentSemester();
 
@@ -490,18 +526,37 @@ include '../../includes/header.php';
                 <?php if ($currentSemester): ?>
                 <div class="semester-card">
                     <h3><i class="fas fa-calendar-alt"></i> Current Semester</h3>
-                    <div class="semester-info">
-                        <div class="semester-name"><?php echo e($currentSemester['semester_name'] ?? 'Not Set'); ?></div>
-                        <div class="semester-dates">
-                            <span><i class="fas fa-play"></i> <?php echo Helper::formatDate($currentSemester['start_date'] ?? ''); ?></span>
-                            <span><i class="fas fa-stop"></i> <?php echo Helper::formatDate($currentSemester['end_date'] ?? ''); ?></span>
+                            <div class="semester-info">
+                            <div class="semester-name"><?php echo e($currentSemester['semester_name'] ?? 'Not Set'); ?></div>
+                            <div class="semester-dates">
+                                <span><i class="fas fa-play"></i> <?php echo Helper::formatDate($currentSemester['start_date'] ?? ''); ?></span>
+                                <span><i class="fas fa-stop"></i> <?php echo Helper::formatDate($currentSemester['end_date'] ?? ''); ?></span>
+                            </div>
+                            <div class="semester-status">
+                                <span class="badge badge-<?php echo Helper::getStatusColor($currentSemester['status'] ?? 'active'); ?>">
+                                    <?php echo ucfirst($currentSemester['status'] ?? 'Active'); ?>
+                                </span>
+                            </div>
+
+                            <!-- Activate another semester -->
+                            <div style="margin-top:12px;">
+                                <form method="POST" style="display:flex;gap:8px;align-items:center;">
+                                    <input type="hidden" name="csrf_token" value="<?php echo e(Security::generateCSRFToken()); ?>">
+                                    <select name="activate_semester_id" class="form-control form-control-sm" style="min-width:220px;">
+                                        <?php
+                                            $sstmt = $conn->query("SELECT s.id, s.semester_name, s.start_date, s.end_date, ay.year_name, s.status FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id ORDER BY s.start_date DESC");
+                                            $allSems = $sstmt->fetchAll();
+                                            foreach ($allSems as $s) {
+                                                $label = $s['year_name'] . ' - ' . $s['semester_name'] . ' (' . date('M d, Y', strtotime($s['start_date'])) . ' - ' . date('M d, Y', strtotime($s['end_date'])) . ')';
+                                                $sel = ($currentSemester && $currentSemester['id'] == $s['id']) ? 'selected' : '';
+                                                echo "<option value=\"{$s['id']}\" {$sel}>" . e($label) . " - " . e(ucfirst($s['status'])) . "</option>";
+                                            }
+                                        ?>
+                                    </select>
+                                    <button class="btn btn-sm btn-primary" type="submit">Activate</button>
+                                </form>
+                            </div>
                         </div>
-                        <div class="semester-status">
-                            <span class="badge badge-<?php echo Helper::getStatusColor($currentSemester['status'] ?? 'active'); ?>">
-                                <?php echo ucfirst($currentSemester['status'] ?? 'Active'); ?>
-                            </span>
-                        </div>
-                    </div>
                 </div>
                 <?php endif; ?>
             </div>
