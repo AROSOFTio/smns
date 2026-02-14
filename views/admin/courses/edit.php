@@ -57,6 +57,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $course_code = strtoupper(trim($_POST['course_code'] ?? ''));
     $course_name = Security::sanitize($_POST['course_name'] ?? '');
     $credit_hours = (int)($_POST['credit_hours'] ?? 3);
+    $lecture_hours = (int)($_POST['lecture_hours'] ?? 0);
+    $tutorial_hours = (int)($_POST['tutorial_hours'] ?? 0);
+    $practical_hours = (int)($_POST['practical_hours'] ?? 0);
     $program_id = (int)($_POST['program_id'] ?? 0);
     $level_year = (int)($_POST['level_year'] ?? 1);
     $semester_offered = (int)($_POST['semester_offered'] ?? 1);
@@ -106,6 +109,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     course_code = :course_code,
                     course_name = :course_name,
                     credit_hours = :credit_hours,
+                    lecture_hours = :lecture_hours,
+                    tutorial_hours = :tutorial_hours,
+                    practical_hours = :practical_hours,
                     program_id = :program_id,
                     level_year = :level_year,
                     semester_offered = :semester_offered,
@@ -120,6 +126,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'course_code' => $course_code,
                 'course_name' => $course_name,
                 'credit_hours' => $credit_hours,
+                'lecture_hours' => $lecture_hours,
+                'tutorial_hours' => $tutorial_hours,
+                'practical_hours' => $practical_hours,
                 'program_id' => $program_id,
                 'level_year' => $level_year,
                 'semester_offered' => $semester_offered,
@@ -201,6 +210,35 @@ include '../../../includes/header.php';
                         </div>
                     </div>
 
+                    <!-- Course Hours Information -->
+                    <div class="form-row">
+                        <div class="form-group col-md-3">
+                            <label>Lecture Hours (LH)</label>
+                            <input type="number" name="lecture_hours" class="form-control" min="0" max="100"
+                                   placeholder="0" value="<?php echo e($_POST['lecture_hours'] ?? $course['lecture_hours']); ?>">
+                            <small class="text-muted">Number of lecture hours per week</small>
+                        </div>
+                        <div class="form-group col-md-3">
+                            <label>Tutorial Hours (TH)</label>
+                            <input type="number" name="tutorial_hours" class="form-control" min="0" max="100"
+                                   placeholder="0" value="<?php echo e($_POST['tutorial_hours'] ?? $course['tutorial_hours']); ?>">
+                            <small class="text-muted">Number of tutorial hours per week</small>
+                        </div>
+                        <div class="form-group col-md-3">
+                            <label>Practical Hours (PH)</label>
+                            <input type="number" name="practical_hours" class="form-control" min="0" max="100"
+                                   placeholder="0" value="<?php echo e($_POST['practical_hours'] ?? $course['practical_hours']); ?>">
+                            <small class="text-muted">Number of practical hours per week</small>
+                        </div>
+                        <div class="form-group col-md-3">
+                            <label>Contact Hours (CH)</label>
+                            <input type="text" class="form-control" readonly
+                                   value="<?php echo e(($_POST['lecture_hours'] ?? $course['lecture_hours']) + ($_POST['tutorial_hours'] ?? $course['tutorial_hours']) + ($_POST['practical_hours'] ?? $course['practical_hours'])); ?>"
+                                   id="contact_hours_display">
+                            <small class="text-muted">Auto-calculated: LH + TH + PH</small>
+                        </div>
+                    </div>
+
                     <div class="form-row">
                         <div class="form-group col-md-4">
                             <label>Program <span class="text-danger">*</span></label>
@@ -261,6 +299,31 @@ include '../../../includes/header.php';
                 <button type="submit" class="btn btn-primary">💾 Update Course</button>
             </div>
         </form>
+
+        <script>
+        // Auto-calculate contact hours
+        document.addEventListener('DOMContentLoaded', function() {
+            const lectureHours = document.querySelector('input[name="lecture_hours"]');
+            const tutorialHours = document.querySelector('input[name="tutorial_hours"]');
+            const practicalHours = document.querySelector('input[name="practical_hours"]');
+            const contactHoursDisplay = document.getElementById('contact_hours_display');
+
+            function calculateContactHours() {
+                const lh = parseInt(lectureHours.value) || 0;
+                const th = parseInt(tutorialHours.value) || 0;
+                const ph = parseInt(practicalHours.value) || 0;
+                const total = lh + th + ph;
+                contactHoursDisplay.value = total;
+            }
+
+            lectureHours.addEventListener('input', calculateContactHours);
+            tutorialHours.addEventListener('input', calculateContactHours);
+            practicalHours.addEventListener('input', calculateContactHours);
+
+            // Initial calculation
+            calculateContactHours();
+        });
+        </script>
     </div>
 </div>
 
