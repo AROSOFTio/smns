@@ -156,7 +156,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = $validator->firstError();
         }
     }
-}
 
 $db = new Database();
 $conn = $db->getConnection();

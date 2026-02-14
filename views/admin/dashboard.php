@@ -81,6 +81,32 @@ $stmt = $conn->prepare("SELECT * FROM notifications WHERE read_status = 'unread'
 $stmt->execute();
 $unreadNotifications = $stmt->fetchAll();
 
+// Saved (archived) notifications for the current admin (dashboard widget)
+// Ensure the archive table exists (safe to run multiple times)
+try {
+    $conn->exec("CREATE TABLE IF NOT EXISTS notification_archive (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        notification_id INT NULL,
+        user_id INT NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        message TEXT NULL,
+        link VARCHAR(255) NULL,
+        archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_user (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+} catch (Exception $e) {
+    // ignore - if creation fails, we'll handle on select
+}
+
+try {
+    $savedStmt = $conn->prepare("SELECT * FROM notification_archive WHERE user_id = :uid ORDER BY archived_at DESC LIMIT 6");
+    $savedStmt->execute(['uid' => $currentUser['id']]);
+    $savedNotifications = $savedStmt->fetchAll();
+} catch (Exception $e) {
+    // Table might not exist or other DB issue — degrade gracefully
+    $savedNotifications = [];
+}
+
 $pageTitle = 'Admin Dashboard - ' . APP_NAME;
 include '../../includes/header.php';
 ?>
@@ -474,6 +500,34 @@ include '../../includes/header.php';
                 </div>
                 <?php endif; ?>
             </div>
+
+            <div class="col-md-4">
+                <!-- Saved / Archived Notifications (dashboard widget) -->
+                <div class="saved-notifications-card">
+                    <h3><i class="fas fa-bookmark"></i> Saved Notifications</h3>
+                    <div class="saved-list">
+                        <?php if (!empty($savedNotifications)): ?>
+                            <?php foreach ($savedNotifications as $s): ?>
+                                <div class="saved-item">
+                                    <div class="saved-meta">
+                                        <strong><?php echo e($s['title']); ?></strong>
+                                        <span class="saved-time"><?php echo Helper::timeAgo($s['archived_at']); ?></span>
+                                    </div>
+                                    <div class="saved-body">
+                                        <p><?php echo e(mb_substr(strip_tags($s['message']), 0, 120)); ?></p>
+                                        <?php if (!empty($s['link'])): ?>
+                                            <a href="<?php echo e($s['link']); ?>" class="btn btn-sm btn-link">Open</a>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <div class="empty-state text-muted">No saved notifications</div>
+                        <?php endif; ?>
+                    </div>
+                    <div class="text-right mt-2"><a href="notifications/archive.php" class="btn btn-sm btn-outline-primary">View all saved</a></div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -518,6 +572,25 @@ include '../../includes/header.php';
     align-items: center;
     gap: 10px;
     padding: 8px 12px;
+}
+
+/* Saved notifications widget */
+.saved-notifications-card {
+    background: white;
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+    margin-bottom: 16px;
+    min-height: 180px;
+}
+.saved-notifications-card h3 { font-size:14px; font-weight:600; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+.saved-list { display:flex; flex-direction:column; gap:10px; max-height:260px; overflow:auto; }
+.saved-item { padding:8px; border-radius:8px; border:1px solid #f2f2f2; background:#fff; display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
+.saved-meta strong { display:block; font-size:13px; }
+.saved-meta .saved-time { color:#888; font-size:12px; }
+.saved-body p { margin:6px 0 0; font-size:13px; color:#444; }
+.saved-body .btn-link { padding:0; font-size:12px; }
+
     background: #f8f9fa;
     border-radius: 8px;
     color: #495057;

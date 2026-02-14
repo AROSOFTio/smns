@@ -256,26 +256,46 @@
                 if (list && notifications.length > 0) {
                     let html = '';
                     notifications.forEach(notif => {
-                        const iconMap = {
-                            'info': 'info-circle',
-                            'success': 'check-circle',
-                            'warning': 'exclamation-triangle',
-                            'error': 'times-circle'
-                        };
+                        const iconMap = { 'info': 'info-circle', 'success': 'check-circle', 'warning': 'exclamation-triangle', 'error': 'times-circle' };
                         const icon = iconMap[notif.type] || 'info-circle';
-                        
-                        html += `
-                            <a href="${notif.link || '#'}" class="notification-item unread" data-id="${notif.id}">
-                                <div class="notif-icon notif-${notif.type}">
-                                    <i class="fas fa-${icon}"></i>
+                        const actionLabelMap = { 'run_backup': 'Run backup', 'purge_backups': 'Purge backups', 'purge_logs': 'Purge logs', 'clear_cache': 'Clear cache' };
+
+                        if (notif.action) {
+                            const aLabel = actionLabelMap[notif.action] || notif.action;
+                            html += `
+                                <div class="notification-item unread d-flex" data-id="${notif.id}" data-action="${notif.action}">
+                                    <div class="notif-icon notif-${notif.type}">
+                                        <i class="fas fa-${icon}"></i>
+                                    </div>
+                                    <div class="notif-content">
+                                        <p class="notif-title">${notif.title.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+                                        <p class="notif-text">${notif.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+                                        <span class="notif-time">${notif.time_ago}</span>
+                                    </div>
+                                    <div style="margin-left:8px;align-self:center;display:flex;flex-direction:column;gap:6px;">
+                                        <button class="btn btn-sm btn-outline-primary notif-action-btn" data-action="${notif.action}">${aLabel}</button>
+                                        <button class="btn btn-sm btn-outline-secondary notif-archive-btn" data-id="${notif.id}">Save</button>
+                                    </div>
                                 </div>
-                                <div class="notif-content">
-                                    <p class="notif-title">${notif.title.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
-                                    <p class="notif-text">${notif.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
-                                    <span class="notif-time">${notif.time_ago}</span>
+                            `;
+                        } else {
+                            html += `
+                                <div class="notification-item unread d-flex" data-id="${notif.id}">
+                                    <div class="notif-icon notif-${notif.type}">
+                                        <i class="fas fa-${icon}"></i>
+                                    </div>
+                                    <div class="notif-content">
+                                        <p class="notif-title">${notif.title.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+                                        <p class="notif-text">${notif.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+                                        <span class="notif-time">${notif.time_ago}</span>
+                                    </div>
+                                    <div style="margin-left:8px;align-self:center;">
+                                        <button class="btn btn-sm btn-outline-secondary notif-archive-btn" data-id="${notif.id}">Save</button>
+                                    </div>
                                 </div>
-                            </a>
-                        `;
+                            `;
+                        }
+                    });
                     });
                     list.innerHTML = html;
                     
@@ -372,8 +392,91 @@
             });
         };
         
-        // Add click listeners to notification items
+        // Handle notification-item clicks (mark read)
         document.addEventListener('click', function(e) {
+            const btn = e.target.closest('.notif-action-btn');
+            if (btn) {
+                // action button clicked
+                e.preventDefault();
+                const op = btn.getAttribute('data-action');
+                if (!op) return;
+                btn.disabled = true;
+                btn.textContent = 'Running...';
+
+                fetch('<?php echo BASE_URL; ?>/api/notifications.php?action=execute', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'op=' + encodeURIComponent(op)
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        btn.classList.remove('btn-outline-primary');
+                        btn.classList.add('btn-success');
+                        btn.textContent = 'Done';
+                        // optionally mark the notification read
+                        const parent = btn.closest('.notification-item');
+                        if (parent && parent.getAttribute('data-id')) {
+                            markNotificationRead(parent.getAttribute('data-id'));
+                        }
+                    } else {
+                        btn.classList.remove('btn-outline-primary');
+                        btn.classList.add('btn-danger');
+                        btn.textContent = 'Failed';
+                        setTimeout(function(){ btn.disabled = false; btn.classList.remove('btn-danger'); btn.classList.add('btn-outline-primary'); btn.textContent = (op === 'run_backup' ? 'Run backup' : 'Run'); }, 3000);
+                    }
+                })
+                .catch(err => {
+                    console.error('Action error', err);
+                    btn.disabled = false; btn.classList.remove('btn-outline-primary'); btn.classList.add('btn-danger'); btn.textContent = 'Error';
+                });
+
+                return;
+            }
+
+            // Archive (Save) button
+            const abtn = e.target.closest('.notif-archive-btn');
+            if (abtn) {
+                e.preventDefault();
+                const nid = abtn.getAttribute('data-id');
+                if (!nid) return;
+                abtn.disabled = true;
+                abtn.textContent = 'Saving...';
+
+                fetch('<?php echo BASE_URL; ?>/api/notifications.php?action=archive', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'id=' + encodeURIComponent(nid)
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        abtn.classList.remove('btn-outline-secondary');
+                        abtn.classList.add('btn-success');
+                        abtn.textContent = 'Saved';
+                        const parent = abtn.closest('.notification-item');
+                        if (parent && parent.getAttribute('data-id')) {
+                            markNotificationRead(parent.getAttribute('data-id'));
+                        }
+                    } else {
+                        abtn.disabled = false;
+                        abtn.classList.remove('btn-outline-secondary');
+                        abtn.classList.add('btn-danger');
+                        abtn.textContent = 'Error';
+                        setTimeout(function(){ abtn.classList.remove('btn-danger'); abtn.classList.add('btn-outline-secondary'); abtn.textContent = 'Save'; }, 2500);
+                    }
+                })
+                .catch(err => {
+                    console.error('Archive error', err);
+                    abtn.disabled = false; abtn.classList.remove('btn-outline-secondary'); abtn.classList.add('btn-danger'); abtn.textContent = 'Error';
+                    setTimeout(function(){ abtn.classList.remove('btn-danger'); abtn.classList.add('btn-outline-secondary'); abtn.textContent = 'Save'; }, 2500);
+                });
+
+                return;
+            }
+
             const item = e.target.closest('.notification-item');
             if (item && item.classList.contains('unread')) {
                 const notifId = item.getAttribute('data-id');
@@ -394,25 +497,53 @@
         <div class="notification-list">
             <?php if (!empty($unreadNotifications)): ?>
                 <?php foreach ($unreadNotifications as $notif): ?>
-                    <a href="<?php echo e($notif['link'] ?? '#'); ?>" class="notification-item unread" data-id="<?php echo $notif['id']; ?>">
-                        <div class="notif-icon notif-<?php echo e($notif['type']); ?>">
-                            <?php
-                            $iconMap = [
-                                'info' => 'info-circle',
-                                'success' => 'check-circle',
-                                'warning' => 'exclamation-triangle',
-                                'error' => 'times-circle'
-                            ];
-                            $icon = $iconMap[$notif['type']] ?? 'info-circle';
-                            ?>
-                            <i class="fas fa-<?php echo $icon; ?>"></i>
+                    <?php if (!empty($notif['link']) && strpos($notif['link'], 'action:') === 0):
+                            $actionCode = substr($notif['link'], strlen('action:'));
+                            // simple label map for common ops
+                            $labelMap = ['run_backup'=>'Run backup','purge_backups'=>'Purge backups','purge_logs'=>'Purge logs','clear_cache'=>'Clear cache'];
+                            $actionLabel = $labelMap[$actionCode] ?? 'Run';
+                        ?>
+                        <div class="notification-item unread d-flex" data-id="<?php echo $notif['id']; ?>">
+                            <div class="notif-icon notif-<?php echo e($notif['type']); ?>">
+                                <?php $icon = ($notif['type'] == 'success') ? 'check-circle' : (($notif['type']=='error') ? 'times-circle' : 'info-circle'); ?>
+                                <i class="fas fa-<?php echo $icon; ?>"></i>
+                            </div>
+                            <div class="notif-content" style="flex:1;">
+                                <p class="notif-title"><?php echo e($notif['title']); ?></p>
+                                <p class="notif-text"><?php echo e($notif['message']); ?></p>
+                                <span class="notif-time"><?php echo Helper::timeAgo($notif['created_at']); ?></span>
+                            </div>
+                            <div style="margin-left:8px;align-self:center;display:flex;flex-direction:column;gap:6px;">
+                                <button class="btn btn-sm btn-outline-primary notif-action-btn" data-action="<?php echo e($actionCode); ?>"><?php echo e($actionLabel); ?></button>
+                                <button class="btn btn-sm btn-outline-secondary notif-archive-btn" data-id="<?php echo $notif['id']; ?>">Save</button>
+                            </div>
                         </div>
-                        <div class="notif-content">
-                            <p class="notif-title"><?php echo e($notif['title']); ?></p>
-                            <p class="notif-text"><?php echo e($notif['message']); ?></p>
-                            <span class="notif-time"><?php echo Helper::timeAgo($notif['created_at']); ?></span>
+                    <?php else: ?>
+                        <div class="notification-item unread d-flex" data-id="<?php echo $notif['id']; ?>">
+                            <a href="<?php echo e($notif['link'] ?? '#'); ?>" style="flex:1;text-decoration:none;color:inherit;display:flex;">
+                                <div class="notif-icon notif-<?php echo e($notif['type']); ?>">
+                                    <?php
+                                    $iconMap = [
+                                        'info' => 'info-circle',
+                                        'success' => 'check-circle',
+                                        'warning' => 'exclamation-triangle',
+                                        'error' => 'times-circle'
+                                    ];
+                                    $icon = $iconMap[$notif['type']] ?? 'info-circle';
+                                    ?>
+                                    <i class="fas fa-<?php echo $icon; ?>"></i>
+                                </div>
+                                <div class="notif-content">
+                                    <p class="notif-title"><?php echo e($notif['title']); ?></p>
+                                    <p class="notif-text"><?php echo e($notif['message']); ?></p>
+                                    <span class="notif-time"><?php echo Helper::timeAgo($notif['created_at']); ?></span>
+                                </div>
+                            </a>
+                            <div style="margin-left:8px;align-self:center;">
+                                <button class="btn btn-sm btn-outline-secondary notif-archive-btn" data-id="<?php echo $notif['id']; ?>">Save</button>
+                            </div>
                         </div>
-                    </a>
+                    <?php endif; ?>
                 <?php endforeach; ?>
             <?php else: ?>
                 <div class="notification-empty">

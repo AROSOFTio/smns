@@ -350,6 +350,13 @@ $fullName = trim(($adminProfile['first_name'] ?? '') . ' ' . ($adminProfile['las
             </li>
 
             <li>
+                <a href="<?php echo BASE_URL; ?>/views/admin/system/health.php" class="<?php echo ($currentPage == 'health.php' ? 'active' : '') ?> system-item">
+                    <i class="fas fa-heartbeat"></i>
+                    <span>System Health</span>
+                </a>
+            </li>
+
+            <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/settings/index.php" class="<?php echo ($currentDir == 'settings' ? 'active' : '') ?> system-item">
                     <i class="fas fa-cog"></i>
                     <span>Settings</span>

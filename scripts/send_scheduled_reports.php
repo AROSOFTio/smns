@@ -115,6 +115,20 @@ foreach ($schedules as $s) {
         $u = $conn->prepare("UPDATE scheduled_reports SET last_sent_at = NOW() WHERE id = :id");
         $u->execute(['id' => $s['id']]);
 
+        // create admin notifications for audit and quick access
+        try {
+            $noteStmt = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, link, created_at) VALUES (:uid, :title, :msg, :type, :link, NOW())");
+            $admins = $conn->query("SELECT id FROM users WHERE role = 'admin'")->fetchAll(PDO::FETCH_ASSOC);
+            $title = ($sent ? 'Scheduled report sent' : 'Scheduled report failed') . ' — ' . $s['name'];
+            $msg = ($sent ? 'Report generated and emailed. ' : 'Report failed to send. ') . 'Download: ' . BASE_URL . '/downloads/' . $filename;
+            $link = BASE_URL . '/downloads/' . $filename;
+            foreach ($admins as $a) {
+                try { $noteStmt->execute(['uid' => $a['id'], 'title' => $title, 'msg' => $msg, 'type' => $sent ? 'success' : 'error', 'link' => $link]); } catch (Exception $ex) { }
+            }
+        } catch (Exception $e) {
+            // ignore notification errors
+        }
+
         echo " -> done (mail: " . ($sent ? 'ok' : 'failed') . ")\n";
     }
 }

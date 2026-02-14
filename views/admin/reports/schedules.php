@@ -181,6 +181,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($schedule) {
             $sent = sendScheduledReportNow($conn, $schedule);
             setFlash('success', $sent ? 'Report sent' : 'Report queued (mail function returned false)');
+
+            // Log + notify admins
+            try {
+                $logger = new Logger();
+                $currentUser = $auth->getCurrentUser();
+                $logger->log($currentUser['id'] ?? 0, 'scheduled_report_sent', 'reports', 'Send now: ' . $schedule['name'] . ' -> ' . ($sent ? 'ok' : 'failed'));
+
+                $noteStmt = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, link, created_at) VALUES (:uid, :title, :msg, :type, :link, NOW())");
+                $admins = $conn->query("SELECT id FROM users WHERE role = 'admin'")->fetchAll(PDO::FETCH_ASSOC);
+                $title = ($sent ? 'Scheduled report sent' : 'Scheduled report failed') . ' — ' . $schedule['name'];
+                $msg = ($sent ? 'Report generated and emailed.' : 'Report failed to send.');
+                foreach ($admins as $a) { try { $noteStmt->execute(['uid'=>$a['id'],'title'=>$title,'msg'=>$msg,'type'=>$sent ? 'success' : 'error','link'=>BASE_URL . '/views/admin/reports/schedules.php']); } catch (Exception $e) {} }
+            } catch (Exception $e) {}
         }
         header('Location: schedules.php'); exit;
     }

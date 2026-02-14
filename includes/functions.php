@@ -156,3 +156,53 @@ function getSetting($key, $default = null) {
     
     return $settings[$key] ?? $default;
 }
+
+/**
+ * Fetch unread notifications for a given user (handles personal + broadcast + per-user read state)
+ */
+function fetchUnreadNotificationsForUser($userId, $limit = 10) {
+    $db = new Database();
+    $conn = $db->getConnection();
+
+    // Ensure helper tables exist (notifications_read)
+    $conn->exec("CREATE TABLE IF NOT EXISTS notifications_read (
+        notification_id INT NOT NULL,
+        user_id INT NOT NULL,
+        read_at DATETIME NOT NULL,
+        PRIMARY KEY(notification_id, user_id),
+        INDEX idx_user (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+    // Fetch notifications visible to this user: personal (user_id = $userId) or broadcasts (user_id IS NULL or 0)
+    $sql = "SELECT n.*, nr.read_at AS my_read_at
+            FROM notifications n
+            LEFT JOIN notifications_read nr ON nr.notification_id = n.id AND nr.user_id = :uid
+            WHERE (n.user_id = :uid) OR (n.user_id IS NULL) OR (n.user_id = 0)
+            ORDER BY n.created_at DESC
+            LIMIT :limit";
+
+    $stmt = $conn->prepare($sql);
+    $stmt->bindValue(':uid', (int)$userId, PDO::PARAM_INT);
+    $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+    $stmt->execute();
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $unread = [];
+    foreach ($rows as $r) {
+        $isBroadcast = is_null($r['user_id']) || $r['user_id'] == 0;
+        if ($isBroadcast) {
+            // unread if no entry in notifications_read for this user
+            if (empty($r['my_read_at'])) {
+                $unread[] = $r;
+            }
+        } else {
+            // personal notification honours read_status
+            if (($r['read_status'] ?? '') !== 'read') {
+                $unread[] = $r;
+            }
+        }
+    }
+
+    return $unread;
+}
+
