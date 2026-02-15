@@ -320,9 +320,9 @@ $fullName = trim(($adminProfile['first_name'] ?? '') . ' ' . ($adminProfile['las
             <li class="menu-section">Operations</li>
             
             <li>
-                <a href="<?php echo BASE_URL; ?>/views/admin/registrations/pending.php" class="<?php echo $currentDir == 'registrations' ? 'active' : ''; ?>">
+                <a href="<?php echo BASE_URL; ?>/views/admin/tions/pending.php" class="<?php echo $currentDir == 'tions' ? 'active' : ''; ?>">
                     <i class="fas fa-clipboard-list"></i> 
-                    <span>Registrations</span>
+                    <span>tions</span>
                 </a>
             </li>
             
@@ -407,5 +407,35 @@ document.addEventListener('DOMContentLoaded', function() {
             setTimeout(ensureFits, 150);
         });
     });
+
+    // --- Auto-scroll helpers: keep active / related items visible (fixes Student Requests visibility) ---
+    function scrollToCenter(el) {
+        if (!el || !el.scrollIntoView) return;
+        try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch(e) { /* ignore */ }
+    }
+
+    // Ensure the active menu item is visible on load, and when viewing tions scroll Student Requests into view
+    function ensureSidebarVisibility() {
+        // scroll active item into view
+        var active = document.querySelector('.sidebar-menu a.active');
+        if (active) scrollToCenter(active);
+
+        // if currently on a tions page, show Student Requests link so admins can access it quickly
+        if (window.location.pathname.indexOf('/tions/') !== -1 || window.location.pathname.indexOf('/tions') !== -1) {
+            var studentReq = document.querySelector('.sidebar-menu a[href*="student_requests.php"]');
+            if (studentReq) scrollToCenter(studentReq);
+        }
+    }
+
+    // run once after layout adjustments
+    setTimeout(ensureSidebarVisibility, 200);
+
+    // re-run after menu clicks (preserve visibility)
+    document.querySelectorAll('.sidebar-menu a').forEach(function(el) {
+        el.addEventListener('click', function() {
+            setTimeout(ensureSidebarVisibility, 250);
+        });
+    });
+
 });
 </script>

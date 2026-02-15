@@ -106,7 +106,7 @@ Notice User A and User C:
 
 ### Seminary Office Scenario
 ```
-8:00 AM - Registrar (Admin) logs in
+8:00 AM - r (Admin) logs in
          ↓
          Creates session: sess_reg123
          ↓
@@ -124,7 +124,7 @@ Notice User A and User C:
           Create 50 separate sessions:
           sess_std001, sess_std002, ..., sess_std050
           ↓
-          Registrar still working... ✓
+          r still working... ✓
           Finance Officer still working... ✓
           50 Students all working... ✓
 

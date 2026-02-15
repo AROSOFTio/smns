@@ -132,7 +132,7 @@ include '../../includes/header.php';
                     <p class="text-muted">No semester configured for the selected academic year / semester number.</p>
                 <?php else: ?>
                     <?php if (empty($assigned)): ?>
-                        <p class="text-muted">Admin has not assigned courses for the selected semester yet.</p>
+                        <!-- intentionally blank when no courses are assigned; students should use the registration button only -->
                     <?php else: ?>
                         <div class="table-responsive">
                             <table class="table table-sm table-hover">
@@ -209,10 +209,10 @@ include '../../includes/header.php';
             </div>
         </div>
 
-        <div class="card">
+                <div class="card">
             <div class="card-body">
                 <h5>Notes</h5>
-                <p class="text-muted">Courses shown here are those assigned by administration for the selected semester. Use <strong>Register for semester</strong> to submit your selections (registrations may require admin approval).</p>
+                <p class="text-muted">Courses shown here are those assigned by administration for the selected semester.</p>
             </div>
         </div>
     </div>

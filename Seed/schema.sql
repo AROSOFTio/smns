@@ -201,6 +201,29 @@ CREATE TABLE students (
     INDEX idx_level (level_year)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Semester registrations: students request semester registration (admin approves)
+CREATE TABLE IF NOT EXISTS semester_registrations (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    student_id INT NOT NULL,
+    semester_id INT NOT NULL,
+    year_of_study TINYINT NULL,
+    status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+    request_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    approved_by INT DEFAULT NULL,
+    approval_date DATETIME DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_student_semester (student_id, semester_id),
+    KEY idx_student (student_id),
+    KEY idx_semester (semester_id),
+    KEY idx_year (year_of_study),
+    KEY idx_status (status),
+    KEY idx_approver (approved_by),
+    CONSTRAINT fk_semester_reg_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    CONSTRAINT fk_semester_reg_semester FOREIGN KEY (semester_id) REFERENCES semesters(id) ON DELETE CASCADE,
+    CONSTRAINT fk_semester_reg_approver FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ============================================================================
 -- LECTURER TABLES
 -- ============================================================================

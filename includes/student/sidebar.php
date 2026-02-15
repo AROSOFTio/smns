@@ -35,18 +35,6 @@ $studentProfile = $currentUser['profile'];
             </li>
             
             <li>
-                <a href="<?php echo BASE_URL; ?>/views/student/my-courses.php" class="<?php echo $currentPage == 'my-courses.php' ? 'active' : ''; ?>" title="My Courses">
-                    <i class="fas fa-book-open"></i> <span>My Courses</span>
-                </a>
-            </li>
-
-            <li>
-                <a href="<?php echo BASE_URL; ?>/views/student/registrations.php" class="<?php echo $currentPage == 'registrations.php' ? 'active' : ''; ?>" title="My Registrations">
-                    <i class="fas fa-clipboard-check"></i> <span>My Registrations</span>
-                </a>
-            </li>
-            
-            <li>
                 <a href="<?php echo BASE_URL; ?>/views/student/results.php" class="<?php echo $currentPage == 'results.php' ? 'active' : ''; ?>" title="My Results">
                     <i class="fas fa-chart-line"></i> <span>My Results</span>
                 </a>
@@ -88,3 +76,23 @@ $studentProfile = $currentUser['profile'];
         </ul>
     </div>
 </div>
+
+<script>
+// Auto-scroll student sidebar so the active link is visible (improves visibility on short viewports)
+document.addEventListener('DOMContentLoaded', function() {
+    var sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    function scrollActive() {
+        var active = sidebar.querySelector('.sidebar-menu a.active');
+        if (active && active.scrollIntoView) {
+            try { active.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch(e) {}
+        }
+    }
+    // initial, and on interactions
+    setTimeout(scrollActive, 120);
+    window.addEventListener('resize', scrollActive);
+    document.querySelectorAll('.sidebar-menu a').forEach(function(el){
+        el.addEventListener('click', function(){ setTimeout(scrollActive, 150); });
+    });
+});
+</script>
