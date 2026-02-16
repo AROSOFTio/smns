@@ -5,9 +5,7 @@
  */
 require_once '../../config.php';
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+
 
 $session = new Session('student');
 $auth = new Auth('student');
@@ -927,25 +925,27 @@ include '../../includes/header.php';
                     <div class="alert alert-danger">
                         <i class="fas fa-exclamation-triangle"></i> 
                         <strong>Unable to auto-register.</strong>
-                        <div class="mt-2">
-                            <p>Debugging Information:</p>
-                            <ul style="margin-bottom: 0;">
-                                <li>Student ID: <?php echo $studentProfile['id']; ?></li>
-                                <li>Semester ID: <?php echo $semesterId; ?> <?php if ($semesterId <= 0) echo '<strong>(INVALID - Must be greater than 0)</strong>'; ?></li>
-                                <li>Year of Study: <?php echo $yearOfStudy; ?></li>
-                                <li>Semester Number: <?php echo $selectedSemesterNumber; ?></li>
-                                <li>Academic Year ID: <?php echo $selectedAcademicYearId; ?></li>
-                            </ul>
-                        </div>
-                        <?php if ($semesterId <= 0): ?>
+                        <?php if (defined('APP_DEBUG') && APP_DEBUG): ?>
                             <div class="mt-2">
-                                <strong>Issue:</strong> Invalid semester ID. The semester you selected may not exist in the database.
-                                <br>Please ensure:
-                                <ol>
-                                    <li>The academic year "<?php echo $selectedAcademicYearId; ?>" exists in the academic_years table</li>
-                                    <li>A semester with number "<?php echo $selectedSemesterNumber; ?>" exists for that academic year</li>
-                                </ol>
+                                <p>Debugging Information:</p>
+                                <ul style="margin-bottom: 0;">
+                                    <li>Student ID: <?php echo $studentProfile['id']; ?></li>
+                                    <li>Semester ID: <?php echo $semesterId; ?> <?php if ($semesterId <= 0) echo '<strong>(INVALID - Must be greater than 0)</strong>'; ?></li>
+                                    <li>Year of Study: <?php echo $yearOfStudy; ?></li>
+                                    <li>Semester Number: <?php echo $selectedSemesterNumber; ?></li>
+                                    <li>Academic Year ID: <?php echo $selectedAcademicYearId; ?></li>
+                                </ul>
                             </div>
+                            <?php if ($semesterId <= 0): ?>
+                                <div class="mt-2">
+                                    <strong>Issue:</strong> Invalid semester ID. The semester you selected may not exist in the database.
+                                    <br>Please ensure:
+                                    <ol>
+                                        <li>The academic year "<?php echo $selectedAcademicYearId; ?>" exists in the academic_years table</li>
+                                        <li>A semester with number "<?php echo $selectedSemesterNumber; ?>" exists for that academic year</li>
+                                    </ol>
+                                </div>
+                            <?php endif; ?>
                         <?php endif; ?>
                         <div class="mt-2">
                             <small>Please contact administration with this information.</small>

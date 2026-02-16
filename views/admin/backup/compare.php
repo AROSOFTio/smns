@@ -1,6 +1,6 @@
 <?php
 require_once '../../../config.php';
-if (session_status() === PHP_SESSION_NONE) session_start();
+
 $session = new Session('admin');
 $auth = new Auth('admin');
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {

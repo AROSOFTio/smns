@@ -4,17 +4,12 @@
  */
 require_once '../../config.php';
 
-// Simple session handling
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
 // Initialize session and auth with student module context
 $session = new Session('student');
 $auth = new Auth('student');
 
-// Verify student access (using module-specific session keys)
-if (!isset($_SESSION['student_logged_in']) || $_SESSION['student_logged_in'] !== true || $_SESSION['student_role'] !== 'student') {
+// Verify student access
+if (!$auth->isLoggedIn() || $auth->getRole() !== 'student') {
     header('Location: ' . BASE_URL . '/views/student/login.php?error=unauthorized');
     exit;
 }

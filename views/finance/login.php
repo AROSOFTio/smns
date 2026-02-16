@@ -5,10 +5,11 @@
  */
 require_once '../../config.php';
 
-// Simple session handling
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+// Don't start session here - let Session class handle it with proper role-specific name
+// Session will be started when Auth is created
+
+// Create session with finance role context to use SMNS_FINANCE_SESSION cookie
+$tempSession = new Session('finance');
 
 // Check if finance user is already logged in (using module-specific session keys)
 if (isset($_SESSION['finance_logged_in']) && $_SESSION['finance_logged_in'] === true && $_SESSION['finance_role'] === 'finance') {

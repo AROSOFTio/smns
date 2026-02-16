@@ -140,24 +140,14 @@ class Auth {
             $_SESSION[$modulePrefix . '_logged_in'] = true;
             $_SESSION[$modulePrefix . '_login_time'] = time();
             $_SESSION[$modulePrefix . '_session_token'] = bin2hex(random_bytes(32));
-            
-            // Also set legacy keys for backward compatibility (but these may be overwritten)
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['username'] = $user['username'];
-            $_SESSION['email'] = $user['email'];
-            $_SESSION['role'] = $user['role'];
-            $_SESSION['profile'] = $profile;
-            $_SESSION['logged_in'] = true;
-            $_SESSION['login_time'] = time();
-            $_SESSION['session_token'] = bin2hex(random_bytes(32));
-            
-            // Log activity
-            $this->logActivity($user['id'], 'login', 'authentication', 'User logged in to ' . $modulePrefix . ' module');
 
-            // If user requires password change, include flag in return value
-            $requireChange = isset($user['require_password_change']) && $user['require_password_change'] == 1;
+            // Log successful login so admin can see it in Recent Activity / Login Sessions
+            $moduleName = $this->module ?: $user['role'];
+            $description = 'User logged in as ' . $user['role'] . ' (' . $user['username'] . ')';
+            $this->logActivity($user['id'], 'login', $moduleName, $description);
 
-            return ['success' => true, 'role' => $user['role'], 'user' => $profile, 'require_password_change' => $requireChange];
+            // Return success with user's role
+            return ['success' => true, 'role' => $user['role']];
         } catch(Exception $e) {
             error_log("Login error: " . $e->getMessage());
             // Show detailed error in development mode
@@ -218,28 +208,32 @@ class Auth {
      * Check if user is logged in to the current module
      */
     public function isLoggedIn() {
-        // First check module-specific login
-        if ($this->module) {
-            $moduleLoggedIn = $_SESSION[$this->module . '_logged_in'] ?? false;
-            $moduleRole = $_SESSION[$this->module . '_role'] ?? null;
-            if ($moduleLoggedIn === true && $moduleRole === $this->module) {
-                return true;
-            }
+        if (!$this->module) {
+            return false;
         }
-        // Fallback to legacy check
-        return $this->session->get('logged_in') === true;
+        $loggedInKey = $this->module . '_logged_in';
+        $roleKey = $this->module . '_role';
+
+        return (isset($_SESSION[$loggedInKey]) && $_SESSION[$loggedInKey] === true &&
+                isset($_SESSION[$roleKey]) && $_SESSION[$roleKey] === $this->module);
     }
-    
+
+    /**
+     * Get the role of the current user for this module
+     */
+    public function getRole() {
+        if (!$this->module) {
+            return null;
+        }
+        $roleKey = $this->module . '_role';
+        return $_SESSION[$roleKey] ?? null;
+    }
+
     /**
      * Check if user has specific role in current module
      */
     public function hasRole($role) {
-        // First check module-specific role
-        if ($this->module) {
-            return ($_SESSION[$this->module . '_role'] ?? null) === $role;
-        }
-        // Fallback to legacy check
-        return $this->session->get('role') === $role;
+        return $this->getRole() === $role;
     }
     
     /**
@@ -278,27 +272,14 @@ class Auth {
             return null;
         }
         
-        // Try module-specific keys first
-        if ($this->module) {
-            $prefix = $this->module . '_';
-            if (isset($_SESSION[$prefix . 'user_id'])) {
-                return [
-                    'id' => $_SESSION[$prefix . 'user_id'],
-                    'username' => $_SESSION[$prefix . 'username'],
-                    'email' => $_SESSION[$prefix . 'email'],
-                    'role' => $_SESSION[$prefix . 'role'],
-                    'profile' => $_SESSION[$prefix . 'profile']
-                ];
-            }
-        }
+        $prefix = $this->module . '_';
         
-        // Fallback to legacy keys
         return [
-            'id' => $this->session->get('user_id'),
-            'username' => $this->session->get('username'),
-            'email' => $this->session->get('email'),
-            'role' => $this->session->get('role'),
-            'profile' => $this->session->get('profile')
+            'id' => $_SESSION[$prefix . 'user_id'] ?? null,
+            'username' => $_SESSION[$prefix . 'username'] ?? null,
+            'email' => $_SESSION[$prefix . 'email'] ?? null,
+            'role' => $_SESSION[$prefix . 'role'] ?? null,
+            'profile' => $_SESSION[$prefix . 'profile'] ?? null
         ];
     }
     

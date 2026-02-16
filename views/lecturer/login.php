@@ -5,10 +5,11 @@
  */
 require_once '../../config.php';
 
-// Simple session handling
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+// Don't start session here - let Session class handle it with proper role-specific name
+// Session will be started when Auth is created
+
+// Create session with lecturer role context to use SMNS_LECTURER_SESSION cookie
+$tempSession = new Session('lecturer');
 
 // Check if lecturer is already logged in (using module-specific session keys)
 if (isset($_SESSION['lecturer_logged_in']) && $_SESSION['lecturer_logged_in'] === true && $_SESSION['lecturer_role'] === 'lecturer') {

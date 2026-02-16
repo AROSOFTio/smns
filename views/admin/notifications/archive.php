@@ -4,9 +4,7 @@
  */
 require_once '../../../config.php';
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+
 
 $session = new Session('admin');
 $auth = new Auth('admin');

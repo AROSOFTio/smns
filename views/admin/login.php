@@ -5,10 +5,11 @@
  */
 require_once '../../config.php';
 
-// Simple session handling
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+// Don't start session here - let Session class handle it with proper role-specific name
+// Session will be started when Auth is created
+
+// Create session with admin role context to use SMNS_ADMIN_SESSION cookie
+$tempSession = new Session('admin');
 
 // Check if admin is already logged in (using module-specific session keys)
 if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true && $_SESSION['admin_role'] === 'admin') {
@@ -97,14 +98,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 // Login failed - show error and stay on step 2
                 $error = $result['message'] ?? 'Invalid password. Please try again.';
+                
+                // --- TEMPORARY DEBUGGING ---
+                if (defined('APP_DEBUG') && APP_DEBUG) {
+                    $userDebug = $auth->usernameExists($entered_username);
+                    $error .= "<br><pre style='background:#f0f0f0; padding:10px; border:1px solid #ccc;'>";
+                    $error .= "<strong>DEBUG INFO:</strong><br>";
+                    $error .= "Username: " . htmlspecialchars($entered_username) . "<br>";
+                    $error .= "Password Entered: " . htmlspecialchars($password) . "<br>";
+                    $error .= "Password Hash from DB: " . htmlspecialchars($userDebug['password_hash'] ?? 'NOT FOUND') . "<br>";
+                    $error .= "Password Verified: " . (password_verify($password, $userDebug['password_hash'] ?? '') ? 'YES' : 'NO') . "<br>";
+                    $error .= "Auth Result: " . print_r($result, true);
+                    $error .= "</pre>";
+                }
+                // --- END DEBUGGING ---
+
                 $username_valid = true;
                 $step = 2;
                 // Re-fetch user for profile name
                 $user = $auth->usernameExists($entered_username);
                 if (is_array($user)) {
                     $profile_name = $user['fullname'] ?? $user['username'];
-                } else {
-                    $profile_name = $entered_username;
                 }
             }
         }

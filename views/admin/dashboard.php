@@ -4,17 +4,13 @@
  */
 require_once '../../config.php';
 
-// Simple session handling
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
+// Don't start session manually - let Session class handle it with role-specific name
 // Initialize session and auth with admin module context
 $session = new Session('admin');
 $auth = new Auth('admin');
 
-// Verify admin access (using module-specific session keys)
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true || $_SESSION['admin_role'] !== 'admin') {
+// Verify admin access
+if (!$auth->isLoggedIn() || $auth->getRole() !== 'admin') {
     header('Location: ' . BASE_URL . '/views/admin/login.php?error=unauthorized');
     exit;
 }

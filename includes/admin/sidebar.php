@@ -6,11 +6,17 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 $currentDir = basename(dirname($_SERVER['PHP_SELF']));
 $activeSettingsTab = $_GET['tab'] ?? ''; // used to highlight specific settings tabs
 
-// Get current admin profile for sidebar
-$session = new Session('admin');
-$auth = new Auth('admin');
-$currentUser = $auth->getCurrentUser();
-$adminProfile = $currentUser['profile'];
+// Use existing session/auth/currentUser if already set by the page
+if (!isset($session) || !is_object($session)) {
+    $session = new Session('admin');
+}
+if (!isset($auth) || !is_object($auth)) {
+    $auth = new Auth('admin');
+}
+if (!isset($currentUser) || !is_array($currentUser)) {
+    $currentUser = $auth->getCurrentUser();
+}
+$adminProfile = $currentUser['profile'] ?? [];
 
 // Get initials (disabled in sidebar)
 $initials = '';

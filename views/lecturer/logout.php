@@ -6,9 +6,7 @@
 require_once '../../config.php';
 
 // Ensure session is started before creating Auth objects
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+
 
 // Initialize auth with lecturer module context
 $auth = new Auth('lecturer');

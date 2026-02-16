@@ -3,192 +3,79 @@
  * Session Management Class
  * Handles session operations with security measures
  * Supports module-isolated sessions for multi-role access
+ * 
+ * Each role (admin, student, lecturer, finance) uses a separate session cookie.
+ * This allows multiple roles to be logged in simultaneously in different browser tabs.
  */
 class Session {
     private $role = null;
     
     public function __construct($role = null) {
-        $this->role = $role;  // Store role first
+        $this->role = $role;
         
-        if (session_status() === PHP_SESSION_NONE) {
-            // Configure secure session
+        // Determine the correct session name for this role
+        $desiredName = $this->role 
+            ? 'SMNS_' . strtoupper($this->role) . '_SESSION' 
+            : 'SMNS_SESSION';
+        
+        // If headers have already been sent, we cannot change ini settings or start a new session.
+        // In that case, we simply rely on whatever session is already active (if any).
+        if (headers_sent()) {
+            return;
+        }
+        
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            // A session is already active - check if it's the correct one
+            if (session_name() !== $desiredName) {
+                // Wrong session is active (e.g. a page called session_start() before us)
+                // Close it and start the correct one
+                session_write_close();
+                
+                // Configure and start the correct session
+                ini_set('session.cookie_httponly', 1);
+                ini_set('session.use_only_cookies', 1);
+                ini_set('session.cookie_secure', 0);
+                ini_set('session.cookie_samesite', 'Strict');
+                ini_set('session.gc_maxlifetime', defined('SESSION_TIMEOUT') ? SESSION_TIMEOUT : 3600);
+                
+                session_name($desiredName);
+                session_start();
+            }
+            // If same name, session is already correct - do nothing
+        } else {
+            // No active session - configure and start fresh
             ini_set('session.cookie_httponly', 1);
             ini_set('session.use_only_cookies', 1);
-            ini_set('session.cookie_secure', 0); // Set to 1 in production with HTTPS
+            ini_set('session.cookie_secure', 0);
             ini_set('session.cookie_samesite', 'Strict');
             ini_set('session.gc_maxlifetime', defined('SESSION_TIMEOUT') ? SESSION_TIMEOUT : 3600);
-            ini_set('session.use_strict_mode', 1);
             
-            // Use role-specific session names to allow multiple tabs with different roles
-            // This enables opening admin, student, lecturer, finance in different tabs
-            if ($this->role) {
-                session_name('SMNS_' . strtoupper($this->role) . '_SESSION');
-            } else {
-                session_name('SMNS_SESSION');
-            }
-            
-            // Start session
+            session_name($desiredName);
             session_start();
-            
-            // Initialize session security fingerprint
-            if (!isset($_SESSION['initialized'])) {
-                $this->initializeSession();
-            }
-            
-            // Only validate if this is a role-specific session (not public)
-            // Public sessions are for login page and don't need strict validation
-            if ($this->role) {
-                // Validate session fingerprint and role match
-                if (!$this->validateSession()) {
-                    $this->destroy();
-                    session_start();
-                    $this->initializeSession();
-                }
-                
-                // Regenerate session ID periodically
-                if (isset($_SESSION['created'])) {
-                    if (time() - $_SESSION['created'] > 1800) { // 30 minutes
-                        $this->regenerateId();
-                    }
-                }
-            }
-            
-            // Update last activity
-            $_SESSION['last_activity'] = time();
-        } else {
-            // Session already started, set role if provided and ensure initialization
-            if ($role) {
-                $this->role = $role;
-            }
-            if (!isset($_SESSION['initialized'])) {
-                $this->initializeSession();
-            }
-            // If a role is provided, validate session for that role
-            if ($this->role) {
-                if (!$this->validateSession()) {
-                    $this->destroy();
-                    session_start();
-                    $this->initializeSession();
-                }
-
-                // Regenerate session ID periodically
-                if (isset($_SESSION['created'])) {
-                    if (time() - $_SESSION['created'] > 1800) { // 30 minutes
-                        $this->regenerateId();
-                    }
-                }
-            }
         }
-    }
-    
-    /**
-     * Initialize session with security fingerprint
-     */
-    private function initializeSession() {
-        $_SESSION['initialized'] = true;
-        $_SESSION['created'] = time();
         
-        // Store fingerprint with module prefix to avoid conflicts
+        // Check session timeout for logged-in users
         if ($this->role) {
-            $_SESSION[$this->role . '_fingerprint'] = $this->generateFingerprint();
-            $_SESSION[$this->role . '_session_role'] = $this->role;
-        } else {
-            $_SESSION['fingerprint'] = $this->generateFingerprint();
-        }
-        
-        $_SESSION['ip_address'] = $this->getClientIP();
-        $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    }
-    
-    /**
-     * Generate session fingerprint including role for isolation
-     */
-    private function generateFingerprint() {
-        $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
-        $ipAddress = $this->getClientIP();
-        $role = $this->role ?? 'public';
-        return hash('sha256', $userAgent . $ipAddress . $role . session_id());
-    }
-    
-    /**
-     * Get client IP address
-     */
-    private function getClientIP() {
-        if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
-            return $_SERVER['HTTP_CLIENT_IP'];
-        } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-            return $_SERVER['HTTP_X_FORWARDED_FOR'];
-        } else {
-            return $_SERVER['REMOTE_ADDR'] ?? '';
-        }
-    }
-    
-    /**
-     * Validate session fingerprint and role match
-     */
-    private function validateSession() {
-        // Check for module-specific or global fingerprint
-        $fingerprintKey = $this->role ? $this->role . '_fingerprint' : 'fingerprint';
-        
-        if (!isset($_SESSION[$fingerprintKey]) || !isset($_SESSION['ip_address'])) {
-            return false;
-        }
-        
-        // Check IP address hasn't changed
-        if ($_SESSION['ip_address'] !== $this->getClientIP()) {
-            return false;
-        }
-        
-        // Check user agent hasn't changed
-        if (isset($_SESSION['user_agent'])) {
-            $currentUserAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
-            if ($_SESSION['user_agent'] !== $currentUserAgent) {
-                return false;
-            }
-        }
-        
-        // Check role matches if role is set (for role-specific sessions)
-        // Use module-prefixed session_role to avoid conflicts between different roles
-        if ($this->role) {
-            $moduleSessionRoleKey = $this->role . '_session_role';
-            if (isset($_SESSION[$moduleSessionRoleKey])) {
-                if ($_SESSION[$moduleSessionRoleKey] !== $this->role) {
-                    return false;
+            $loggedInKey = $this->role . '_logged_in';
+            if (isset($_SESSION[$loggedInKey]) && $_SESSION[$loggedInKey] === true) {
+                $timeout = defined('SESSION_TIMEOUT') ? SESSION_TIMEOUT : 3600;
+                if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity'] > $timeout)) {
+                    // Session expired - clear this module's data
+                    $this->clearModule();
                 }
             }
         }
         
-        // Verify user role matches session role for logged in users (module-specific)
-        if ($this->role && isset($_SESSION[$this->role . '_role'])) {
-            $moduleSessionRoleKey = $this->role . '_session_role';
-            if (isset($_SESSION[$moduleSessionRoleKey]) && $_SESSION[$this->role . '_role'] !== $_SESSION[$moduleSessionRoleKey]) {
-                return false;
-            }
-        }
-        
-        // Check session timeout
-        if (isset($_SESSION['last_activity'])) {
-            $timeout = defined('SESSION_TIMEOUT') ? SESSION_TIMEOUT : 3600;
-            if (time() - $_SESSION['last_activity'] > $timeout) {
-                return false;
-            }
-        }
-        
-        return true;
+        // Update last activity timestamp
+        $_SESSION['last_activity'] = time();
     }
     
     /**
-     * Regenerate session ID
+     * Regenerate session ID (call after login for security)
      */
     public function regenerateId() {
-        session_regenerate_id(true);
-        $_SESSION['created'] = time();
-        
-        // Store fingerprint with module prefix to avoid conflicts
-        if ($this->role) {
-            $_SESSION[$this->role . '_fingerprint'] = $this->generateFingerprint();
-        } else {
-            $_SESSION['fingerprint'] = $this->generateFingerprint();
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
         }
     }
     
@@ -273,7 +160,7 @@ class Session {
     }
     
     /**
-     * Destroy session
+     * Destroy session completely
      */
     public function destroy() {
         $_SESSION = [];
@@ -286,7 +173,9 @@ class Session {
             );
         }
         
-        session_destroy();
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_destroy();
+        }
     }
     
     /**

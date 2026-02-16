@@ -4,17 +4,12 @@
  */
 require_once '../../config.php';
 
-// Simple session handling
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
 // Initialize session and auth with lecturer module context
 $session = new Session('lecturer');
 $auth = new Auth('lecturer');
 
-// Verify lecturer access (using module-specific session keys)
-if (!isset($_SESSION['lecturer_logged_in']) || $_SESSION['lecturer_logged_in'] !== true || $_SESSION['lecturer_role'] !== 'lecturer') {
+// Verify lecturer access
+if (!$auth->isLoggedIn() || $auth->getRole() !== 'lecturer') {
     header('Location: ' . BASE_URL . '/views/lecturer/login.php?error=unauthorized');
     exit;
 }

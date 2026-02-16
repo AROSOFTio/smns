@@ -4,11 +4,17 @@
  */
 $currentPage = basename($_SERVER['PHP_SELF']);
 
-// Get current student profile for sidebar
-$session = new Session('student');
-$auth = new Auth('student');
-$currentUser = $auth->getCurrentUser();
-$studentProfile = $currentUser['profile'];
+// Use existing session/auth/currentUser if already set by the page
+if (!isset($session) || !is_object($session)) {
+    $session = new Session('student');
+}
+if (!isset($auth) || !is_object($auth)) {
+    $auth = new Auth('student');
+}
+if (!isset($currentUser) || !is_array($currentUser)) {
+    $currentUser = $auth->getCurrentUser();
+}
+$studentProfile = $currentUser['profile'] ?? [];
 ?>
 <div class="sidebar student-sidebar" id="sidebar">
     <div class="sidebar-header">

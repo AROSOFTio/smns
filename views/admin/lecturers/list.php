@@ -5,9 +5,7 @@
 require_once dirname(__DIR__, 3) . '/config.php';
 
 // Simple session handling
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+
 
 // Initialize with admin module context
 $session = new Session('admin');

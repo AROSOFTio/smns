@@ -4,17 +4,12 @@
  */
 require_once '../../config.php';
 
-// Simple session handling
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
 // Initialize session and auth with finance module context
 $session = new Session('finance');
 $auth = new Auth('finance');
 
-// Verify finance access (using module-specific session keys)
-if (!isset($_SESSION['finance_logged_in']) || $_SESSION['finance_logged_in'] !== true || $_SESSION['finance_role'] !== 'finance') {
+// Verify finance access
+if (!$auth->isLoggedIn() || $auth->getRole() !== 'finance') {
     header('Location: ' . BASE_URL . '/views/finance/login.php?error=unauthorized');
     exit;
 }

@@ -6,9 +6,7 @@
 require_once '../../config.php';
 
 // Ensure session is started
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+
 
 // Initialize auth
 $auth = new Auth();
