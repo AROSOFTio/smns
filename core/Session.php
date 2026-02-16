@@ -19,8 +19,13 @@ class Session {
             ini_set('session.gc_maxlifetime', defined('SESSION_TIMEOUT') ? SESSION_TIMEOUT : 3600);
             ini_set('session.use_strict_mode', 1);
             
-            // Use unified session name for all users
-            session_name('SMNS_SESSION');
+            // Use role-specific session names to allow multiple tabs with different roles
+            // This enables opening admin, student, lecturer, finance in different tabs
+            if ($this->role) {
+                session_name('SMNS_' . strtoupper($this->role) . '_SESSION');
+            } else {
+                session_name('SMNS_SESSION');
+            }
             
             // Start session
             session_start();
@@ -82,12 +87,17 @@ class Session {
     private function initializeSession() {
         $_SESSION['initialized'] = true;
         $_SESSION['created'] = time();
-        $_SESSION['fingerprint'] = $this->generateFingerprint();
+        
+        // Store fingerprint with module prefix to avoid conflicts
+        if ($this->role) {
+            $_SESSION[$this->role . '_fingerprint'] = $this->generateFingerprint();
+            $_SESSION[$this->role . '_session_role'] = $this->role;
+        } else {
+            $_SESSION['fingerprint'] = $this->generateFingerprint();
+        }
+        
         $_SESSION['ip_address'] = $this->getClientIP();
         $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? '';
-        if ($this->role) {
-            $_SESSION['session_role'] = $this->role;
-        }
     }
     
     /**
@@ -117,7 +127,10 @@ class Session {
      * Validate session fingerprint and role match
      */
     private function validateSession() {
-        if (!isset($_SESSION['fingerprint']) || !isset($_SESSION['ip_address'])) {
+        // Check for module-specific or global fingerprint
+        $fingerprintKey = $this->role ? $this->role . '_fingerprint' : 'fingerprint';
+        
+        if (!isset($_SESSION[$fingerprintKey]) || !isset($_SESSION['ip_address'])) {
             return false;
         }
         
@@ -135,15 +148,20 @@ class Session {
         }
         
         // Check role matches if role is set (for role-specific sessions)
-        if ($this->role && isset($_SESSION['session_role'])) {
-            if ($_SESSION['session_role'] !== $this->role) {
-                return false;
+        // Use module-prefixed session_role to avoid conflicts between different roles
+        if ($this->role) {
+            $moduleSessionRoleKey = $this->role . '_session_role';
+            if (isset($_SESSION[$moduleSessionRoleKey])) {
+                if ($_SESSION[$moduleSessionRoleKey] !== $this->role) {
+                    return false;
+                }
             }
         }
         
-        // Verify user role matches session role for logged in users
-        if (isset($_SESSION['role']) && isset($_SESSION['session_role'])) {
-            if ($_SESSION['role'] !== $_SESSION['session_role']) {
+        // Verify user role matches session role for logged in users (module-specific)
+        if ($this->role && isset($_SESSION[$this->role . '_role'])) {
+            $moduleSessionRoleKey = $this->role . '_session_role';
+            if (isset($_SESSION[$moduleSessionRoleKey]) && $_SESSION[$this->role . '_role'] !== $_SESSION[$moduleSessionRoleKey]) {
                 return false;
             }
         }
@@ -165,7 +183,13 @@ class Session {
     public function regenerateId() {
         session_regenerate_id(true);
         $_SESSION['created'] = time();
-        $_SESSION['fingerprint'] = $this->generateFingerprint();
+        
+        // Store fingerprint with module prefix to avoid conflicts
+        if ($this->role) {
+            $_SESSION[$this->role . '_fingerprint'] = $this->generateFingerprint();
+        } else {
+            $_SESSION['fingerprint'] = $this->generateFingerprint();
+        }
     }
     
     /**
