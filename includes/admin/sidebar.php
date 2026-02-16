@@ -276,7 +276,7 @@ $fullName = trim(($adminProfile['first_name'] ?? '') . ' ' . ($adminProfile['las
 
 <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
-        <h3 style="color:#6b7280"><?php echo APP_SHORT_NAME; ?></h3>
+        <h3 style="color:#000000"><?php echo APP_SHORT_NAME; ?></h3>
         <p>Administration</p>
     </div>
     
@@ -325,9 +325,15 @@ $fullName = trim(($adminProfile['first_name'] ?? '') . ' ' . ($adminProfile['las
                 </a>
             </li>
             <li>
-                <a href="<?php echo BASE_URL; ?>/views/admin/results/submitted.php" class="<?php echo $currentDir == 'results' ? 'active' : ''; ?>">
-                    <i class="fas fa-chart-bar"></i>
-                    <span>Results</span>
+                <a href="<?php echo BASE_URL; ?>/views/admin/results/submitted.php" class="<?php echo ($currentDir == 'results' && $currentPage == 'submitted.php') ? 'active' : ''; ?>">
+                    <i class="fas fa-edit"></i>
+                    <span>Results - Exam Entry</span>
+                </a>
+            </li>
+            <li>
+                <a href="<?php echo BASE_URL; ?>/views/admin/results/provisional.php" class="<?php echo ($currentDir == 'results' && $currentPage == 'provisional.php') ? 'active' : ''; ?>">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Results - Provisional</span>
                 </a>
             </li>
 

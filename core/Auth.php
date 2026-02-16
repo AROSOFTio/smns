@@ -95,9 +95,12 @@ class Auth {
                 $user = $stmt->fetch();
             }
             
-            // Check if account is locked
+            // Account lockout check (disabled)
+            // Previously, if account_locked_until was in the future, login was blocked.
+            // This behavior has been disabled so users are not locked out.
             if ($user['account_locked_until'] && strtotime($user['account_locked_until']) > time()) {
-                return ['success' => false, 'message' => 'Account is locked. Please try again later.'];
+                // Clear any stale lock/failed attempts and allow normal credential check
+                $this->resetFailedAttempts($user['id']);
             }
             
             // Verify password
@@ -321,20 +324,10 @@ class Auth {
         $stmt = $this->db->prepare($sql);
         $stmt->execute(['id' => $userId]);
         
-        // Check if should lock account
-        $sql = "SELECT failed_login_attempts FROM users WHERE id = :id";
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute(['id' => $userId]);
-        $user = $stmt->fetch();
-        
-        $maxAttempts = defined('MAX_LOGIN_ATTEMPTS') ? MAX_LOGIN_ATTEMPTS : 5;
-        if ($user['failed_login_attempts'] >= $maxAttempts) {
-            $lockDuration = defined('ACCOUNT_LOCKOUT_DURATION') ? ACCOUNT_LOCKOUT_DURATION : 30;
-            $lockUntil = date('Y-m-d H:i:s', strtotime("+$lockDuration minutes"));
-            $sql = "UPDATE users SET account_locked_until = :lock_until WHERE id = :id";
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute(['lock_until' => $lockUntil, 'id' => $userId]);
-        }
+        // Previously: check if failed attempts reached threshold and lock account.
+        // Lockout has been disabled to avoid blocking user access, so we no longer
+        // set account_locked_until here. Failed attempts are still tracked but
+        // will not prevent login.
     }
     
     /**

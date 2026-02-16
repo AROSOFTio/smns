@@ -63,6 +63,12 @@ $lecturerProfile = $currentUser['profile'] ?? [];
                 </a>
             </li>
             
+            <li>
+                <a href="<?php echo BASE_URL; ?>/views/lecturer/class-list.php" class="<?php echo $currentPage == 'class-list.php' ? 'active' : ''; ?>" title="Class List">
+                    <i class="fas fa-users"></i> <span>Class List</span>
+                </a>
+            </li>
+            
             <li class="menu-section">Results</li>
             
             <li>

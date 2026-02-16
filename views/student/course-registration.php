@@ -5,18 +5,22 @@
  */
 require_once '../../config.php';
 
-
-
 $session = new Session('student');
 $auth = new Auth('student');
 
-// Verify student access
-if (!isset($_SESSION['student_logged_in']) || $_SESSION['student_logged_in'] !== true || $_SESSION['student_role'] !== 'student') {
+// Verify student access using Auth helper (module-specific session keys)
+if (!$auth->isLoggedIn() || $auth->getRole() !== 'student') {
     header('Location: ' . BASE_URL . '/views/student/login.php?error=unauthorized');
     exit;
 }
 
 $currentUser = $auth->getCurrentUser();
+if (!$currentUser || empty($currentUser['profile'])) {
+    // Fallback safety: if profile missing, force re-login
+    header('Location: ' . BASE_URL . '/views/student/login.php?error=unauthorized');
+    exit;
+}
+
 $studentProfile = $currentUser['profile'];
 
 $db = new Database();
@@ -37,6 +41,15 @@ $defaultAcademicYearId = Helper::getCurrentAcademicYear()['id'] ?? ($academicYea
 // Determine selected academic year & semester number from GET (or fallbacks)
 $selectedAcademicYearId = isset($_GET['academic_year_id']) ? (int)$_GET['academic_year_id'] : $defaultAcademicYearId;
 $selectedSemesterNumber = isset($_GET['semester_number']) ? (int)$_GET['semester_number'] : ($currentSemester['semester_number'] ?? 1);
+
+// Resolve selected academic year name for display
+$selectedAcademicYearName = '';
+foreach ($academicYears as $ay) {
+    if ((int)$ay['id'] === (int)$selectedAcademicYearId) {
+        $selectedAcademicYearName = $ay['year_name'];
+        break;
+    }
+}
 
 // Validate semester number - only 1 or 2 are valid
 if ($selectedSemesterNumber < 1 || $selectedSemesterNumber > 2) {
@@ -833,7 +846,7 @@ include '../../includes/header.php';
 
 <?php include '../../includes/student/sidebar.php'; ?>
 
-<div class="main-content" id="mainContent">
+<div class="main-content" id="mainContent" style="max-width: 100vw; overflow-x: hidden;">
     <div class="topbar">
         <div class="topbar-left">
             <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar">
@@ -962,7 +975,7 @@ include '../../includes/header.php';
                             <div style="margin-bottom: 1rem;">
                                 <h4 style="font-weight: 700; color: #2d3748; font-size: 1.1rem; border-bottom: 3px solid #e2e8f0; padding-bottom: 0.5rem;">
                                     <i class="fas fa-graduation-cap" style="color: #4a5568; margin-right: 0.5rem;"></i>
-                                    Academic Year 2025/2026
+                                    <?php echo e($selectedAcademicYearName ?: '2025/2026'); ?>
                                 </h4>
                             </div>
                             
@@ -982,14 +995,14 @@ include '../../includes/header.php';
                             <div style="background: #f9fafb; padding: 1rem; border-radius: 8px;">
                                 <h5 style="margin-bottom: 1rem; padding: 0.5rem; background: #6b7280; color: white; border-radius: 4px; font-weight: 600; font-size: 1rem;">Core courses</h5>
                                 
-                                <div class="table-responsive" style="background: white; border-radius: 4px; overflow-x: auto; overflow-y: visible; max-width: 100%;">
-                                    <table class="table table-hover table-sm" style="margin-bottom: 0; width: 100%; font-size: 0.8rem;">
+                                <div class="table-responsive" style="background: white; border-radius: 4px; overflow-x: hidden; overflow-y: visible; max-width: 100%;">
+                                    <table class="table table-hover table-sm" style="margin-bottom: 0; width: 100%; table-layout: fixed; font-size: 0.8rem;">
                                         <thead style="background: #f3f4f6;">
                                             <tr>
                                                 <th style="padding: 0.6rem 0.4rem; color: #374151; font-weight: 600; border-bottom: 2px solid #e5e7eb; width: 40px; text-align: center; font-size: 0.75rem;">S/N</th>
-                                                <th style="padding: 0.6rem 0.4rem; color: #374151; font-weight: 600; border-bottom: 2px solid #e5e7eb; width: 95px; white-space: nowrap; font-size: 0.75rem;">Code</th>
-                                                <th style="padding: 0.6rem 0.4rem; color: #374151; font-weight: 600; border-bottom: 2px solid #e5e7eb; min-width: 200px; font-size: 0.75rem;">Course name</th>
-                                                <th style="padding: 0.6rem 0.4rem; color: #374151; font-weight: 600; border-bottom: 2px solid #e5e7eb; width: 85px; white-space: nowrap; font-size: 0.75rem;">Sem.</th>
+                                                <th style="padding: 0.6rem 0.4rem; color: #374151; font-weight: 600; border-bottom: 2px solid #e5e7eb; width: 80px; white-space: nowrap; font-size: 0.75rem;">Code</th>
+                                                <th style="padding: 0.6rem 0.4rem; color: #374151; font-weight: 600; border-bottom: 2px solid #e5e7eb; min-width: 160px; font-size: 0.75rem;">Course name</th>
+                                                <th style="padding: 0.6rem 0.4rem; color: #374151; font-weight: 600; border-bottom: 2px solid #e5e7eb; width: 70px; white-space: nowrap; font-size: 0.75rem;">Sem.</th>
                                                 <th style="padding: 0.6rem 0.4rem; color: #374151; font-weight: 600; border-bottom: 2px solid #e5e7eb; width: 45px; text-align: center; font-size: 0.75rem;">Yr</th>
                                                 <th style="padding: 0.6rem 0.4rem; color: #374151; font-weight: 600; border-bottom: 2px solid #e5e7eb; width: 45px; text-align: center; font-size: 0.75rem;">CU</th>
                                                 <th style="padding: 0.6rem 0.4rem; color: #374151; font-weight: 600; border-bottom: 2px solid #e5e7eb; width: 45px; text-align: center; font-size: 0.75rem;">LH</th>

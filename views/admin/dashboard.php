@@ -384,7 +384,7 @@ include '../../includes/header.php';
                     <p>View, edit, and organize course curriculum</p>
                 </a>
                 
-                <a href="results/approve.php" class="action-card">
+                <a href="results/submitted.php" class="action-card">
                     <div class="action-icon"><i class="fas fa-check-circle"></i></div>
                     <h4>Approve Results</h4>
                     <p><?php echo $pendingResults; ?> results awaiting approval</p>

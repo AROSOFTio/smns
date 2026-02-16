@@ -4,18 +4,22 @@
  */
 require_once '../../config.php';
 
-
-
 $session = new Session('lecturer');
 $auth = new Auth('lecturer');
 
-// Verify lecturer access
-if (!isset($_SESSION['lecturer_logged_in']) || $_SESSION['lecturer_logged_in'] !== true || $_SESSION['lecturer_role'] !== 'lecturer') {
-    header('Location: login.php?error=unauthorized');
+// Verify lecturer access using Auth helper (module-specific session keys)
+if (!$auth->isLoggedIn() || $auth->getRole() !== 'lecturer') {
+    header('Location: ' . BASE_URL . '/views/lecturer/login.php?error=unauthorized');
     exit;
 }
 
 $currentUser = $auth->getCurrentUser();
+if (!$currentUser || empty($currentUser['profile'])) {
+    // Fallback safety: if profile missing, force re-login
+    header('Location: ' . BASE_URL . '/views/lecturer/login.php?error=unauthorized');
+    exit;
+}
+
 $lecturerProfile = $currentUser['profile'];
 
 $db = new Database();
@@ -132,133 +136,136 @@ include '../../includes/header.php';
         </div>
     </div>
 
-    <div class="content-area">
+    <div class="content-area container py-3">
         <?php if ($session->getFlash('success')): ?>
-            <div class="alert alert-success">
-                <?php echo e($session->getFlash('success')); ?>
+            <div class="alert alert-success alert-dismissible fade show" role="alert" style="border-left:4px solid #28a745;">
+                <i class="fas fa-check-circle"></i> <?php echo e($session->getFlash('success')); ?>
+                <button type="button" class="close" data-dismiss="alert" aria-label="Close" style="border:none;background:transparent;font-size:20px;line-height:1;color:inherit;opacity:0.9;">&times;</button>
             </div>
         <?php endif; ?>
 
         <?php if ($session->getFlash('error')): ?>
-            <div class="alert alert-danger">
-                <?php echo e($session->getFlash('error')); ?>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert" style="border-left:4px solid #dc3545;">
+                <i class="fas fa-exclamation-circle"></i> <?php echo e($session->getFlash('error')); ?>
+                <button type="button" class="close" data-dismiss="alert" aria-label="Close" style="border:none;background:transparent;font-size:20px;line-height:1;color:inherit;opacity:0.9;">&times;</button>
             </div>
         <?php endif; ?>
 
-        <div class="row">
-            <!-- Profile Photo Section -->
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-header">
-                        <h5>Profile Photo</h5>
-                    </div>
-                    <div class="card-body text-center">
-                        <div class="profile-photo-container mb-3">
+        <!-- Lecturer Profile Header (mirrors student smartness) -->
+        <div class="card mb-3">
+            <div class="card-body" style="background:#f8f9fa;">
+                <div class="row align-items-center">
+                    <div class="col-auto">
+                        <div style="width:120px; height:120px; border-radius:50%; overflow:hidden; background:#fff; border:4px solid #fff; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
                             <?php if (!empty($lecturerProfile['photo'])): ?>
-                                <img src="<?php echo BASE_URL . '/' . $lecturerProfile['photo']; ?>" alt="Profile Photo" class="img-fluid rounded-circle" style="width: 150px; height: 150px; object-fit: cover;">
+                                <img src="<?php echo BASE_URL . '/' . $lecturerProfile['photo']; ?>" alt="Profile Photo" style="width:100%; height:100%; object-fit:cover;">
                             <?php else: ?>
-                                <div class="profile-photo-placeholder rounded-circle d-inline-flex align-items-center justify-content-center" style="width: 150px; height: 150px; background: var(--primary-color); color: white; font-size: 3rem; font-weight: bold;">
-                                    <?php echo strtoupper(substr($lecturerProfile['first_name'], 0, 1) . substr($lecturerProfile['last_name'], 0, 1)); ?>
+                                <div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; background:#4b5563; font-size:36px;">
+                                    <?php echo strtoupper(substr($lecturerProfile['first_name'] ?? 'L',0,1) . substr($lecturerProfile['last_name'] ?? 'E',0,1)); ?>
                                 </div>
                             <?php endif; ?>
                         </div>
-                        <p class="text-muted small">Profile photo is managed by administrators</p>
+                    </div>
+                    <div class="col">
+                        <div class="text-right">
+                            <h4 class="mb-1" style="text-transform:uppercase; font-weight:600; font-size:24px;">
+                                <?php echo e($lecturerProfile['last_name'] ?? ''); ?>, <?php echo e($lecturerProfile['first_name'] ?? ''); ?>
+                            </h4>
+                            <p class="mb-1" style="font-size:16px; color:#666;">
+                                <?php echo e($lecturerProfile['lecturer_id'] ?? '-'); ?>
+                            </p>
+                            <p class="mb-0" style="font-size:14px; color:#999;">
+                                <strong><?php echo e($lecturerProfile['title'] ?? 'Lecturer'); ?></strong> &bullet; <?php echo e($lecturerProfile['department'] ?? ''); ?>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Profile Information Cards -->
+        <div class="row">
+            <!-- Left Column: Basic & Contact Information -->
+            <div class="col-md-6 mb-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="mb-4" style="font-weight:600;">Personal information</h5>
+                        <form method="POST">
+                            <div class="form-row">
+                                <div class="form-group col-md-6">
+                                    <label style="color:#666; font-size:0.9rem;">Lecturer ID</label>
+                                    <input type="text" class="form-control form-control-sm" value="<?php echo e($lecturerProfile['lecturer_id']); ?>" readonly>
+                                </div>
+                                <div class="form-group col-md-6">
+                                    <label style="color:#666; font-size:0.9rem;">Status</label>
+                                    <input type="text" class="form-control form-control-sm" value="<?php echo e(ucfirst($lecturerProfile['status'])); ?>" readonly>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group col-md-4">
+                                    <label>First name *</label>
+                                    <input type="text" name="first_name" class="form-control form-control-sm" value="<?php echo e($lecturerProfile['first_name']); ?>" required>
+                                </div>
+                                <div class="form-group col-md-4">
+                                    <label>Middle name</label>
+                                    <input type="text" name="middle_name" class="form-control form-control-sm" value="<?php echo e($lecturerProfile['middle_name']); ?>">
+                                </div>
+                                <div class="form-group col-md-4">
+                                    <label>Last name *</label>
+                                    <input type="text" name="last_name" class="form-control form-control-sm" value="<?php echo e($lecturerProfile['last_name']); ?>" required>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group col-md-6">
+                                    <label>Email</label>
+                                    <input type="email" class="form-control form-control-sm" value="<?php echo e($lecturerProfile['email']); ?>" readonly>
+                                </div>
+                                <div class="form-group col-md-6">
+                                    <label>Phone</label>
+                                    <input type="tel" name="phone" class="form-control form-control-sm" value="<?php echo e($lecturerProfile['phone']); ?>">
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Office location</label>
+                                <input type="text" name="office_location" class="form-control form-control-sm" value="<?php echo e($lecturerProfile['office_location']); ?>">
+                            </div>
+
+                            <button type="submit" class="btn btn-primary btn-sm mt-2">💾 Update profile</button>
+                        </form>
                     </div>
                 </div>
             </div>
 
-            <!-- Profile Information -->
-            <div class="col-md-8">
-                <div class="card">
-                    <div class="card-header">
-                        <h5>Personal Information</h5>
-                    </div>
+            <!-- Right Column: Academic / Professional Information -->
+            <div class="col-md-6 mb-3">
+                <div class="card h-100">
                     <div class="card-body">
-                        <form method="POST">
-                            <div class="row">
-                                <div class="col-md-4">
-                                    <div class="form-group">
-                                        <label>Lecturer ID</label>
-                                        <input type="text" class="form-control" value="<?php echo e($lecturerProfile['lecturer_id']); ?>" readonly>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="form-group">
-                                        <label>Title</label>
-                                        <input type="text" class="form-control" value="<?php echo e($lecturerProfile['title'] ?? ''); ?>" readonly>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="form-group">
-                                        <label>Status</label>
-                                        <input type="text" class="form-control" value="<?php echo e(ucfirst($lecturerProfile['status'])); ?>" readonly>
-                                    </div>
-                                </div>
-                            </div>
+                        <h5 class="mb-4" style="font-weight:600;">Academic & professional</h5>
+                        <table class="table table-borderless mb-3" style="font-size:14px;">
+                            <tbody>
+                                <tr>
+                                    <td width="40%" style="color:#666;">Title</td>
+                                    <td style="font-weight:500;">&nbsp;<?php echo e($lecturerProfile['title'] ?? '-'); ?></td>
+                                </tr>
+                                <tr>
+                                    <td style="color:#666;">Department</td>
+                                    <td style="font-weight:500;">&nbsp;<?php echo e($lecturerProfile['department'] ?? '-'); ?></td>
+                                </tr>
+                                <tr>
+                                    <td style="color:#666;">Designation</td>
+                                    <td style="font-weight:500;">&nbsp;<?php echo e($lecturerProfile['designation'] ?? '-'); ?></td>
+                                </tr>
+                            </tbody>
+                        </table>
 
-                            <div class="row">
-                                <div class="col-md-4">
-                                    <div class="form-group">
-                                        <label>First Name *</label>
-                                        <input type="text" name="first_name" class="form-control" value="<?php echo e($lecturerProfile['first_name']); ?>" required>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="form-group">
-                                        <label>Middle Name</label>
-                                        <input type="text" name="middle_name" class="form-control" value="<?php echo e($lecturerProfile['middle_name']); ?>">
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="form-group">
-                                        <label>Last Name *</label>
-                                        <input type="text" name="last_name" class="form-control" value="<?php echo e($lecturerProfile['last_name']); ?>" required>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label>Email</label>
-                                        <input type="email" class="form-control" value="<?php echo e($lecturerProfile['email']); ?>" readonly>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label>Phone</label>
-                                        <input type="tel" name="phone" class="form-control" value="<?php echo e($lecturerProfile['phone']); ?>">
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label>Department</label>
-                                        <input type="text" class="form-control" value="<?php echo e($lecturerProfile['department']); ?>" readonly>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label>Designation</label>
-                                        <input type="text" class="form-control" value="<?php echo e($lecturerProfile['designation']); ?>" readonly>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="form-group">
-                                <label>Office Location</label>
-                                <input type="text" name="office_location" class="form-control" value="<?php echo e($lecturerProfile['office_location']); ?>">
-                            </div>
-
-                            <div class="form-group">
-                                <label>Qualifications</label>
-                                <textarea class="form-control" rows="3" readonly><?php echo e($lecturerProfile['qualifications']); ?></textarea>
-                            </div>
-
-                            <button type="submit" class="btn btn-primary">💾 Update Profile</button>
-                        </form>
+                        <h6 style="font-weight:600; color:#374151;">Qualifications</h6>
+                        <div class="border rounded p-2" style="font-size:13px; background:#f9fafb; min-height:80px;">
+                            <?php echo nl2br(e($lecturerProfile['qualifications'] ?? 'Not provided')); ?>
+                        </div>
+                        <p class="text-muted mt-2 mb-0" style="font-size:12px;">Qualifications are managed by the academic office.</p>
                     </div>
                 </div>
             </div>

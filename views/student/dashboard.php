@@ -222,7 +222,7 @@ include '../../includes/header.php';
                     </div>
                     <div class="col">
                         <div class="text-right">
-                            <h4 class="mb-1" style="text-transform:uppercase; font-weight:600; font-size:24px;">
+                            <h4 class="mb-1" style="text-transform:uppercase; font-weight:600; font-size:18px;">
                                 <?php echo e($studentProfile['last_name']); ?>, <?php echo e($studentProfile['first_name']); ?>
                             </h4>
                             <p class="mb-1" style="font-size:16px; color:#666;">
@@ -270,8 +270,8 @@ include '../../includes/header.php';
                                     <td width="40%" style="color:#666;">Surname</td>
                                     <td style="font-weight:500;"><?php echo e($studentProfile['last_name'] ?? ''); ?></td>
                                     <td width="60"></td>
-                                </tr>
                                 <tr>
+                                    <td style="color:#000000;">SMNS email</td>
                                     <td style="color:#666;">Other names</td>
                                     <td style="font-weight:500;"><?php echo e(trim($studentProfile['first_name'] . ' ' . ($studentProfile['middle_name'] ?? ''))); ?></td>
                                     <td></td>

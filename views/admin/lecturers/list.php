@@ -212,6 +212,7 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                                             <a href="edit.php?id=<?php echo $lecturer['id']; ?>" class="btn btn-sm btn-warning btn-xs" title="Edit"><i class="fas fa-edit"></i></a>
                                             <a href="reset_password.php?id=<?php echo $lecturer['id']; ?>" class="btn btn-sm btn-secondary btn-xs" title="Reset Password"><i class="fas fa-key"></i></a>
                                             <a href="send_invite.php?id=<?php echo $lecturer['id']; ?>" class="btn btn-sm btn-primary btn-xs" title="Send Invite"><i class="fas fa-envelope"></i></a>
+                                            <a href="../courses/list.php?lecturer_id=<?php echo $lecturer['id']; ?>" class="btn btn-sm btn-success btn-xs" title="Assign Courses"><i class="fas fa-user-plus"></i></a>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
