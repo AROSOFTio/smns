@@ -50,6 +50,40 @@ try {
     exit;
 }
 
+// Check if student is registered for the current semester
+$currentSemester = $conn->query("SELECT id, semester_name FROM semesters ORDER BY start_date DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+$registered = false;
+if ($currentSemester) {
+    $regStmt = $conn->prepare("SELECT * FROM semester_registrations WHERE student_id = :sid AND semester_id = :semid AND status = 'approved'");
+    $regStmt->execute(['sid' => $student['id'], 'semid' => $currentSemester['id']]);
+    $registered = $regStmt->fetch() ? true : false;
+}
+
+if (isset($_POST['re_register']) && !$registered && $currentSemester) {
+    // Check for existing registration
+    $checkStmt = $conn->prepare("SELECT id, status FROM semester_registrations WHERE student_id = :sid AND semester_id = :semid");
+    $checkStmt->execute(['sid' => $student['id'], 'semid' => $currentSemester['id']]);
+    $existingReg = $checkStmt->fetch();
+    if ($existingReg) {
+        $session->setFlash('info', 'Student already has a registration (status: ' . $existingReg['status'] . ') for the current semester.');
+        header('Location: view.php?id=' . $student['id']);
+        exit;
+    }
+    // Create a new pending registration for the student for the current semester
+    $now = date('Y-m-d H:i:s');
+    $regStmt = $conn->prepare("INSERT INTO semester_registrations (student_id, semester_id, status, request_date, created_at, updated_at) VALUES (:sid, :semid, 'pending', :request_date, :created_at, :updated_at)");
+    $regStmt->execute([
+        'sid' => $student['id'],
+        'semid' => $currentSemester['id'],
+        'request_date' => $now,
+        'created_at' => $now,
+        'updated_at' => $now
+    ]);
+    $session->setFlash('success', 'Student has been prompted to register again. Pending approval.');
+    header('Location: view.php?id=' . $student['id']);
+    exit;
+}
+
 $pageTitle = 'View Student - ' . APP_NAME;
 ?>
 
@@ -293,6 +327,16 @@ $pageTitle = 'View Student - ' . APP_NAME;
                 </button>
             </div>
         </div>
+
+        <!-- Re-registration Prompt -->
+        <?php if (!$registered): ?>
+            <div class="alert alert-warning text-center">
+                This student is not registered for the current semester.<br>
+                <form method="post" style="display:inline;">
+                    <button type="submit" name="re_register" class="btn btn-primary mt-2">Allow/Re-register Student</button>
+                </form>
+            </div>
+        <?php endif; ?>
     </div>
 </div>
 

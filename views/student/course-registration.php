@@ -56,7 +56,8 @@ if (isset($_POST['semester_id'])) {
 }
 
 // Compute Year of study
-$yearOfStudy = (int)($studentProfile['level_year'] ?? 1);
+// Allow overriding via GET (user-selectable)
+$yearOfStudy = isset($_GET['year_of_study']) ? (int)$_GET['year_of_study'] : (int)($studentProfile['level_year'] ?? 1);
 if (!empty($studentProfile['entry_year']) && $selectedAcademicYearId) {
     $ayStmt = $conn->prepare("SELECT start_date FROM academic_years WHERE id = :id LIMIT 1");
     $ayStmt->execute(['id' => $selectedAcademicYearId]);
@@ -67,9 +68,9 @@ if (!empty($studentProfile['entry_year']) && $selectedAcademicYearId) {
         $calc = ($startYear - $entryYear) + 1;
         $yearOfStudy = max(1, min(10, $calc));
     }
-} else {
-    $yearOfStudy = (int)($studentProfile['level_year'] ?? $yearOfStudy);
-}
+    } else {
+        $yearOfStudy = (int)($studentProfile['level_year'] ?? $yearOfStudy);
+    }
 
 // Check if student has an APPROVED semester registration for the selected semester
 $approvalCheckStmt = $conn->prepare("
@@ -102,6 +103,22 @@ $pendingCheckStmt->execute([
 ]);
 $pendingRequest = $pendingCheckStmt->fetch();
 
+// Auto-create missing semester registration if not found
+$regCheckStmt = $conn->prepare("SELECT id FROM semester_registrations WHERE student_id = :student_id AND semester_id = :semester_id");
+$regCheckStmt->execute(['student_id' => $studentProfile['id'], 'semester_id' => $semesterId]);
+if (!$regCheckStmt->fetch()) {
+    $now = date('Y-m-d H:i:s');
+    $autoRegStmt = $conn->prepare("INSERT INTO semester_registrations (student_id, semester_id, status, request_date, created_at, updated_at) VALUES (:student_id, :semester_id, :status, :request_date, :created_at, :updated_at)");
+    $autoRegStmt->execute([
+        'student_id' => $studentProfile['id'],
+        'semester_id' => $semesterId,
+        'status' => 'pending',
+        'request_date' => $now,
+        'created_at' => $now,
+        'updated_at' => $now
+    ]);
+}
+
 // Handle semester registration request submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'request_semester_registration') {
     if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -128,16 +145,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit;
     }
 
-    // Create semester registration request
+    // Create semester registration request (include year_of_study)
     $insertStmt = $conn->prepare("
-        INSERT INTO semester_registrations (student_id, semester_id, status, request_date, created_at) 
-        VALUES (:student_id, :semester_id, 'pending', NOW(), NOW())
+        INSERT INTO semester_registrations (student_id, semester_id, year_of_study, status, request_date, created_at) 
+        VALUES (:student_id, :semester_id, :year_of_study, 'pending', NOW(), NOW())
     ");
     
     try {
         $insertStmt->execute([
             'student_id' => $studentProfile['id'],
-            'semester_id' => $semesterId
+            'semester_id' => $semesterId,
+            'year_of_study' => isset($_POST['year_of_study']) ? (int)$_POST['year_of_study'] : $yearOfStudy
         ]);
 
         // Notify admins
@@ -351,7 +369,11 @@ include '../../includes/header.php';
 
                                 <div class="form-group col-12 col-md-4 d-flex align-items-center">
                                     <label class="mb-0 mr-3" style="min-width:140px; color:#374151; font-weight:600;">Year of study</label>
-                                    <input type="text" class="form-control" value="<?php echo 'Year ' . e($yearOfStudy); ?>" readonly>
+                                                    <select id="year_of_study_select" name="year_of_study" class="form-control" onchange="this.form.submit();">
+                                                        <?php for ($y = 1; $y <= 4; $y++): ?>
+                                                            <option value="<?php echo $y; ?>" <?php echo $yearOfStudy == $y ? 'selected' : ''; ?>>Year <?php echo $y; ?></option>
+                                                        <?php endfor; ?>
+                                                    </select>
                                 </div>
                             </div>
                         </div>
@@ -373,6 +395,7 @@ include '../../includes/header.php';
                 <form id="semesterRequestForm" method="POST" style="display:none;">
                     <?php echo csrfField(); ?>
                     <input type="hidden" name="semester_id" id="hidden_semester_id" value="<?php echo $semesterId; ?>">
+                    <input type="hidden" name="year_of_study" id="hidden_year_of_study" value="<?php echo $yearOfStudy; ?>">
                     <input type="hidden" name="action" value="request_semester_registration">
                 </form>
 
@@ -398,6 +421,13 @@ include '../../includes/header.php';
 
                         btn.disabled = true;
                         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Requesting...';
+
+                        // copy year_of_study into hidden form if present
+                        try {
+                            var yosSel = document.getElementById('year_of_study_select');
+                            var hiddenY = document.getElementById('hidden_year_of_study');
+                            if (yosSel && hiddenY) hiddenY.value = yosSel.value;
+                        } catch (ex) { console.error(ex); }
 
                         try { hiddenForm.submit(); } catch (err) { console.error(err); }
                     });

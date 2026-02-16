@@ -138,6 +138,10 @@ include '../../includes/header.php';
                     <p class="text-muted">You have no registrations yet.</p>
                     <a href="<?php echo BASE_URL; ?>/views/student/course-registration.php" class="btn btn-primary">Register Courses</a>
                 <?php else: ?>
+                    <div class="mb-3">
+                        <a href="<?php echo BASE_URL; ?>/views/student/course-registration.php" class="btn btn-success">Register Again</a>
+                        <small class="text-muted">You can register for new courses or update your registration for another semester.</small>
+                    </div>
                     <div class="table-responsive">
                         <table class="table table-hover table-sm">
                             <thead>

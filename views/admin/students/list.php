@@ -265,7 +265,7 @@ body {
                         <a href="list.php" class="btn btn-secondary btn-sm mr-1">
                             <i class="fas fa-redo"></i> Reset
                         </a>
-                        <a href="add.php" class="btn btn-success btn-sm">
+                        <a href="<?php echo BASE_URL; ?>/views/admin/students/add.php" class="btn btn-success btn-sm">
                             <i class="fas fa-plus"></i> Add New
                         </a>
                     </div>

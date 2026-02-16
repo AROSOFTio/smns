@@ -87,13 +87,12 @@ if (empty($filterSemesterId)) {
 }
 
 // Fetch pending grouped by student + semester (apply optional semester filter)
-$pendingSql = "SELECT cr.student_id, cr.semester_id, s.first_name, s.last_name, s.student_id as student_code, sem.semester_name, COUNT(*) as course_count
-               FROM course_registrations cr
-               JOIN students s ON cr.student_id = s.id
-               JOIN semesters sem ON cr.semester_id = sem.id
-               WHERE cr.status = 'pending' " . ($filterSemesterId ? "AND cr.semester_id = :filter " : "") . "
-               GROUP BY cr.student_id, cr.semester_id
-               ORDER BY cr.created_at DESC";
+$pendingSql = "SELECT sr.student_id, sr.semester_id, s.first_name, s.last_name, s.student_id as student_code, sem.semester_name, sr.status
+               FROM semester_registrations sr
+               JOIN students s ON sr.student_id = s.id
+               JOIN semesters sem ON sr.semester_id = sem.id
+               WHERE sr.status = 'pending' " . ($filterSemesterId ? "AND sr.semester_id = :filter " : "") . "
+               ORDER BY sr.request_date DESC";
 $pendingStmt = $conn->prepare($pendingSql);
 if ($filterSemesterId) $pendingStmt->execute(['filter' => $filterSemesterId]); else $pendingStmt->execute();
 $pending = $pendingStmt->fetchAll();

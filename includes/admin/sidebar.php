@@ -280,99 +280,88 @@ $fullName = trim(($adminProfile['first_name'] ?? '') . ' ' . ($adminProfile['las
         <ul>
             <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/dashboard.php" class="<?php echo $currentPage == 'dashboard.php' ? 'active' : ''; ?>">
-                    <i class="fas fa-tachometer-alt"></i> 
+                    <i class="fas fa-tachometer-alt"></i>
                     <span>Dashboard</span>
                 </a>
             </li>
-            
+
             <li class="menu-section">User Management</li>
-            
             <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/students/list.php" class="<?php echo $currentDir == 'students' ? 'active' : ''; ?>">
-                    <i class="fas fa-user-graduate"></i> 
+                    <i class="fas fa-user-graduate"></i>
                     <span>Students</span>
                 </a>
             </li>
-            
             <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/lecturers/list.php" class="<?php echo $currentDir == 'lecturers' ? 'active' : ''; ?>">
-                    <i class="fas fa-chalkboard-teacher"></i> 
+                    <i class="fas fa-chalkboard-teacher"></i>
                     <span>Lecturers</span>
                 </a>
             </li>
-            
             <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/lecturers/approvals.php" class="<?php echo $currentPage == 'approvals.php' ? 'active' : ''; ?>">
-                    <i class="fas fa-user-check"></i> 
-                    <span>Approvals</span>
+                    <i class="fas fa-user-check"></i>
+                    <span>Lecturer Approvals</span>
                 </a>
             </li>
-            
-            <li class="menu-section">Academic</li>
-            
+
+            <li class="menu-section">Academic Management</li>
+            <li>
+                <a href="<?php echo BASE_URL; ?>/views/admin/registrations/pending.php" class="<?php echo $currentPage == 'pending.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-clock"></i>
+                    <span>Pending Registrations</span>
+                </a>
+            </li>
             <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/courses/list.php" class="<?php echo $currentDir == 'courses' ? 'active' : ''; ?>">
-                    <i class="fas fa-book"></i> 
+                    <i class="fas fa-book"></i>
                     <span>Courses</span>
                 </a>
             </li>
-            
-            <li class="menu-section">Operations</li>
-            
-            <li>
-                <a href="<?php echo BASE_URL; ?>/views/admin/tions/pending.php" class="<?php echo $currentDir == 'tions' ? 'active' : ''; ?>">
-                    <i class="fas fa-clipboard-list"></i> 
-                    <span>tions</span>
-                </a>
-            </li>
-            
             <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/results/submitted.php" class="<?php echo $currentDir == 'results' ? 'active' : ''; ?>">
-                    <i class="fas fa-chart-bar"></i> 
+                    <i class="fas fa-chart-bar"></i>
                     <span>Results</span>
                 </a>
             </li>
 
+            <li class="menu-section">Operations</li>
             <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/student_requests.php" class="<?php echo $currentPage == 'student_requests.php' ? 'active' : ''; ?>">
                     <i class="fas fa-inbox"></i>
                     <span>Student Requests</span>
                 </a>
             </li>
-            
             <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php" class="<?php echo $currentDir == 'reports' ? 'active' : ''; ?>">
-                    <i class="fas fa-chart-bar"></i> 
+                    <i class="fas fa-chart-bar"></i>
                     <span>Reports</span>
                 </a>
             </li>
-            
-            <li class="menu-section system-section">System</li>
 
+            <li class="menu-section system-section">System & Settings</li>
             <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/email-test.php" class="<?php echo ($currentPage == 'email-test.php' ? 'active' : '') ?> system-item">
-                    <i class="fas fa-envelope"></i> 
+                    <i class="fas fa-envelope"></i>
                     <span>Email Test</span>
                 </a>
             </li>
-
             <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/system/health.php" class="<?php echo ($currentPage == 'health.php' ? 'active' : '') ?> system-item">
                     <i class="fas fa-heartbeat"></i>
                     <span>System Health</span>
                 </a>
             </li>
-
             <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/settings/index.php" class="<?php echo ($currentDir == 'settings' ? 'active' : '') ?> system-item">
                     <i class="fas fa-cog"></i>
                     <span>Settings</span>
                 </a>
             </li>
-            
+
             <li class="logout-item">
                 <a href="<?php echo BASE_URL; ?>/views/admin/logout.php" class="logout-link">
-                    <i class="fas fa-sign-out-alt"></i> 
+                    <i class="fas fa-sign-out-alt"></i>
                     <span>Logout</span>
                 </a>
             </li>

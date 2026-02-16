@@ -100,6 +100,11 @@ try {
     $studentRequests = [];
 }
 
+// Check for pending registration for current semester
+$pendingRegStmt = $conn->prepare("SELECT * FROM semester_registrations WHERE student_id = :sid AND semester_id = :semid AND status = 'pending'");
+$pendingRegStmt->execute(['sid' => $studentProfile['id'], 'semid' => $currentSemester['id']]);
+$pendingRegistration = $pendingRegStmt->fetch();
+
 $pageTitle = 'Student Dashboard - ' . APP_NAME;
 include '../../includes/header.php';
 ?>

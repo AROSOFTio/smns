@@ -90,47 +90,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 }
                         // Auto-assign courses and mark student as reported when approved
                         try {
-                            // fetch student's program and level
+                            // call central helper to auto-assign courses
+                            if (!function_exists('auto_assign_courses')) require_once '../../includes/functions.php';
                             $sdet = $conn->prepare('SELECT program_id, level_year FROM students WHERE id = :id LIMIT 1');
                             $sdet->execute(['id' => $stuId]);
                             $sinfo = $sdet->fetch(PDO::FETCH_ASSOC);
                             $programId = $sinfo['program_id'] ?? null;
                             $levelYear = $sinfo['level_year'] ?? null;
 
-                            // fetch semester number and academic year
-                            $semInfoStmt = $conn->prepare('SELECT semester_number, academic_year_id FROM semesters WHERE id = :id LIMIT 1');
+                            auto_assign_courses($conn, $stuId, $semId, $_SESSION['admin_id'] ?? null, $programId, $levelYear);
+
+                            // mark student as reported
+                            $semInfoStmt = $conn->prepare('SELECT academic_year_id FROM semesters WHERE id = :id LIMIT 1');
                             $semInfoStmt->execute(['id' => $semId]);
-                            $semInfo = $semInfoStmt->fetch(PDO::FETCH_ASSOC);
-                            $semNumber = $semInfo['semester_number'] ?? null;
-                            $academicYearId = $semInfo['academic_year_id'] ?? null;
-
-                            $adminId = $_SESSION['admin_id'] ?? null;
-
-                            // First insert from course_assignments if available
-                            $insAssign = $conn->prepare("INSERT INTO course_registrations (student_id, course_id, semester_id, registration_date, status, approved_by, approved_date, created_at, updated_at)
-                                SELECT :student_id, c.id, :semester_id, CURDATE(), 'approved', :approved_by, NOW(), NOW(), NOW()
-                                FROM course_assignments ca JOIN courses c ON ca.course_id = c.id
-                                WHERE ca.semester_id = :semester_id AND ca.status = 'active' AND c.status = 'active'
-                                AND NOT EXISTS (SELECT 1 FROM course_registrations cr WHERE cr.student_id = :student_id AND cr.course_id = c.id AND cr.semester_id = :semester_id)");
-                            $insAssign->execute(['student_id' => $stuId, 'semester_id' => $semId, 'approved_by' => $adminId]);
-
-                            // Fallback to courses table (narrow by program/level if available)
-                            $insFallback = "INSERT INTO course_registrations (student_id, course_id, semester_id, registration_date, status, approved_by, approved_date, created_at, updated_at)
-                                SELECT :student_id, c.id, :semester_id, CURDATE(), 'approved', :approved_by, NOW(), NOW(), NOW()
-                                FROM courses c
-                                WHERE c.status = 'active' AND (c.semester_offered = :sem_num OR c.semester_offered = 3)
-                                AND NOT EXISTS (SELECT 1 FROM course_registrations cr WHERE cr.student_id = :student_id AND cr.course_id = c.id AND cr.semester_id = :semester_id)";
-
-                            if ($programId && $levelYear) {
-                                $insFallback = str_replace("WHERE c.status = 'active'", "WHERE c.program_id = :program_id AND c.level_year = :level_year AND c.status = 'active'", $insFallback);
-                            }
-
-                            $params = ['student_id' => $stuId, 'semester_id' => $semId, 'approved_by' => $adminId, 'sem_num' => $semNumber];
-                            if ($programId && $levelYear) { $params['program_id'] = $programId; $params['level_year'] = $levelYear; }
-                            $insStmt = $conn->prepare($insFallback);
-                            $insStmt->execute($params);
-
-                            // Mark student as reported (ensure columns exist)
+                            $academicYearId = $semInfoStmt->fetchColumn();
                             $colCheck = $conn->query("SHOW COLUMNS FROM students LIKE 'last_reported_semester_id'")->fetch();
                             if (!$colCheck) {
                                 $conn->exec("ALTER TABLE students ADD COLUMN last_reported_semester_id INT NULL, ADD COLUMN last_reported_academic_year_id INT NULL, ADD COLUMN last_reported_at DATETIME NULL");
