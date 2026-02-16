@@ -1,4 +1,14 @@
 <?php
+// Include the functions.php file to ensure the `e()` function is available
+require_once '../../../includes/functions.php';
+
+// Ensure the e() function is defined
+if (!function_exists('e')) {
+    function e($string) {
+        return htmlspecialchars($string, ENT_QUOTES, 'UTF-8');
+    }
+}
+
 /**
  * Admin - Course Registrations (Pending & Approved)
  */
@@ -27,6 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $studentId = (int)$_POST['student_id'];
         $semesterId = (int)$_POST['semester_id'];
 
+        // Approve the registration
         $stmt = $conn->prepare("UPDATE course_registrations
                                 SET status = 'approved', approved_by = :admin_id, approved_date = NOW()
                                 WHERE student_id = :student_id AND semester_id = :semester_id AND status = 'pending'");
@@ -35,6 +46,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             'student_id' => $studentId,
             'semester_id' => $semesterId
         ]);
+
+        // Auto-assign all required courses for this student/program/year/semester
+        // Get student's program and year
+        $stu = $conn->prepare("SELECT program_id, COALESCE(year_of_study, level_year) as year FROM students WHERE id = :sid");
+        $stu->execute(['sid' => $studentId]);
+        $stuRow = $stu->fetch();
+        if ($stuRow) {
+            $programId = $stuRow['program_id'];
+            $year = $stuRow['year'];
+            // Get all required course assignments
+            $ca = $conn->prepare("SELECT course_id FROM course_assignments WHERE program_id = :pid AND semester_id = :semid AND year_of_study = :year AND status = 'active'");
+            $ca->execute(['pid' => $programId, 'semid' => $semesterId, 'year' => $year]);
+            $courses = $ca->fetchAll(PDO::FETCH_COLUMN);
+            if ($courses) {
+                // Insert missing course_registrations
+                $checkStmt = $conn->prepare("SELECT id FROM course_registrations WHERE student_id = :student_id AND course_id = :course_id AND semester_id = :semester_id");
+                $insStmt = $conn->prepare("INSERT INTO course_registrations (student_id, course_id, semester_id, registration_date, status, approved_by, approved_date, created_at) VALUES (:student_id, :course_id, :semester_id, NOW(), 'approved', :admin_id, NOW(), NOW())");
+                foreach ($courses as $cid) {
+                    $checkStmt->execute(['student_id' => $studentId, 'course_id' => $cid, 'semester_id' => $semesterId]);
+                    if (!$checkStmt->fetch()) {
+                        $insStmt->execute([
+                            'student_id' => $studentId,
+                            'course_id' => $cid,
+                            'semester_id' => $semesterId,
+                            'admin_id' => $_SESSION['admin_id'] ?? 1
+                        ]);
+                    }
+                }
+            }
+        }
 
         // Create a notification for the student (if user exists)
         $u = $conn->prepare("SELECT user_id FROM students WHERE id = :sid");
@@ -45,12 +86,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $nid->execute([
                 'uid' => $urow['user_id'],
                 'title' => 'Registration Approved',
-                'msg' => 'Your course registration for the semester has been approved by administration.',
+                'msg' => 'Your course registration for the semester has been approved by administration. All required courses have been assigned.',
                 'link' => BASE_URL . '/views/student/registrations.php?semester_id=' . $semesterId
             ]);
         }
 
-        $session->setFlash('success', 'Selected registrations approved successfully.');
+        $session->setFlash('success', 'Selected registrations approved and courses assigned successfully.');
         header('Location: pending.php');
         exit;
     }
@@ -123,94 +164,107 @@ include '../../../includes/header.php';
         </div>
     </div>
 
-    <div class="content-area container-fluid p-4">
-        <?php if ($session->getFlash('success')): ?>
-            <div class="alert alert-success"><?php echo e($session->getFlash('success')); ?></div>
-        <?php endif; ?>
+        <div class="content-area container-fluid p-4">
+            <?php if ($session->getFlash('success')): ?>
+                <div class="alert alert-success"><?php echo e($session->getFlash('success')); ?></div>
+            <?php endif; ?>
 
-        <div class="card mb-3">
-            <div class="card-body">
-                <!-- Enrollments summary (admin) -->
-                <?php if (!empty($enrollments)): ?>
-                    <div class="mb-3 d-flex flex-wrap">
-                        <?php foreach ($enrollments as $e):
-                                // remove Semester 1 card per request
-                                if (isset($e['semester_number']) && (int)$e['semester_number'] === 1) continue;
-                                $isActive = ($filterSemesterId && $filterSemesterId == $e['id']);
-                        ?>
-                            <div class="mr-3 mb-2 p-2 border rounded" style="min-width:220px;">
-                                <strong><?php echo e($e['year_name'] . ' - ' . $e['semester_name']); ?></strong><br>
-                                <small>Total: <?php echo e($e['total_registrations']); ?> · <span class="text-warning">Pending: <?php echo e($e['pending_count']); ?></span> · <span class="text-success">Approved: <?php echo e($e['approved_count']); ?></span></small>
-                                <div class="mt-1">
-                                    <a href="pending.php?semester_filter_id=<?php echo $e['id']; ?>" class="<?php echo $isActive ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-outline-primary'; ?>" <?php echo $isActive ? 'aria-pressed="true"' : ''; ?>><?php echo $isActive ? 'Filtered' : 'Filter'; ?></a>
+            <!-- Enrollment Summary Cards -->
+            <div class="row mb-4">
+                <?php foreach ($enrollments as $e):
+                    if (isset($e['semester_number']) && (int)$e['semester_number'] === 1) continue;
+                    $isActive = ($filterSemesterId && $filterSemesterId == $e['id']);
+                ?>
+                <div class="col-md-3 mb-3">
+                    <div class="card <?php echo $isActive ? 'border-primary' : ''; ?>">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="font-weight-bold"><?php echo e($e['year_name'] . ' - ' . $e['semester_name']); ?></div>
+                                    <div class="small text-muted">Total: <?php echo e($e['total_registrations']); ?></div>
                                 </div>
+                                <span class="badge badge-warning" title="Pending">
+                                    <?php echo e($e['pending_count']); ?> Pending
+                                </span>
                             </div>
-                        <?php endforeach; ?>
+                            <div class="mt-2">
+                                <span class="badge badge-success mr-2">Approved: <?php echo e($e['approved_count']); ?></span>
+                                <?php if ($isActive): ?>
+                                    <span class="badge badge-primary ml-2" style="font-size:13px;vertical-align:middle;cursor:default;">Filtered</span>
+                                <?php else: ?>
+                                    <a href="pending.php?semester_filter_id=<?php echo $e['id']; ?>" class="btn btn-sm btn-outline-primary ml-2">Filter</a>
+                                <?php endif; ?>
+                            </div>
+                        </div>
                     </div>
-                <?php else: ?>
-                    <div class="mb-3"><small class="text-muted">No enrollments recorded yet.</small></div>
-                <?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+            </div>
 
-                <h5>Pending Registrations</h5>
-                <?php if (empty($pending)): ?> 
-                <?php else: ?>
-                    <table class="table table-striped table-hover">
-                        <thead>
-                            <tr>
-                                <th>Student</th>
-                                <th>Student ID</th>
-                                <th>Semester</th>
-                                <th>Courses Pending</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach($pending as $row): ?>
+            <!-- Pending Registrations Section -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h4 class="mb-3">Pending Registrations <span class="badge badge-warning align-middle"><?php echo count($pending); ?></span></h4>
+                    <?php if (empty($pending)): ?>
+                        <p class="text-muted">No pending registrations at this time.</p>
+                    <?php else: ?>
+                        <div class="table-responsive">
+                        <table class="table table-striped table-hover align-middle">
+                            <thead class="thead-light">
+                                <tr>
+                                    <th>Student</th>
+                                    <th>Student ID</th>
+                                    <th>Semester</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach($pending as $row): ?>
                                 <tr>
                                     <td><?php echo e($row['first_name'] . ' ' . $row['last_name']); ?></td>
                                     <td><?php echo e($row['student_code']); ?></td>
                                     <td><?php echo e($row['semester_name']); ?></td>
-                                    <td><?php echo e($row['course_count']); ?></td>
+                                    <td><span class="badge badge-warning">Pending</span></td>
                                     <td>
-                                        <form method="POST" style="display:inline-block;" onsubmit="return confirm('Approve these registrations?');">
+                                        <form method="POST" style="display:inline-block;" onsubmit="return confirm('Approve this registration?');">
                                             <?php echo csrfField(); ?>
                                             <input type="hidden" name="student_id" value="<?php echo $row['student_id']; ?>">
                                             <input type="hidden" name="semester_id" value="<?php echo $row['semester_id']; ?>">
                                             <button name="action" value="approve" class="btn btn-sm btn-success">Approve</button>
                                         </form>
-                                        <a href="view.php?student_id=<?php echo $row['student_id']; ?>&semester_id=<?php echo $row['semester_id']; ?>" class="btn btn-sm btn-info">View Details</a>
+                                        <a href="view.php?student_id=<?php echo e($row['student_id']); ?>&semester_id=<?php echo e($row['semester_id']); ?>" class="btn btn-sm btn-info ml-1">View Details</a>
                                     </td>
                                 </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-
-                    <!-- Bulk approve by semester (quick action) -->
-                    <div class="mt-3">
-                        <form method="POST" onsubmit="return confirm('Approve ALL pending registrations for the selected semester?');" class="form-inline">
-                            <?php echo csrfField(); ?>
-                            <label class="mr-2">Approve all pending for semester:</label>
-                            <select name="semester_id" class="form-control mr-2">
-                                <?php
-                                $sstmt = $conn->query("SELECT id, semester_name FROM semesters ORDER BY id DESC");
-                                $semesters = $sstmt->fetchAll();
-                                foreach ($semesters as $sem) {
-                                    echo "<option value=\"{$sem['id']}\">" . e($sem['semester_name']) . "</option>";
-                                }
-                                ?>
-                            </select>
-                            <button name="action" value="approve_all" class="btn btn-warning">Approve All</button>
-                        </form>
-                    </div>
-                <?php endif; ?>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        </div>
+                        <div class="mt-3">
+                            <form method="POST" onsubmit="return confirm('Approve ALL pending registrations for the selected semester?');" class="form-inline">
+                                <?php echo csrfField(); ?>
+                                <label class="mr-2">Approve all pending for semester:</label>
+                                <select name="semester_id" class="form-control mr-2">
+                                    <?php
+                                    $sstmt = $conn->query("SELECT id, semester_name FROM semesters ORDER BY id DESC");
+                                    $semesters = $sstmt->fetchAll();
+                                    foreach ($semesters as $sem) {
+                                        echo "<option value=\"{$sem['id']}\">" . e($sem['semester_name']) . "</option>";
+                                    }
+                                    ?>
+                                </select>
+                                <button name="action" value="approve_all" class="btn btn-warning ml-2">Approve All</button>
+                            </form>
+                        </div>
+                    <?php endif; ?>
+                </div>
             </div>
-        </div>
 
         <div class="card">
             <div class="card-body">
-                <h5>Reported / Approved Registrations</h5>
+                <h5>Reported / Approved Registrations (Filtered)</h5>
                 <?php if (empty($approved)): ?>
-                    <p class="text-muted">No approved registrations found.</p>
+                    <p class="text-muted">No approved registrations found for this filter.</p>
                 <?php else: ?>
                     <table class="table table-hover table-sm">
                         <thead>
@@ -230,12 +284,75 @@ include '../../../includes/header.php';
                                     <td><?php echo e($row['semester_name']); ?></td>
                                     <td><?php echo e($row['course_count']); ?></td>
                                     <td>
-                                        <a href="view.php?student_id=<?php echo $row['student_id']; ?>&semester_id=<?php echo $row['semester_id']; ?>" class="btn btn-sm btn-primary">View Courses</a>
+                                        <?php
+                                        $studentId = isset($row['student_id']) ? e($row['student_id']) : 'N/A';
+                                        $semesterId = isset($row['semester_id']) ? e($row['semester_id']) : 'N/A';
+                                        ?>
+                                        <?php if ($studentId !== 'N/A' && $semesterId !== 'N/A'): ?>
+                                            <a href="view.php?student_id=<?php echo $studentId; ?>&semester_id=<?php echo $semesterId; ?>" class="btn btn-sm btn-primary">View Courses</a>
+                                        <?php else: ?>
+                                            <span class="text-danger">Invalid Data</span>
+                                        <?php endif; ?>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Show all approved students across all semesters -->
+        <div class="card mt-4">
+            <div class="card-body">
+                <h5>All Approved Students (All Semesters)</h5>
+                <?php
+                $allApprovedSql = "SELECT cr.student_id, s.first_name, s.last_name, s.student_id as student_code, sem.semester_name, COUNT(*) as course_count
+                    FROM course_registrations cr
+                    JOIN students s ON cr.student_id = s.id
+                    JOIN semesters sem ON cr.semester_id = sem.id
+                    WHERE cr.status = 'approved'
+                    GROUP BY cr.student_id, cr.semester_id
+                    ORDER BY s.last_name, s.first_name, sem.semester_name";
+                $allApproved = $conn->query($allApprovedSql)->fetchAll();
+                ?>
+                <?php if (empty($allApproved)): ?>
+                    <p class="text-muted">No approved students found.</p>
+                <?php else: ?>
+                    <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm">
+                        <thead>
+                            <tr>
+                                <th>Student</th>
+                                <th>Student ID</th>
+                                <th>Semester</th>
+                                <th>Courses Approved</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach($allApproved as $row): ?>
+                                <tr>
+                                    <td><?php echo e($row['first_name'] . ' ' . $row['last_name']); ?></td>
+                                    <td><?php echo e($row['student_code']); ?></td>
+                                    <td><?php echo e($row['semester_name']); ?></td>
+                                    <td><?php echo e($row['course_count']); ?></td>
+                                    <td>
+                                        <?php
+                                        $studentId = isset($row['student_id']) ? e($row['student_id']) : 'N/A';
+                                        $semesterId = isset($row['semester_id']) ? e($row['semester_id']) : 'N/A';
+                                        ?>
+                                        <?php if ($studentId !== 'N/A' && $semesterId !== 'N/A'): ?>
+                                            <a href="view.php?student_id=<?php echo $studentId; ?>&semester_id=<?php echo $semesterId; ?>" class="btn btn-sm btn-primary">View Courses</a>
+                                        <?php else: ?>
+                                            <span class="text-danger">Invalid Data</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    </div>
                 <?php endif; ?>
             </div>
         </div>

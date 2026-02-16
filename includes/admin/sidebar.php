@@ -359,6 +359,13 @@ $fullName = trim(($adminProfile['first_name'] ?? '') . ' ' . ($adminProfile['las
                 </a>
             </li>
 
+            <li>
+                <a href="<?php echo BASE_URL; ?>/admin/unlock_user.php" class="system-item">
+                    <i class="fas fa-unlock"></i>
+                    <span>Unlock User Account</span>
+                </a>
+            </li>
+
             <li class="logout-item">
                 <a href="<?php echo BASE_URL; ?>/views/admin/logout.php" class="logout-link">
                     <i class="fas fa-sign-out-alt"></i>

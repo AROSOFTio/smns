@@ -17,6 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $last_name = trim($_POST['last_name'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $program_id = intval($_POST['program_id'] ?? 0);
+    $year_of_registration = date('Y');
 
     if (empty($first_name) || empty($last_name) || empty($email)) {
         $errors[] = 'All fields are required.';
@@ -44,8 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $suffix++;
                 }
 
-                // Generate password
-                $tempPassword = bin2hex(random_bytes(5));
+                // Generate password as first_name@year (not username)
+                $baseName = strtolower(preg_replace('/[^a-z0-9]/', '', $first_name));
+                $tempPassword = $baseName . '@' . $year_of_registration;
 
                 // Create user
                 $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role, status, require_password_change, created_at) VALUES (:u, :e, :p, 'student', 'pending', 1, NOW())");

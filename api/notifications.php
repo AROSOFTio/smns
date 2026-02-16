@@ -169,6 +169,26 @@ switch ($action) {
                 }
                 break;
 
+            case 'approve_pending_registrations':
+                // Approve all pending semester registrations
+                try {
+                    $stmt = $conn->prepare("UPDATE semester_registrations SET status = 'approved', approved_by = :admin_id, approved_at = NOW() WHERE status = 'pending'");
+                    $stmt->execute(['admin_id' => $userId]);
+                    $affected = $stmt->rowCount();
+                    $result = ['success' => true, 'message' => "Approved {$affected} pending semester registrations."];
+                    // Save a notification for this admin
+                    $insN = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, link, created_at, read_status) VALUES (:uid, :title, :msg, 'success', :link, NOW(), 'unread')");
+                    $insN->execute([
+                        'uid' => $userId,
+                        'title' => 'Semester Approvals Completed',
+                        'msg' => "You approved {$affected} pending semester registrations.",
+                        'link' => BASE_URL . '/views/admin/registrations/pending.php'
+                    ]);
+                } catch (Exception $e) {
+                    $result = ['success' => false, 'message' => 'Approval failed: ' . $e->getMessage()];
+                }
+                break;
+
             case 'purge_backups':
                 $backupDir = BASE_PATH . DIRECTORY_SEPARATOR . 'database backup';
                 $deleted = 0;

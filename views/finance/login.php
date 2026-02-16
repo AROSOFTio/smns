@@ -179,14 +179,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <div class="form-group">
                         <label for="password"> Password</label>
-                        <div class="input-wrapper">
+                        <div class="input-wrapper" style="position:relative;">
                             <input type="password"
                                    class="form-control"
                                    id="password"
                                    name="password"
                                    placeholder="Enter your password"
                                    required autofocus>
-                           
+                            <button type="button" class="btn btn-sm btn-outline-secondary" style="position:absolute; right:10px; top:50%; transform:translateY(-50%);" onclick="togglePassword('password', this)">Show</button>
                         </div>
                     </div>
                     <button type="submit" class="btn btn-primary btn-block">
@@ -200,15 +200,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php endif; ?>
             </form>
             
-           <!-- <div class="login-footer mt-4">
-                <div class="text-center">
-                    <a href="../auth/login.php" class="text-muted">
-                        <i class="fas fa-arrow-left"></i> Back to Main Login
-                    </a>
-                </div>
-            </div> -->
-            
             <script>
+                // Show/hide password toggle
+                function togglePassword(id, btn) {
+                    var input = document.getElementById(id);
+                    if (input.type === 'password') {
+                        input.type = 'text';
+                        btn.textContent = 'Hide';
+                    } else {
+                        input.type = 'password';
+                        btn.textContent = 'Show';
+                    }
+                }
                 // Auto-hide success message after 30 seconds
                 setTimeout(function() {
                     const successAlert = document.querySelector('.alert-success');
@@ -221,7 +224,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }, 30000);
             </script>
-            
         </div>
     </div>
 </body>

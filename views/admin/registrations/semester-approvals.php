@@ -1,3 +1,30 @@
+    // --- Notify all admins of pending approvals with action links ---
+    try {
+        $adminRows = $conn->query("SELECT id FROM users WHERE role = 'admin' AND status = 'active'")->fetchAll(PDO::FETCH_ASSOC);
+        $notified = 0;
+        foreach ($adminRows as $admin) {
+            // Check if a similar notification already exists and is unread
+            $exists = $conn->prepare("SELECT id FROM notifications WHERE user_id = :uid AND type = 'warning' AND title = :title AND read_status = 'unread' LIMIT 1");
+            $title = 'Pending Semester Approvals';
+            $exists->execute(['uid' => $admin['id'], 'title' => $title]);
+            if (!$exists->fetch()) {
+                $msg = 'There are ' . count($pending) . ' pending semester registrations requiring approval.';
+                // Actionable link: use a special action:approve_pending_registrations for the bell
+                $actionLink = 'action:approve_pending_registrations';
+                $ins = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, link, created_at, read_status) VALUES (:uid, :title, :msg, 'warning', :link, NOW(), 'unread')");
+                $ins->execute([
+                    'uid' => $admin['id'],
+                    'title' => $title,
+                    'msg' => $msg,
+                    'link' => $actionLink
+                ]);
+                $notified++;
+            }
+        }
+        echo "   → Actionable notifications sent to admins: {$notified}\n";
+    } catch (Exception $e) {
+        echo "   → Failed to notify admins: " . $e->getMessage() . "\n";
+    }
 <?php
 /**
  * Diagnostic Script - Check Course Assignment Configuration
@@ -108,6 +135,33 @@ if (count($pending) > 0) {
         } catch (Exception $e) {
             echo "     → Cannot determine courses\n";
         }
+    }
+
+    // --- Notify all admins of pending approvals ---
+    try {
+        $adminRows = $conn->query("SELECT id FROM users WHERE role = 'admin' AND status = 'active'")->fetchAll(PDO::FETCH_ASSOC);
+        $notified = 0;
+        foreach ($adminRows as $admin) {
+            // Check if a similar notification already exists and is unread
+            $exists = $conn->prepare("SELECT id FROM notifications WHERE user_id = :uid AND type = 'warning' AND title = :title AND read_status = 'unread' LIMIT 1");
+            $title = 'Pending Semester Approvals';
+            $exists->execute(['uid' => $admin['id'], 'title' => $title]);
+            if (!$exists->fetch()) {
+                $msg = 'There are ' . count($pending) . ' pending semester registrations requiring approval.';
+                $link = BASE_URL . '/views/admin/registrations/pending.php';
+                $ins = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, link, created_at, read_status) VALUES (:uid, :title, :msg, 'warning', :link, NOW(), 'unread')");
+                $ins->execute([
+                    'uid' => $admin['id'],
+                    'title' => $title,
+                    'msg' => $msg,
+                    'link' => $link
+                ]);
+                $notified++;
+            }
+        }
+        echo "   → Notifications sent to admins: {$notified}\n";
+    } catch (Exception $e) {
+        echo "   → Failed to notify admins: " . $e->getMessage() . "\n";
     }
 } else {
     echo "   No pending registrations\n";

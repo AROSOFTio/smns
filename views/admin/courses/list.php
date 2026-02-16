@@ -53,20 +53,29 @@ $stmt = $conn->prepare($sql);
 $stmt->execute($params);
 $allCourses = $stmt->fetchAll();
 
-// Organize courses by academic year and semester
+// Organize courses under academic label '2025/2026' and ensure levels 1..4 each have semesters 1 & 2
 $organizedCourses = [];
+$labelYear = '2025/2026';
+$organizedCourses[$labelYear] = [];
+// initialize levels 1..4, each with semesters 1 & 2
+for ($lvl = 1; $lvl <= 4; $lvl++) {
+    $organizedCourses[$labelYear][$lvl] = [1 => [], 2 => []];
+}
+
 foreach ($allCourses as $course) {
-    $year = $course['level_year'];
-    $semester = $course['semester_offered'];
-
-    if (!isset($organizedCourses[$year])) {
-        $organizedCourses[$year] = [];
+    $lvl = intval($course['level_year']) ?: 1; // default to 1 if missing
+    if ($lvl < 1 || $lvl > 4) $lvl = 1;
+    $semester = intval($course['semester_offered']);
+    if ($semester === 3) {
+        // both semesters: include under 1 and 2 only
+        $organizedCourses[$labelYear][$lvl][1][] = $course;
+        $organizedCourses[$labelYear][$lvl][2][] = $course;
+    } else {
+        if ($semester < 1) $semester = 1;
+        // ensure array exists (defensive)
+        if (!isset($organizedCourses[$labelYear][$lvl][$semester])) $organizedCourses[$labelYear][$lvl][$semester] = [];
+        $organizedCourses[$labelYear][$lvl][$semester][] = $course;
     }
-    if (!isset($organizedCourses[$year][$semester])) {
-        $organizedCourses[$year][$semester] = [];
-    }
-
-    $organizedCourses[$year][$semester][] = $course;
 }
 
 // Get academic years for filter
@@ -181,8 +190,6 @@ include '../../../includes/header.php';
     .semester-section .card-header h5 {
         font-size: 1rem;
     }
-}
-    overflow-y: visible !important;
 }
 
 .table-responsive table {
@@ -375,78 +382,82 @@ include '../../../includes/header.php';
         </div>
         
         <!-- Courses by Academic Year and Semester -->
+        <div id="coursesContainer">
         <?php if (!empty($organizedCourses)): ?>
-            <?php foreach ($organizedCourses as $year => $semesters): ?>
+            <?php foreach ($organizedCourses as $year => $levels): ?>
                 <div class="academic-year-section mb-4">
                     <h3 class="academic-year-header">
                         <i class="fas fa-graduation-cap"></i> Academic Year <?php echo $year; ?>
                     </h3>
 
-                    <?php foreach ($semesters as $semester => $courses): ?>
-                        <?php
-                        $semesterNames = ['', 'Semester 1', 'Semester 2', 'Both Semesters'];
-                        $semesterName = $semesterNames[$semester] ?? 'Unknown Semester';
-                        ?>
+                    <?php foreach ($levels as $levelNum => $semesters): ?>
+                        <div class="level-section mb-2">
+                            <h4 style="margin-top:0.5rem">Year <?php echo intval($levelNum); ?></h4>
+                            <?php for ($s = 1; $s <= 2; $s++): ?>
+                                <?php $courses = $semesters[$s] ?? []; ?>
+                                <?php $semesterName = $s === 1 ? 'Semester 1' : 'Semester 2'; ?>
 
-                        <div class="semester-section mb-3">
-                            <div class="card">
-                                <div class="card-header bg-light">
-                                    <h5 class="mb-0">
-                                        <i class="fas fa-calendar-alt"></i> <?php echo $semesterName; ?>
-                                        <span class="badge badge-primary ml-2"><?php echo count($courses); ?> Courses</span>
-                                    </h5>
-                                </div>
-                                <div class="card-body">
-                                    <?php if (!empty($courses)): ?>
-                                        <div class="table-responsive">
-                                            <table class="table table-hover table-striped">
-                                                <thead class="thead-light">
-                                                    <tr>
-                                                        <th>Course Code</th>
-                                                        <th>Course Name</th>
-                                                        <th>Year</th>
-                                                        <th>CU</th>
-                                                        <th>LH</th>
-                                                        <th>TH</th>
-                                                        <th>PH</th>
-                                                        <th>CH</th>
-                                                        <th>Actions</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <?php foreach($courses as $course): ?>
-                                                        <tr>
-                                                            <td><strong><?php echo e($course['course_code']); ?></strong></td>
-                                                            <td><?php echo e($course['course_name']); ?></td>
-                                                            <td>Year <?php echo e($course['level_year']); ?></td>
-                                                            <td><span class="badge badge-info"><?php echo $course['credit_hours']; ?></span></td>
-                                                            <td><?php echo $course['lecture_hours'] ?? 0; ?></td>
-                                                            <td><?php echo $course['tutorial_hours'] ?? 0; ?></td>
-                                                            <td><?php echo $course['practical_hours'] ?? 0; ?></td>
-                                                            <td><strong><?php echo ($course['lecture_hours'] ?? 0) + ($course['tutorial_hours'] ?? 0) + ($course['practical_hours'] ?? 0); ?></strong></td>
-                                                            <td>
-                                                                <div class="btn-group btn-group-sm">
-                                                                    <a href="view.php?id=<?php echo $course['id']; ?>" class="btn btn-outline-info btn-sm" title="View">
-                                                                        <i class="fas fa-eye"></i>
-                                                                    </a>
-                                                                    <a href="edit.php?id=<?php echo $course['id']; ?>" class="btn btn-outline-warning btn-sm" title="Edit">
-                                                                        <i class="fas fa-edit"></i>
-                                                                    </a>
-                                                                    <a href="assign.php?id=<?php echo $course['id']; ?>" class="btn btn-outline-success btn-sm" title="Assign">
-                                                                        <i class="fas fa-user-plus"></i>
-                                                                    </a>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    <?php endforeach; ?>
-                                                </tbody>
-                                            </table>
+                                <div class="semester-section mb-3">
+                                    <div class="card">
+                                        <div class="card-header bg-light">
+                                            <h5 class="mb-0">
+                                                <i class="fas fa-calendar-alt"></i> <?php echo $semesterName; ?>
+                                                <span class="badge badge-primary ml-2"><?php echo count($courses); ?> Courses</span>
+                                            </h5>
                                         </div>
-                                    <?php else: ?>
-                                        <p class="text-center text-muted">No courses found for this semester.</p>
-                                    <?php endif; ?>
+                                        <div class="card-body">
+                                            <?php if (!empty($courses)): ?>
+                                                <div class="table-responsive">
+                                                    <table class="table table-hover table-striped">
+                                                        <thead class="thead-light">
+                                                            <tr>
+                                                                <th>Course Code</th>
+                                                                <th>Course Name</th>
+                                                                <th>Year</th>
+                                                                <th>CU</th>
+                                                                <th>LH</th>
+                                                                <th>TH</th>
+                                                                <th>PH</th>
+                                                                <th>CH</th>
+                                                                <th>Actions</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <?php foreach($courses as $course): ?>
+                                                                <tr>
+                                                                    <td><strong><?php echo e($course['course_code']); ?></strong></td>
+                                                                    <td><?php echo e($course['course_name']); ?></td>
+                                                                    <td>Year <?php echo e($course['level_year']); ?></td>
+                                                                    <td><span class="badge badge-info"><?php echo $course['credit_hours']; ?></span></td>
+                                                                    <td><?php echo $course['lecture_hours'] ?? 0; ?></td>
+                                                                    <td><?php echo $course['tutorial_hours'] ?? 0; ?></td>
+                                                                    <td><?php echo $course['practical_hours'] ?? 0; ?></td>
+                                                                    <td><strong><?php echo ($course['lecture_hours'] ?? 0) + ($course['tutorial_hours'] ?? 0) + ($course['practical_hours'] ?? 0); ?></strong></td>
+                                                                    <td>
+                                                                        <div class="btn-group btn-group-sm">
+                                                                            <a href="view.php?id=<?php echo $course['id']; ?>" class="btn btn-outline-info btn-sm" title="View">
+                                                                                <i class="fas fa-eye"></i>
+                                                                            </a>
+                                                                            <a href="edit.php?id=<?php echo $course['id']; ?>" class="btn btn-outline-warning btn-sm" title="Edit">
+                                                                                <i class="fas fa-edit"></i>
+                                                                            </a>
+                                                                            <a href="assign.php?id=<?php echo $course['id']; ?>" class="btn btn-outline-success btn-sm" title="Assign">
+                                                                                <i class="fas fa-user-plus"></i>
+                                                                            </a>
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            <?php endforeach; ?>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            <?php else: ?>
+                                                <p class="text-center text-muted">No courses found for this semester.</p>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
+                            <?php endfor; ?>
                         </div>
                     <?php endforeach; ?>
                 </div>
@@ -461,6 +472,7 @@ include '../../../includes/header.php';
                 </div>
             </div>
         <?php endif; ?>
+        </div>
     </div>
 </div>
 
@@ -499,6 +511,135 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
     });
 });
+</script>
+
+<script>
+// AJAX loader for courses list
+(function(){
+    var form = document.querySelector('form[action=""]');
+    if (!form) return;
+    var container = document.getElementById('coursesContainer');
+    if (!container) return;
+
+    function semesterName(n) {
+        var names = ['', 'Semester 1', 'Semester 2', 'Both Semesters'];
+        return names[n] || 'Unknown Semester';
+    }
+
+    function renderGrouped(courses) {
+        if (!courses || !courses.length) {
+            container.innerHTML = '<div class="card"><div class="card-body text-center">\n                    <i class="fas fa-graduation-cap fa-3x text-muted mb-3"></i>\n                    <h4>No Courses Found</h4>\n                    <p class="text-muted">No courses match your current filters or no courses have been added yet.</p>\n                    <a href="add.php" class="btn btn-primary">Add First Course</a>\n                </div></div>';
+            return;
+        }
+
+        // Group by level_year (1..4) and semester_offered under label 2025/2026
+        var grouped = {};
+        var labelYear = '2025/2026';
+        grouped[labelYear] = {};
+        // initialize levels 1..4 with semesters 1..2
+        for (var lv = 1; lv <= 4; lv++) grouped[labelYear][lv] = {1: [], 2: []};
+
+        courses.forEach(function(c){
+            var lvl = parseInt(c.level_year) || 1;
+            if (lvl < 1 || lvl > 4) lvl = 1;
+            var sem = parseInt(c.semester_offered);
+            if (isNaN(sem) || sem === 0) sem = 1;
+            if (sem === 3) {
+                // include in semester 1 and 2 only
+                [1,2].forEach(function(k){
+                    if (!grouped[labelYear][lvl][k].some(function(x){ return x.id == c.id; })) grouped[labelYear][lvl][k].push(c);
+                });
+            } else {
+                if (!grouped[labelYear][lvl][sem].some(function(x){ return x.id == c.id; })) grouped[labelYear][lvl][sem].push(c);
+            }
+        });
+
+        var html = '';
+        for (var year in grouped) {
+            html += '<div class="academic-year-section mb-4">';
+            html += '<h3 class="academic-year-header"><i class="fas fa-graduation-cap"></i> Academic Year ' + year + '</h3>';
+            var levels = grouped[year];
+            // Ensure levels 1..4 and semesters 1..2 display in order
+            for (var lv = 1; lv <= 4; lv++) {
+                var sems = levels[lv] || {1:[],2:[]};
+                html += '<div class="level-section mb-2"><h4 style="margin-top:0.5rem">Year ' + lv + '</h4>';
+                [1,2].forEach(function(s){
+                    var arr = sems[s] || [];
+                    html += '<div class="semester-section mb-3">';
+                    html += '<div class="card"><div class="card-header bg-light"><h5 class="mb-0"><i class="fas fa-calendar-alt"></i> ' + semesterName(parseInt(s)) + ' <span class="badge badge-primary ml-2">' + arr.length + ' Courses</span></h5></div><div class="card-body">';
+                html += '<div class="table-responsive"><table class="table table-hover table-striped"><thead class="thead-light"><tr><th>Course Code</th><th>Course Name</th><th>Year</th><th>CU</th><th>LH</th><th>TH</th><th>PH</th><th>CH</th><th>Actions</th></tr></thead><tbody>';
+                    arr.forEach(function(course){
+                    var lecture = course.lecture_hours || 0;
+                    var tutorial = course.tutorial_hours || 0;
+                    var practical = course.practical_hours || 0;
+                    var ch = lecture + tutorial + practical;
+                    html += '<tr>' +
+                        '<td><strong>' + escapeHtml(course.course_code) + '</strong></td>' +
+                        '<td>' + escapeHtml(course.course_name) + '</td>' +
+                        '<td>Year ' + escapeHtml(String(course.level_year || '')) + '</td>' +
+                        '<td><span class="badge badge-info">' + escapeHtml(String(course.credit_hours || '')) + '</span></td>' +
+                        '<td>' + escapeHtml(String(lecture)) + '</td>' +
+                        '<td>' + escapeHtml(String(tutorial)) + '</td>' +
+                        '<td>' + escapeHtml(String(practical)) + '</td>' +
+                        '<td><strong>' + escapeHtml(String(ch)) + '</strong></td>' +
+                        '<td><div class="btn-group btn-group-sm">' +
+                        '<a href="view.php?id=' + encodeURIComponent(course.id) + '" class="btn btn-outline-info btn-sm" title="View"><i class="fas fa-eye"></i></a>' +
+                        '<a href="edit.php?id=' + encodeURIComponent(course.id) + '" class="btn btn-outline-warning btn-sm" title="Edit"><i class="fas fa-edit"></i></a>' +
+                        '<a href="assign.php?id=' + encodeURIComponent(course.id) + '" class="btn btn-outline-success btn-sm" title="Assign"><i class="fas fa-user-plus"></i></a>' +
+                        '</div></td>' +
+                        '</tr>';
+                    });
+                html += '</tbody></table></div>'; // close table
+                html += '</div></div></div>'; // close card and section
+                });
+                html += '</div>'; // close level-section
+            }
+            html += '</div>'; // close academic-year-section
+        }
+
+        container.innerHTML = html;
+    }
+
+    function escapeHtml(str) {
+        return (str+'')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function fetchAndRender() {
+        var params = new URLSearchParams();
+        var search = form.querySelector('input[name="search"]').value || '';
+        var level = form.querySelector('select[name="level"]').value || '';
+        if (search) params.set('search', search);
+        if (level) params.set('level', level);
+        var url = '../../../scripts/fetch_admin_courses.php?' + params.toString();
+        fetch(url, { credentials: 'same-origin' })
+            .then(function(res){ return res.json(); })
+            .then(function(json){
+                if (json && json.success) {
+                    renderGrouped(json.courses || []);
+                } else {
+                    container.innerHTML = '<div class="alert alert-danger">Failed to load courses.</div>';
+                }
+            }).catch(function(err){
+                container.innerHTML = '<div class="alert alert-danger">Error loading courses.</div>';
+                console.error(err);
+            });
+    }
+
+    // Intercept form submit to do AJAX
+    form.addEventListener('submit', function(e){
+        e.preventDefault();
+        fetchAndRender();
+    });
+
+    // Auto-load on page ready
+    fetchAndRender();
+
+})();
 </script>
 
 <?php include '../../../includes/footer.php'; ?>
