@@ -4,9 +4,6 @@
  */
 require_once dirname(__DIR__, 3) . '/config.php';
 
-// Simple session handling
-
-
 // Initialize with admin module context
 $session = new Session('admin');
 $auth = new Auth('admin');
@@ -16,6 +13,69 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
     header('Location: ../login.php?error=unauthorized');
     exit;
 }
+
+// Handle POST request for truncating lecturers
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'truncate_lecturers') {
+    $db = new Database();
+    $conn = $db->getConnection();
+    
+    try {
+        $conn->beginTransaction();
+
+        // Disable foreign key checks
+        $conn->exec('SET FOREIGN_KEY_CHECKS=0;');
+
+        // 1. Get user_ids for all lecturers to delete their user accounts
+        $stmt = $conn->query("SELECT user_id FROM lecturers WHERE user_id IS NOT NULL");
+        $userIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        // 2. Get photos to delete from filesystem
+        $stmt = $conn->query("SELECT photo FROM lecturers WHERE photo IS NOT NULL AND photo != ''");
+        $photos = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        // 3. Truncate the lecturers table
+        $conn->exec('TRUNCATE TABLE lecturers');
+
+        // 4. Delete associated user accounts
+        if (!empty($userIds)) {
+            $inQuery = implode(',', array_fill(0, count($userIds), '?'));
+            $stmt = $conn->prepare("DELETE FROM users WHERE id IN ($inQuery) AND role = 'lecturer'");
+            $stmt->execute($userIds);
+        }
+
+        // 5. Delete uploaded photos
+        $uploadDir = dirname(__DIR__, 3) . '/uploads/lecturers/';
+        foreach ($photos as $photo) {
+            $filePath = $uploadDir . basename($photo);
+            if (file_exists($filePath)) {
+                unlink($filePath);
+            }
+        }
+
+        // Re-enable foreign key checks
+        $conn->exec('SET FOREIGN_KEY_CHECKS=1;');
+
+        $conn->commit();
+        $session->setFlash('success', 'All lecturers, their user accounts, and uploaded photos have been permanently deleted.');
+    } catch (Exception $e) {
+        // Rollback and re-enable keys on error
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        // Ensure foreign key checks are re-enabled even if the transaction fails
+        $conn->exec('SET FOREIGN_KEY_CHECKS=1;');
+        
+        // Log the error and set a flash message
+        $detailed_error = "Error: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine();
+        error_log("Lecturer truncation error: " . $detailed_error);
+        $session->setFlash('error', 'An error occurred. ' . $detailed_error);
+    }
+
+    // Redirect back to the list to prevent form re-submission
+    header('Location: list.php');
+    exit;
+}
+
 
 $currentUser = $auth->getCurrentUser();
 
@@ -89,14 +149,35 @@ include dirname(__DIR__, 3) . '/includes/header.php';
         <div class="topbar-right d-flex align-items-center">
             <a href="approvals.php" class="btn btn-warning mr-2">⏳ Pending Approvals</a>
             <a href="add-lecturer.php" class="btn btn-primary mr-2">➕ Add New Lecturer</a>
+            
+            <!-- Truncate Button -->
+            <form method="POST" action="list.php" onsubmit="return confirm('DANGER: This will permanently delete ALL lecturers, their user accounts, and uploaded photos. This cannot be undone. Are you absolutely sure?');" style="display:inline;">
+                <input type="hidden" name="action" value="truncate_lecturers">
+                <button type="submit" class="btn btn-danger mr-2">
+                    <i class="fas fa-trash-alt"></i> Delete All Lecturers
+                </button>
+            </form>
+
             <?php include dirname(__DIR__, 3) . '/includes/notification_bell.php'; ?>
         </div>
     </div>
     
     <div class="content-area">
-        <?php if ($session->getFlash('success')): ?>
+        <?php 
+        $successMessage = $session->getFlash('success');
+        if ($successMessage): 
+        ?>
             <div class="alert alert-success">
-                <?php echo e($session->getFlash('success')); ?>
+                <?php echo e($successMessage); ?>
+            </div>
+        <?php endif; ?>
+        
+        <?php 
+        $errorMessage = $session->getFlash('error');
+        if ($errorMessage): 
+        ?>
+            <div class="alert alert-danger">
+                <?php echo e($errorMessage); ?>
             </div>
         <?php endif; ?>
         

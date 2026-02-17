@@ -69,8 +69,8 @@ $studentProfile = $currentUser['profile'] ?? [];
             <li class="menu-section">Updates</li>
             
             <li>
-                <a href="<?php echo BASE_URL; ?>/views/student/notifications.php" class="<?php echo $currentPage == 'notifications.php' ? 'active' : ''; ?>" title="Notifications">
-                    <i class="fas fa-bell"></i> <span>Notifications</span>
+                <a href="<?php echo BASE_URL; ?>/views/student/notifications.php" class="<?php echo $currentPage == 'notifications.php' ? 'active' : ''; ?>" title="Notification Center">
+                    <i class="fas fa-bell"></i> <span>Notification Center</span>
                 </a>
             </li>
             

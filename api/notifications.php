@@ -5,22 +5,49 @@
  */
 require_once '../config.php';
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-// Check if user is logged in (any module)
+// Try each module's session to find the logged-in user.
+// Each role uses a separate session cookie (e.g. SMNS_ADMIN_SESSION, SMNS_STUDENT_SESSION).
 $userId = null;
 $modules = ['admin', 'student', 'lecturer', 'finance'];
+
 foreach ($modules as $mod) {
-    if (!empty($_SESSION[$mod . '_logged_in']) && $_SESSION[$mod . '_logged_in'] === true) {
-        $userId = $_SESSION[$mod . '_user_id'] ?? null;
-        break;
+    $cookieName = 'SMNS_' . strtoupper($mod) . '_SESSION';
+    if (!empty($_COOKIE[$cookieName])) {
+        // Close any currently active session before switching
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+        session_name($cookieName);
+        session_start();
+        if (!empty($_SESSION[$mod . '_logged_in']) && $_SESSION[$mod . '_logged_in'] === true) {
+            $userId = $_SESSION[$mod . '_user_id'] ?? null;
+            if ($userId) {
+                break;
+            }
+        }
+        session_write_close();
+    }
+}
+
+// Fallback: try default session name
+if (!$userId) {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    foreach ($modules as $mod) {
+        if (!empty($_SESSION[$mod . '_logged_in']) && $_SESSION[$mod . '_logged_in'] === true) {
+            $userId = $_SESSION[$mod . '_user_id'] ?? null;
+            if ($userId) break;
+        }
     }
 }
 
 if (!$userId) {
     http_response_code(401);
+    header('Content-Type: application/json');
     echo json_encode(['success' => false, 'error' => 'Unauthorized']);
     exit;
 }
@@ -99,7 +126,6 @@ switch ($action) {
         while ($row = $bstmt->fetch(PDO::FETCH_ASSOC)) {
             try { $ins->execute(['nid' => $row['id'], 'uid' => $userId]); } catch (Exception $e) { }
         }
-
         echo json_encode(['success' => true]);
         break;
 
@@ -349,20 +375,51 @@ switch ($action) {
         break;
 
     case 'archive':
-        $id = intval($_POST['id'] ?? $_GET['id'] ?? 0);
-        if ($id <= 0) { echo json_encode(['success'=>false,'error'=>'Invalid ID']); break; }
-        try {
-            $n = $conn->prepare('SELECT id, title, message, link FROM notifications WHERE id = :id');
-            $n->execute(['id'=>$id]); $row = $n->fetch(PDO::FETCH_ASSOC);
-            if (!$row) { echo json_encode(['success'=>false,'error'=>'Notification not found']); break; }
-            // prevent duplicate archives for the same user+notification
-            $chk = $conn->prepare('SELECT id FROM notification_archive WHERE notification_id = :nid AND user_id = :uid LIMIT 1');
-            $chk->execute(['nid'=>$row['id'],'uid'=>$userId]);
-            if ($chk->fetch()) { echo json_encode(['success'=>true,'message'=>'Already saved']); break; }
-            $a = $conn->prepare('INSERT INTO notification_archive (notification_id, user_id, title, message, link) VALUES (:nid, :uid, :title, :msg, :link)');
-            $a->execute(['nid'=>$row['id'],'uid'=>$userId,'title'=>$row['title'],'msg'=>$row['message'],'link'=>$row['link']]);
-            echo json_encode(['success'=>true]);
-        } catch (Exception $e) { echo json_encode(['success'=>false,'error'=>$e->getMessage()]); }
+        $notificationId = intval($_GET['id'] ?? 0);
+        if ($notificationId > 0) {
+            $conn->beginTransaction();
+            try {
+                // 1. Find the original notification
+                $stmt = $conn->prepare("SELECT * FROM notifications WHERE id = :id");
+                $stmt->execute(['id' => $notificationId]);
+                $notification = $stmt->fetch();
+
+                if ($notification) {
+                    // 2. Insert into archive
+                    $stmt = $conn->prepare("INSERT INTO notification_archive (notification_id, user_id, title, message, link) VALUES (:nid, :uid, :title, :msg, :link)");
+                    $stmt->execute([
+                        'nid' => $notification['id'],
+                        'uid' => $userId,
+                        'title' => $notification['title'],
+                        'msg' => $notification['message'],
+                        'link' => $notification['link']
+                    ]);
+
+                    // 3. Mark as read (to remove from unread count)
+                    $stmt = $conn->prepare("INSERT IGNORE INTO notifications_read (notification_id, user_id, read_at) VALUES (:nid, :uid, NOW())");
+                    $stmt->execute(['nid' => $notificationId, 'uid' => $userId]);
+                    
+                    $conn->commit();
+                    echo json_encode(['success' => true]);
+                } else {
+                    $conn->rollBack();
+                    echo json_encode(['success' => false, 'error' => 'Notification not found']);
+                }
+            } catch (Exception $e) {
+                $conn->rollBack();
+                error_log("Archive error: " . $e->getMessage());
+                echo json_encode(['success' => false, 'error' => 'Failed to archive notification.']);
+            }
+        }
+        break;
+
+    case 'delete_archive':
+        $archiveId = intval($_GET['id'] ?? 0);
+        if ($archiveId > 0) {
+            $stmt = $conn->prepare("DELETE FROM notification_archive WHERE id = :id AND user_id = :uid");
+            $stmt->execute(['id' => $archiveId, 'uid' => $userId]);
+            echo json_encode(['success' => true]);
+        }
         break;
 
     default:
