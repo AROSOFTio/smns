@@ -54,12 +54,12 @@ $stmt = $conn->query("
 ");
 $lecturers = $stmt->fetchAll();
 
-// Fetch active semesters
+// Fetch active semesters - show both Semester 1 and Semester 2
 $stmt = $conn->query("
     SELECT s.id, s.semester_name, s.semester_number, ay.year_name
     FROM semesters s
     INNER JOIN academic_years ay ON s.academic_year_id = ay.id
-    WHERE s.status = 'active' AND ay.status = 'active'
+    WHERE ay.status = 'active'
     ORDER BY ay.year_name DESC, s.semester_number
 ");
 $semesters = $stmt->fetchAll();
@@ -410,7 +410,7 @@ form {
                                 <?php foreach ($semesters as $semester): ?>
                                     <option value="<?php echo $semester['id']; ?>"
                                             <?php echo (($_POST['semester_id'] ?? 0) == $semester['id']) ? 'selected' : ''; ?>>
-                                        <?php echo e($semester['year_name'] . ' - ' . $semester['semester_name']); ?>
+                                        <?php echo e($semester['semester_name']); ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
