@@ -160,7 +160,7 @@ function getSetting($key, $default = null) {
 /**
  * Fetch unread notifications for a given user (handles personal + broadcast + per-user read state)
  */
-function fetchUnreadNotificationsForUser($userId, $limit = 10) {
+function fetchUnreadNotificationsForUser($userId, $limit = 50) {
     $db = new Database();
     $conn = $db->getConnection();
 
@@ -186,20 +186,19 @@ function fetchUnreadNotificationsForUser($userId, $limit = 10) {
 
     // Fetch notifications visible to this user: personal (user_id = $userId) or broadcasts (user_id IS NULL or 0)
     // Exclude notifications that have been archived by this user
+    // Apply limit AFTER filtering for unread to ensure we get accurate count
     $sql = "SELECT n.*, nr.read_at AS my_read_at
             FROM notifications n
             LEFT JOIN notifications_read nr ON nr.notification_id = n.id AND nr.user_id = :uid_read
             LEFT JOIN notification_archive na ON na.notification_id = n.id AND na.user_id = :uid_archive
             WHERE ((n.user_id = :uid) OR (n.user_id IS NULL) OR (n.user_id = 0))
             AND na.id IS NULL
-            ORDER BY n.created_at DESC
-            LIMIT :limit";
+            ORDER BY n.created_at DESC";
 
     $stmt = $conn->prepare($sql);
     $stmt->bindValue(':uid', (int)$userId, PDO::PARAM_INT);
     $stmt->bindValue(':uid_read', (int)$userId, PDO::PARAM_INT);
     $stmt->bindValue(':uid_archive', (int)$userId, PDO::PARAM_INT);
-    $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -210,11 +209,13 @@ function fetchUnreadNotificationsForUser($userId, $limit = 10) {
             // unread if no entry in notifications_read for this user
             if (empty($r['my_read_at'])) {
                 $unread[] = $r;
+                if (count($unread) >= $limit) break; // Apply limit after filtering
             }
         } else {
             // personal notification honours read_status
             if (($r['read_status'] ?? '') !== 'read') {
                 $unread[] = $r;
+                if (count($unread) >= $limit) break; // Apply limit after filtering
             }
         }
     }

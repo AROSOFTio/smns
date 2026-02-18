@@ -162,9 +162,161 @@ $pageTitle = 'Results Audit Trail - ' . APP_NAME;
 include '../../../includes/header.php';
 ?>
 
+<style>
+    /* Prevent horizontal scrolling */
+    html, body {
+        overflow-x: hidden;
+        max-width: 100%;
+    }
+    
+    .main-content {
+        max-width: 100vw;
+        overflow-x: hidden;
+    }
+    
+    .content-area {
+        max-width: 100%;
+        overflow-x: hidden;
+        padding: 15px;
+    }
+    
+    /* Table responsiveness */
+    .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        max-width: 100%;
+    }
+    
+    .table {
+        margin-bottom: 0;
+        font-size: 0.875rem;
+    }
+    
+    .table th, 
+    .table td {
+        vertical-align: middle;
+        padding: 0.5rem;
+        white-space: normal;
+        word-wrap: break-word;
+    }
+    
+    /* Column specific widths */
+    .table td:nth-child(1) { min-width: 120px; } /* Date/Time */
+    .table td:nth-child(2) { min-width: 130px; } /* Student */
+    .table td:nth-child(3) { min-width: 120px; } /* Course */
+    .table td:nth-child(4) { min-width: 70px; }  /* Type */
+    .table td:nth-child(5) { min-width: 90px; }  /* Old Marks */
+    .table td:nth-child(6) { min-width: 90px; }  /* New Marks */
+    .table td:nth-child(7) { min-width: 100px; } /* Changed By */
+    .table td:nth-child(8) { 
+        min-width: 120px; 
+        max-width: 200px;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    } /* Reason */
+    .table td:nth-child(9) { min-width: 90px; }  /* Actions */
+    
+    /* Button styling */
+    .btn-sm {
+        padding: 0.2rem 0.4rem;
+        font-size: 0.75rem;
+        margin: 0.1rem;
+    }
+    
+    /* Actions column */
+    .table td:last-child {
+        white-space: nowrap;
+        text-align: center;
+    }
+    
+    /* Tabs styling */
+    .nav-tabs {
+        flex-wrap: wrap;
+    }
+    
+    .nav-tabs .nav-link {
+        color: #495057;
+        font-size: 0.9rem;
+        padding: 0.5rem 1rem;
+    }
+    
+    .nav-tabs .nav-link.active {
+        font-weight: bold;
+        background-color: #fff;
+        border-color: #dee2e6 #dee2e6 #fff;
+    }
+    
+    /* Card body padding */
+    .card-body {
+        padding: 1rem;
+    }
+    
+    /* Filter form responsive */
+    @media (max-width: 992px) {
+        .content-area {
+            padding: 10px;
+        }
+        
+        .card-body .row > div {
+            margin-bottom: 0.5rem;
+        }
+        
+        .table {
+            font-size: 0.75rem;
+        }
+        
+        .table th,
+        .table td {
+            padding: 0.3rem;
+        }
+    }
+    
+    @media (max-width: 768px) {
+        .topbar {
+            flex-direction: column;
+            align-items: flex-start !important;
+        }
+        
+        .nav-tabs .nav-link {
+            font-size: 0.8rem;
+            padding: 0.4rem 0.8rem;
+        }
+        
+        .table {
+            font-size: 0.7rem;
+        }
+        
+        .btn-sm {
+            padding: 0.15rem 0.3rem;
+            font-size: 0.7rem;
+        }
+    }
+    
+    @media (max-width: 576px) {
+        .content-area {
+            padding: 5px;
+        }
+        
+        .card-body {
+            padding: 0.5rem;
+        }
+        
+        .table th,
+        .table td {
+            padding: 0.25rem;
+            font-size: 0.65rem;
+        }
+        
+        .btn-sm {
+            padding: 0.1rem 0.25rem;
+            font-size: 0.65rem;
+        }
+    }
+</style>
+
 <?php include '../../../includes/admin/sidebar.php'; ?>
 
-<div class="main-content">
+<div class="main-content" style="max-width: 100vw; overflow-x: hidden;">
     <div class="topbar">
         <div class="topbar-left">
             <h4><i class="fas fa-history"></i> Results Audit Trail</h4>
@@ -206,15 +358,15 @@ include '../../../includes/header.php';
                 <p class="text-muted mb-3">Search for any published student results to make corrections. Changes will be logged in the audit trail.</p>
                 <form method="GET" class="row">
                     <input type="hidden" name="tab" value="published">
-                    <div class="col-md-4">
+                    <div class="col-md-4 col-sm-12 mb-2">
                         <label>Student (Name or Reg#)</label>
                         <input type="text" name="published_student" class="form-control" value="<?php echo e($publishedSearch); ?>" placeholder="e.g. Kevin Birungi or 2024/U/001">
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-4 col-sm-12 mb-2">
                         <label>Course (Code or Name)</label>
                         <input type="text" name="published_course" class="form-control" value="<?php echo e($publishedCourse); ?>" placeholder="e.g. CSC101 or Programming">
                     </div>
-                    <div class="col-md-4 d-flex align-items-end">
+                    <div class="col-md-4 col-sm-12 mb-2 d-flex align-items-end">
                         <button type="submit" class="btn btn-primary mr-2"><i class="fas fa-search"></i> Search</button>
                         <a href="?tab=published" class="btn btn-secondary">Reset</a>
                     </div>
@@ -231,18 +383,18 @@ include '../../../includes/header.php';
                 <?php if (empty($publishedResults)): ?>
                     <p class="text-center text-muted">No published results found matching your search criteria.</p>
                 <?php else: ?>
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover">
+                    <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
+                        <table class="table table-sm table-hover" style="margin-bottom: 0;">
                             <thead class="thead-light">
                                 <tr>
-                                    <th>Student</th>
-                                    <th>Course</th>
-                                    <th>Semester</th>
-                                    <th>CW (40%)</th>
-                                    <th>Exam (60%)</th>
-                                    <th>Total</th>
-                                    <th>Grade</th>
-                                    <th>Actions</th>
+                                    <th style="min-width: 120px;">Student</th>
+                                    <th style="min-width: 120px;">Course</th>
+                                    <th style="min-width: 100px;">Semester</th>
+                                    <th style="min-width: 70px;" class="text-center">CW (40%)</th>
+                                    <th style="min-width: 70px;" class="text-center">Exam (60%)</th>
+                                    <th style="min-width: 60px;" class="text-center">Total</th>
+                                    <th style="min-width: 60px;" class="text-center">Grade</th>
+                                    <th style="min-width: 100px;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -264,7 +416,7 @@ include '../../../includes/header.php';
                                         <td class="text-center"><?php echo $pr['final_exam_marks'] !== null ? round($pr['final_exam_marks'], 1) : '-'; ?></td>
                                         <td class="text-center"><strong><?php echo $pr['total_marks'] !== null ? round($pr['total_marks']) : '-'; ?></strong></td>
                                         <td class="text-center"><span class="badge badge-info"><?php echo e($pr['grade']); ?></span></td>
-                                        <td style="white-space: nowrap;">
+                                        <td style="white-space: nowrap; min-width: 100px;">
                                             <a href="submitted.php?academic_year_id=<?php echo $pr['academic_year_id']; ?>&semester_number=<?php echo $pr['semester_number']; ?>&course_id=<?php echo $pr['course_id']; ?>" class="btn btn-sm btn-warning" title="Edit Marks">
                                                 <i class="fas fa-edit"></i> Edit
                                             </a>
@@ -292,15 +444,15 @@ include '../../../includes/header.php';
             <div class="card-body">
                 <form method="GET" class="row">
                     <input type="hidden" name="tab" value="audit">
-                    <div class="col-md-2">
+                    <div class="col-md-2 col-sm-6 mb-2">
                         <label>Student (Name/Reg#)</label>
                         <input type="text" name="student" class="form-control form-control-sm" value="<?php echo e($studentSearch); ?>" placeholder="Search student...">
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-2 col-sm-6 mb-2">
                         <label>Course</label>
                         <input type="text" name="course" class="form-control form-control-sm" value="<?php echo e($courseSearch); ?>" placeholder="Course code/name...">
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-2 col-sm-6 mb-2">
                         <label>Change Type</label>
                         <select name="change_type" class="form-control form-control-sm">
                             <option value="">All</option>
@@ -308,15 +460,15 @@ include '../../../includes/header.php';
                             <option value="publish" <?php echo $changeType === 'publish' ? 'selected' : ''; ?>>Publish</option>
                         </select>
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-2 col-sm-6 mb-2">
                         <label>From Date</label>
                         <input type="date" name="date_from" class="form-control form-control-sm" value="<?php echo e($dateFrom); ?>">
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-2 col-sm-6 mb-2">
                         <label>To Date</label>
                         <input type="date" name="date_to" class="form-control form-control-sm" value="<?php echo e($dateTo); ?>">
                     </div>
-                    <div class="col-md-2 d-flex align-items-end">
+                    <div class="col-md-2 col-sm-6 mb-2 d-flex align-items-end">
                         <button type="submit" class="btn btn-primary btn-sm mr-2">Filter</button>
                         <a href="audit.php?tab=audit" class="btn btn-secondary btn-sm">Reset</a>
                     </div>
@@ -333,19 +485,19 @@ include '../../../includes/header.php';
                 <?php if (empty($auditRecords)): ?>
                     <p class="text-center text-muted">No audit records found.</p>
                 <?php else: ?>
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover">
-                            <thead>
+                    <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
+                        <table class="table table-sm table-hover" style="margin-bottom: 0;">
+                            <thead class="thead-light">
                                 <tr>
-                                    <th>Date/Time</th>
-                                    <th>Student</th>
-                                    <th>Course</th>
-                                    <th>Type</th>
-                                    <th>Old Marks</th>
-                                    <th>New Marks</th>
-                                    <th>Changed By</th>
-                                    <th>Reason</th>
-                                    <th>Actions</th>
+                                    <th style="min-width: 120px;">Date/Time</th>
+                                    <th style="min-width: 150px;">Student</th>
+                                    <th style="min-width: 150px;">Course</th>
+                                    <th style="min-width: 80px;">Type</th>
+                                    <th style="min-width: 100px;">Old Marks</th>
+                                    <th style="min-width: 100px;">New Marks</th>
+                                    <th style="min-width: 120px;">Changed By</th>
+                                    <th style="min-width: 150px;">Reason</th>
+                                    <th style="min-width: 100px;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -397,7 +549,7 @@ include '../../../includes/header.php';
                                         <td style="max-width: 150px; font-size: 0.85rem;">
                                             <?php echo e($record['reason'] ?? '-'); ?>
                                         </td>
-                                        <td style="white-space: nowrap;">
+                                        <td style="white-space: nowrap; min-width: 100px;">
                                             <a href="submitted.php?academic_year_id=<?php echo $record['academic_year_id']; ?>&semester_number=<?php echo $record['semester_number']; ?>&course_id=<?php echo $record['course_id']; ?>" class="btn btn-sm btn-primary" title="Edit Marks for this Course">
                                                 <i class="fas fa-edit"></i>
                                             </a>
@@ -417,31 +569,5 @@ include '../../../includes/header.php';
         <!-- End of Tabs -->
     </div>
 </div>
-
-<style>
-.content-area {
-    max-width: 100%;
-    overflow-x: hidden;
-    padding: 15px;
-}
-.table-responsive {
-    overflow-x: auto;
-}
-.table th, .table td {
-    vertical-align: middle;
-}
-.btn-sm {
-    padding: 0.2rem 0.4rem;
-    font-size: 0.75rem;
-}
-.nav-tabs .nav-link {
-    color: #495057;
-}
-.nav-tabs .nav-link.active {
-    font-weight: bold;
-    background-color: #fff;
-    border-color: #dee2e6 #dee2e6 #fff;
-}
-</style>
 
 <?php include '../../../includes/footer.php'; ?>

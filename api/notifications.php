@@ -402,8 +402,16 @@ switch ($action) {
                     }
 
                     // 4. Mark as read (to remove from unread count)
+                    // For broadcast notifications, insert into notifications_read
                     $stmt = $conn->prepare("INSERT IGNORE INTO notifications_read (notification_id, user_id, read_at) VALUES (:nid, :uid, NOW())");
                     $stmt->execute(['nid' => $notificationId, 'uid' => $userId]);
+                    
+                    // For personal notifications, also update the read_status column
+                    $isBroadcast = is_null($notification['user_id']) || $notification['user_id'] == 0;
+                    if (!$isBroadcast && $notification['user_id'] == $userId) {
+                        $stmt = $conn->prepare("UPDATE notifications SET read_status = 'read', read_at = NOW() WHERE id = :id");
+                        $stmt->execute(['id' => $notificationId]);
+                    }
                     
                     $conn->commit();
                     echo json_encode(['success' => true]);

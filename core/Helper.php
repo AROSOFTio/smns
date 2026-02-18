@@ -125,8 +125,34 @@ class Helper {
         if ($gpa >= 3.5) return 'success';
         if ($gpa >= 3.0) return 'info';
         if ($gpa >= 2.5) return 'primary';
-        if ($gpa >= 2.0) return 'warning';
+        if ($gpa >= 2.0) return 'success'; // 2.0 (D grade) is passing
         return 'danger';
+    }
+    
+    /**
+     * Get grade letter color (for badges)
+     */
+    public static function getGradeColor($gradeLetter) {
+        $gradeLetter = strtoupper(trim($gradeLetter));
+        
+        // Passing grades show green/blue, failing shows red
+        switch($gradeLetter) {
+            case 'A':
+                return 'success'; // green
+            case 'B+':
+            case 'B':
+                return 'info'; // blue
+            case 'C+':
+            case 'C':
+                return 'primary'; // darker blue
+            case 'D+':
+            case 'D':
+                return 'success'; // green (passing grade)
+            case 'F':
+                return 'danger'; // red (fail)
+            default:
+                return 'secondary'; // gray
+        }
     }
     
     /**

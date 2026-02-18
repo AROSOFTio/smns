@@ -139,21 +139,169 @@ $pageTitle = 'Lecturers List - ' . APP_NAME;
 include dirname(__DIR__, 3) . '/includes/header.php';
 ?>
 
+<style>
+    /* Prevent horizontal scrolling */
+    html, body {
+        overflow-x: hidden;
+        max-width: 100%;
+    }
+    
+    .main-content {
+        max-width: 100vw;
+        overflow-x: hidden;
+    }
+    
+    .content-area {
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+    
+    .topbar {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .topbar-right {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    /* Make topbar buttons smaller */
+    .topbar-right .btn,
+    .topbar-right form button {
+        font-size: 0.8rem;
+        padding: 0.35rem 0.65rem;
+        line-height: 1.3;
+    }
+    
+    .topbar-right .btn i {
+        font-size: 0.75rem;
+    }
+    
+    /* Responsive buttons */
+    @media (max-width: 992px) {
+        .topbar-right .btn,
+        .topbar-right form button {
+            font-size: 0.7rem;
+            padding: 0.25rem 0.45rem;
+        }
+        
+        .topbar-right form {
+            margin-bottom: 0.5rem;
+        }
+    }
+    
+    @media (max-width: 768px) {
+        .topbar {
+            flex-direction: column;
+            align-items: flex-start !important;
+        }
+        
+        .topbar-right {
+            width: 100%;
+            justify-content: flex-start;
+        }
+        
+        .topbar-right .btn {
+            margin-bottom: 0.25rem;
+        }
+    }
+    
+    /* Table responsiveness */
+    .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        max-width: 100%;
+    }
+    
+    .table-responsive table {
+        min-width: 100%;
+        width: max-content;
+    }
+    
+    .table td,
+    .table th {
+        overflow-wrap: break-word;
+        word-wrap: break-word;
+    }
+    
+    /* Adjust button sizes in actions column */
+    .btn-xs {
+        padding: 0.15rem 0.3rem;
+        font-size: 0.7rem;
+        line-height: 1.2;
+        margin: 0.1rem;
+    }
+    
+    /* Actions column responsive */
+    @media (max-width: 992px) {
+        td[style*="white-space:nowrap"] {
+            white-space: normal !important;
+            min-width: 180px;
+        }
+        
+        .btn-xs {
+            margin-bottom: 0.2rem;
+        }
+    }
+    
+    /* Filter form responsive */
+    @media (max-width: 768px) {
+        .card-body .row .col-md-3,
+        .card-body .row .col-md-2 {
+            margin-bottom: 0.5rem;
+        }
+        
+        .table-responsive {
+            font-size: 0.75rem;
+        }
+        
+        .table th,
+        .table td {
+            padding: 0.3rem !important;
+            font-size: 0.75rem !important;
+        }
+    }
+    
+    @media (max-width: 576px) {
+        .topbar-left h4 {
+            font-size: 1rem !important;
+        }
+        
+        .topbar-right .btn,
+        .topbar-right form button {
+            font-size: 0.65rem;
+            padding: 0.2rem 0.35rem;
+        }
+        
+        .table th,
+        .table td {
+            padding: 0.2rem !important;
+            font-size: 0.7rem !important;
+        }
+        
+        .btn-xs {
+            padding: 0.1rem 0.2rem;
+            font-size: 0.65rem;
+        }
+    }
+</style>
+
 <?php include dirname(__DIR__, 3) . '/includes/admin/sidebar.php'; ?>
 
-<div class="main-content">
-    <div class="topbar d-flex justify-content-between align-items-center">
+<div class="main-content" style="max-width: 100vw; overflow-x: hidden;">
+    <div class="topbar d-flex justify-content-between align-items-center" style="flex-wrap: wrap; gap: 0.5rem; padding: 0.75rem 1rem;">
         <div class="topbar-left">
-            <h4>Lecturers Management</h4>
+            <h4 style="margin: 0;">Lecturers Management</h4>
         </div>
-        <div class="topbar-right d-flex align-items-center">
-            <a href="approvals.php" class="btn btn-warning mr-2">⏳ Pending Approvals</a>
-            <a href="add-lecturer.php" class="btn btn-primary mr-2">➕ Add New Lecturer</a>
+        <div class="topbar-right d-flex align-items-center" style="flex-wrap: wrap; gap: 0.5rem;">
+            <a href="approvals.php" class="btn btn-sm btn-warning" style="margin: 0; font-size: 0.75rem; padding: 0.3rem 0.5rem;">⏳ Pending Approvals</a>
+            <a href="add-lecturer.php" class="btn btn-sm btn-primary" style="margin: 0; font-size: 0.75rem; padding: 0.3rem 0.5rem;">➕ Add New Lecturer</a>
             
             <!-- Truncate Button -->
-            <form method="POST" action="list.php" onsubmit="return confirm('DANGER: This will permanently delete ALL lecturers, their user accounts, and uploaded photos. This cannot be undone. Are you absolutely sure?');" style="display:inline;">
+            <form method="POST" action="list.php" onsubmit="return confirm('DANGER: This will permanently delete ALL lecturers, their user accounts, and uploaded photos. This cannot be undone. Are you absolutely sure?');" style="display:inline; margin: 0;">
                 <input type="hidden" name="action" value="truncate_lecturers">
-                <button type="submit" class="btn btn-danger mr-2">
+                <button type="submit" class="btn btn-sm btn-danger" style="margin: 0; font-size: 0.75rem; padding: 0.3rem 0.5rem;">
                     <i class="fas fa-trash-alt"></i> Delete All Lecturers
                 </button>
             </form>
@@ -162,7 +310,7 @@ include dirname(__DIR__, 3) . '/includes/header.php';
         </div>
     </div>
     
-    <div class="content-area">
+    <div class="content-area" style="max-width: 100%; overflow-x: hidden; padding: 1rem;">
         <?php 
         $successMessage = $session->getFlash('success');
         if ($successMessage): 
@@ -182,14 +330,14 @@ include dirname(__DIR__, 3) . '/includes/header.php';
         <?php endif; ?>
         
         <!-- Filters -->
-        <div class="card">
-            <div class="card-body">
+        <div class="card" style="margin-bottom: 1rem;">
+            <div class="card-body" style="padding: 1rem;">
                 <form method="GET" action="">
                     <div class="row">
-                        <div class="col-md-3">
+                        <div class="col-md-3 col-sm-6 mb-2">
                             <input type="text" name="search" class="form-control" placeholder="Search..." value="<?php echo e($search); ?>">
                         </div>
-                        <div class="col-md-2">
+                        <div class="col-md-2 col-sm-6 mb-2">
                             <select name="department" class="form-control">
                                 <option value="">All Departments</option>
                                 <?php foreach($departments as $dept): ?>
@@ -199,7 +347,7 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-2">
+                        <div class="col-md-2 col-sm-6 mb-2">
                             <select name="status" class="form-control">
                                 <option value="">All Status</option>
                                 <option value="active" <?php echo $status == 'active' ? 'selected' : ''; ?>>Active</option>
@@ -208,7 +356,7 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                                 <option value="inactive" <?php echo $status == 'inactive' ? 'selected' : ''; ?>>Inactive</option>
                             </select>
                         </div>
-                        <div class="col-md-2">
+                        <div class="col-md-2 col-sm-6 mb-2">
                             <select name="designation" class="form-control">
                                 <option value="">All Specializations</option>
                                 <?php foreach($specializations as $spec): ?>
@@ -218,7 +366,7 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-3 col-sm-12 mb-2">
                             <button type="submit" class="btn btn-primary">Filter</button>
                             <a href="list.php" class="btn btn-secondary">Reset</a>
                         </div>
@@ -228,23 +376,23 @@ include dirname(__DIR__, 3) . '/includes/header.php';
         </div>
         
         <!-- Lecturers Table -->
-        <div class="card">
+        <div class="card" style="margin-bottom: 1rem;">
             <div class="card-header">
                 Lecturers (<?php echo count($lecturers); ?>)
             </div>
-            <div class="card-body">
+            <div class="card-body" style="overflow-x: hidden; padding: 0.5rem;">
                 <?php if (count($lecturers) > 0): ?>
-                    <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
-                        <table class="table table-hover table-sm" style="word-break:break-word; font-size: 0.875rem;">
+                    <div class="table-responsive" style="overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch;">
+                        <table class="table table-hover table-sm" style="word-break: break-word; font-size: 0.875rem; margin-bottom: 0;">
                             <thead>
                                 <tr>
-                                    <th style="min-width:80px;">Lecturer ID</th>
-                                    <th style="min-width:100px;">Name</th>
-                                    <th style="min-width:120px;">Email</th>
-                                    <th style="min-width:80px;">Department</th>
-                                    <th style="min-width:90px;">Designation</th>
-                                    <th style="min-width:60px;">Status</th>
-                                    <th style="min-width:100px;">Actions</th>
+                                    <th style="min-width: 80px;">Lecturer ID</th>
+                                    <th style="min-width: 100px;">Name</th>
+                                    <th style="min-width: 120px;">Email</th>
+                                    <th style="min-width: 80px;">Department</th>
+                                    <th style="min-width: 90px;">Designation</th>
+                                    <th style="min-width: 60px;">Status</th>
+                                    <th style="min-width: 180px;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -255,7 +403,7 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                                             <?php echo e($lecturer['first_name'] . ' ' . $lecturer['last_name']); ?>
                                             <br><small class="text-muted" style="font-size: 0.75rem;"><?php echo e($lecturer['qualifications'] ?? 'N/A'); ?></small>
                                         </td>
-                                        <td style="word-break:break-all;max-width:120px; font-size: 0.8rem;">
+                                        <td style="word-break: break-all; max-width: 150px; font-size: 0.8rem;">
                                             <?php echo e($lecturer['email']); ?>
                                         </td>
                                         <td><?php echo e($lecturer['department'] ?? 'N/A'); ?></td>
@@ -288,7 +436,7 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                                                 <?php echo e(ucfirst($lecturer['status'])); ?>
                                             </span>
                                         </td>
-                                        <td style="white-space:nowrap; padding: 0.25rem;">
+                                        <td style="padding: 0.25rem; min-width: 180px;">
                                             <a href="view.php?id=<?php echo $lecturer['id']; ?>" class="btn btn-sm btn-info btn-xs" title="View"><i class="fas fa-eye"></i></a>
                                             <a href="edit.php?id=<?php echo $lecturer['id']; ?>" class="btn btn-sm btn-warning btn-xs" title="Edit"><i class="fas fa-edit"></i></a>
                                             <a href="reset_password.php?id=<?php echo $lecturer['id']; ?>" class="btn btn-sm btn-secondary btn-xs" title="Reset Password"><i class="fas fa-key"></i></a>

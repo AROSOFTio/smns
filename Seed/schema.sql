@@ -158,7 +158,7 @@ INSERT INTO grades (grade_letter, min_mark, max_mark, grade_point, description, 
 ('C+', 65.00, 69.99, 2.50, 'Above Average', 'pass'),
 ('C', 60.00, 64.99, 2.00, 'Average', 'pass'),
 ('D+', 55.00, 59.99, 1.50, 'Below Average', 'pass'),
-('D', 50.00, 54.99, 1.00, 'Pass', 'pass'),
+('D', 50.00, 54.99, 2.00, 'Pass', 'pass'),
 ('F', 0.00, 49.99, 0.00, 'Fail', 'fail');
 
 -- ============================================================================

@@ -443,7 +443,15 @@ include '../../includes/header.php';
                                 <tr>
                                     <td><?php echo e($result['course_code']); ?><br><small class="text-muted"><?php echo e($result['course_name']); ?></small></td>
                                     <td><?php echo number_format($result['total_marks'], 1); ?>%</td>
-                                    <td><span class="badge badge-<?php echo Helper::getGPAColor($result['grade_points'] ?? 0); ?>"><?php echo e($result['grade'] ?? 'N/A'); ?></span></td>
+                                    <td>
+                                        <?php 
+                                        // Use grade_points for color if available, otherwise fallback to grade letter
+                                        $badgeColor = ($result['grade_points'] !== null && $result['grade_points'] > 0) 
+                                            ? Helper::getGPAColor($result['grade_points']) 
+                                            : Helper::getGradeColor($result['grade'] ?? '');
+                                        ?>
+                                        <span class="badge badge-<?php echo $badgeColor; ?>"><?php echo e($result['grade'] ?? 'N/A'); ?></span>
+                                    </td>
                                 </tr>
                                 <?php endforeach; ?>
                             </tbody>
