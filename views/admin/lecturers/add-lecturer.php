@@ -188,16 +188,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $successMsg .= "<strong>Lecturer ID:</strong> <code>{$lecturerId}</code><br>";
             $successMsg .= "<strong>Username:</strong> <code>{$username}</code><br>";
             $successMsg .= "<strong>Temporary Password:</strong> <code>{$tempPassword}</code><br>";
-            $successMsg .= "<strong>Portal:</strong> <a href='" . BASE_URL . "/views/lecturer/login.php'>Lecturer Login</a>";
+            $successMsg .= "<strong>Portal:</strong> <a href='" . BASE_URL . "/views/auth/login.php?role=lecturer' target='_blank'>Lecturer Login</a>";
             $successMsg .= "</div>";
             if ($mailSent) {
-                $successMsg .= "<div style='color:#28a745;margin-top:10px;'><i class='fas fa-check-circle'></i> Credentials emailed to lecturer</div>";
+                $successMsg .= "<div style='color:#28a745;margin-top:10px;'><i class='fas fa-check-circle'></i> Credentials emailed to lecturer.</div>";
             } else {
-                $successMsg .= "<div style='color:#ffc107;margin-top:10px;'><i class='fas fa-exclamation-triangle'></i> Please communicate these credentials to the lecturer</div>";
+                $successMsg .= "<div style='color:#dc3545;margin-top:10px;'><i class='fas fa-exclamation-triangle'></i> <strong>Could not send email.</strong> Please copy and communicate these credentials to the lecturer.</div>";
             }
             
             $session->setFlash('success', $successMsg);
-            header('Location: list.php');
+            header('Location: add-lecturer.php');
             exit;
             
         } catch (Exception $e) {

@@ -20,6 +20,44 @@ $conn = $db->getConnection();
 
 $lecturerId = (int)($_GET['id'] ?? 0);
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'reset_password') {
+    $userId = (int)($_POST['user_id'] ?? 0);
+    if ($userId > 0) {
+        try {
+            $tempPassword = Security::generatePassword(10);
+            $passwordHash = Security::hashPassword($tempPassword);
+
+            $stmt = $conn->prepare("
+                UPDATE users 
+                SET password_hash = :hash, require_password_change = 1, failed_login_attempts = 0, account_locked_until = NULL
+                WHERE id = :id AND role = 'lecturer'
+            ");
+            $stmt->execute(['hash' => $passwordHash, 'id' => $userId]);
+
+            // Fetch username to display
+            $userStmt = $conn->prepare("SELECT username FROM users WHERE id = :id");
+            $userStmt->execute(['id' => $userId]);
+            $username = $userStmt->fetchColumn();
+
+            $successMsg = "<strong>Password has been reset.</strong><br><br>";
+            $successMsg .= "<div style='background:#e7f3ff;padding:15px;border-radius:5px;border-left:4px solid #007bff;'>";
+            $successMsg .= "<strong>Username:</strong> <code>{$username}</code><br>";
+            $successMsg .= "<strong>New Temporary Password:</strong> <code>{$tempPassword}</code><br>";
+            $successMsg .= "</div><div style='margin-top:10px;'>Please communicate these new credentials to the lecturer.</div>";
+            
+            $session->setFlash('success', $successMsg);
+
+        } catch (Exception $e) {
+            $session->setFlash('error', 'Failed to reset password: ' . $e->getMessage());
+        }
+    } else {
+        $session->setFlash('error', 'Invalid user ID for password reset.');
+    }
+    header("Location: view.php?id=" . $lecturerId);
+    exit;
+}
+
+
 if (!$lecturerId) {
     $session->setFlash('error', 'Invalid lecturer ID');
     header('Location: list.php');
@@ -145,7 +183,11 @@ include dirname(__DIR__, 3) . '/includes/header.php';
 
                         <hr>
                         <div class="text-center">
-                            <a href="reset_password.php?id=<?php echo $lecturer['id']; ?>" class="btn btn-secondary btn-sm">🔑 Reset Password</a>
+                            <form method="POST" action="view.php?id=<?php echo $lecturer['id']; ?>" style="display:inline;" onsubmit="return confirm('Are you sure you want to reset the password for this lecturer?');">
+                                <input type="hidden" name="action" value="reset_password">
+                                <input type="hidden" name="user_id" value="<?php echo $lecturer['user_id']; ?>">
+                                <button type="submit" class="btn btn-secondary btn-sm">🔑 Reset Password</button>
+                            </form>
                             <a href="send_invite.php?id=<?php echo $lecturer['id']; ?>" class="btn btn-primary btn-sm">📧 Send Invite</a>
                         </div>
                     </div>
