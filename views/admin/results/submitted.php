@@ -406,6 +406,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function calculateGrade(total) {
         if (isNaN(total)) return '-';
+        if (total >= 90) return 'A+';
         if (total >= 80) return 'A';
         if (total >= 75) return 'B+';
         if (total >= 70) return 'B';
@@ -413,6 +414,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (total >= 60) return 'C';
         if (total >= 55) return 'D+';
         if (total >= 50) return 'D';
+        if (total >= 45) return 'E';
+        if (total >= 40) return 'E-';
         if (total >= 0)  return 'F';
         return '-';
     }

@@ -154,14 +154,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 <?php if ($step === 1): ?>
                     <div class="form-group">
-                        <label for="username"> Username</label>
+                        <label for="username"><i class="fas fa-id-badge"></i> Lecturer ID</label>
                         <div class="input-wrapper">
                             <input type="text"
                                    class="form-control"
                                    id="username"
                                    name="username"
                                    value="<?php echo htmlspecialchars($entered_username); ?>"
-                                   placeholder="Enter lecturer username"
+                                   placeholder="Enter your Lecturer ID (e.g. LEC001)"
                                    required autofocus>
                             
                         </div>

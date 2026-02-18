@@ -83,8 +83,13 @@ if (!isset($currentUser) || !is_array($currentUser)) {
                 </a>
             </li>
             <li>
-                <a href="<?php echo BASE_URL; ?>/views/admin/lecturers/list.php" class="<?php echo $currentDir == 'lecturers' ? 'active' : ''; ?>">
+                <a href="<?php echo BASE_URL; ?>/views/admin/lecturers/list.php" class="<?php echo ($currentDir == 'lecturers' && $currentPage !== 'schedule.php') ? 'active' : ''; ?>">
                     <i class="fas fa-chalkboard-teacher"></i><span>Lecturers</span>
+                </a>
+            </li>
+            <li>
+                <a href="<?php echo BASE_URL; ?>/views/admin/lecturers/schedule.php" class="<?php echo $currentPage == 'schedule.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-calendar-check"></i><span>Lecturer Schedule</span>
                 </a>
             </li>
 

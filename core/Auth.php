@@ -9,19 +9,31 @@ require_once __DIR__ . '/Session.php';
 
 class Auth {
         /**
-         * Check if a username or email exists in the users table
+         * Check if a username, email, or lecturer_id exists
+         * For lecturer module: also matches against lecturers.lecturer_id
          * Returns user info if found, otherwise false
          */
         public function usernameExists($username) {
             try {
+                // For lecturer logins, resolve lecturer_id → user record
+                if ($this->module === 'lecturer') {
+                    $sql = "SELECT u.* FROM users u
+                            INNER JOIN lecturers l ON l.user_id = u.id
+                            WHERE l.lecturer_id = :lid
+                            LIMIT 1";
+                    $stmt = $this->db->prepare($sql);
+                    $stmt->execute(['lid' => $username]);
+                    $user = $stmt->fetch();
+                    if ($user) {
+                        return $user;
+                    }
+                    // Fall back to regular username/email check
+                }
                 $sql = "SELECT * FROM users WHERE username = :username OR email = :email LIMIT 1";
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute(['username' => $username, 'email' => $username]);
                 $user = $stmt->fetch();
-                if ($user) {
-                    return $user;
-                }
-                return false;
+                return $user ?: false;
             } catch (Exception $e) {
                 error_log("usernameExists error: " . $e->getMessage());
                 return false;
@@ -75,6 +87,21 @@ class Auth {
      */
     public function login($username, $password) {
         try {
+            // For lecturer module, resolve lecturer_id → user record first
+            if ($this->module === 'lecturer') {
+                $lsql = "SELECT u.* FROM users u
+                         INNER JOIN lecturers l ON l.user_id = u.id
+                         WHERE l.lecturer_id = :lid
+                         LIMIT 1";
+                $lstmt = $this->db->prepare($lsql);
+                $lstmt->execute(['lid' => $username]);
+                $user = $lstmt->fetch();
+                if ($user) {
+                    // Use the actual username for further checks
+                    $username = $user['username'];
+                }
+            }
+
             // Check if account is locked
             $sql = "SELECT * FROM users WHERE username = :username OR email = :email";
             $stmt = $this->db->prepare($sql);

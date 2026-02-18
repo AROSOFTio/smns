@@ -78,8 +78,8 @@ $lecturerProfile = $currentUser['profile'] ?? [];
             </li>
             
             <li>
-                <a href="<?php echo BASE_URL; ?>/views/lecturer/view-results.php" class="<?php echo $currentPage == 'view-results.php' ? 'active' : ''; ?>" title="View Results">
-                    <i class="fas fa-eye"></i> <span>View Results</span>
+                <a href="<?php echo BASE_URL; ?>/views/lecturer/draft-results.php" class="<?php echo $currentPage == 'draft-results.php' ? 'active' : ''; ?>" title="Draft Results">
+                    <i class="fas fa-save"></i> <span>Draft Results</span>
                 </a>
             </li>
             

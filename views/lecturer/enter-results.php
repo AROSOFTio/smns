@@ -71,7 +71,7 @@ if ($selectedCourseId && !empty($assignedCourses)) {
 // Handle POST: Save coursework (CW) marks only (0–40)
 // ---------------------------------------------------------------------------
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cw']) && $semesterId) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['save_draft']) || isset($_POST['submit_results'])) && $semesterId) {
     $selectedCourseId = (int) ($_POST['course_id'] ?? 0);
 
     // Security: verify course is actually assigned to this lecturer in this semester
@@ -89,10 +89,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cw']) && $semesterId)
         }
     }
 
-    $cwData   = $_POST['cw']; // [student_id => cw_mark]
+    $cwData   = $_POST['cw'] ?? []; // [student_id => cw_mark]
     $now      = date('Y-m-d H:i:s');
     $isSubmit = isset($_POST['submit_results']);
     $newStatus = $isSubmit ? 'submitted' : 'draft';
+
+    // Check if there's any data to process
+    if (empty($cwData)) {
+        if ($isSubmit) {
+            $session->setFlash('error', 'No coursework marks entered. Please enter marks before submitting.');
+        } else {
+            $session->setFlash('error', 'No coursework marks entered to save as draft.');
+        }
+        header('Location: ' . BASE_URL . '/views/lecturer/enter-results.php?academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber . '&course_id=' . $selectedCourseId);
+        exit;
+    }
 
     $conn->beginTransaction();
 
@@ -117,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cw']) && $semesterId)
                 continue;
             }
 
-            // Check if result already exists
+            // Check if draft result already exists (ignore submitted results)
             $existingStmt = $conn->prepare('SELECT id, assignment_marks, status FROM results WHERE student_id = :student AND course_id = :course AND semester_id = :semester LIMIT 1');
             $existingStmt->execute([
                 'student'  => $studentId,
@@ -127,7 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cw']) && $semesterId)
             $existing = $existingStmt->fetch(PDO::FETCH_ASSOC);
 
             if ($existing) {
-                // Update only coursework (assignment_marks) and status/dates.
+                // Update existing result row with new marks and status
                 $updateSql = 'UPDATE results SET assignment_marks = :cw, entered_by = :lecturer, status = :status';
                 $params = [
                     'cw'       => $cwMark,
@@ -141,11 +152,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cw']) && $semesterId)
                     $params['submitted_date'] = $now;
                 }
 
-                $updateSql .= ' WHERE id = :id';
+                $updateSql .= ', updated_at = :updated_at WHERE id = :id';
+                $params['updated_at'] = $now;
                 $u = $conn->prepare($updateSql);
                 $u->execute($params);
             } else {
-                // Insert new result row with ONLY coursework; exam/final/grade stay at defaults.
+                // Insert new result row
                 $insertSql = 'INSERT INTO results (student_id, course_id, semester_id, assignment_marks, status, entered_by, submitted_date, created_at, updated_at)
                               VALUES (:student, :course, :semester, :cw, :status, :lecturer, :submitted_date, :created_at, :updated_at)';
                 $i = $conn->prepare($insertSql);
@@ -165,10 +177,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cw']) && $semesterId)
 
         $conn->commit();
 
+        // Notify all admins when results are submitted
         if ($isSubmit) {
-            $session->setFlash('success', 'Coursework marks submitted successfully for approval.');
+            // Get course name for notification
+            $courseStmt = $conn->prepare("SELECT course_code, course_name FROM courses WHERE id = :cid");
+            $courseStmt->execute(['cid' => $selectedCourseId]);
+            $courseInfo = $courseStmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Get lecturer name
+            $lecturerName = trim($lecturerProfile['first_name'] . ' ' . $lecturerProfile['last_name']);
+            
+            // Get all active admin users
+            $adminStmt = $conn->query("SELECT id FROM users WHERE role = 'admin' AND status = 'active'");
+            $admins = $adminStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            if ($courseInfo && !empty($admins)) {
+                $courseName = $courseInfo['course_code'] . ' - ' . $courseInfo['course_name'];
+                $notifTitle = 'Results Submitted for Review';
+                $notifMsg = $lecturerName . ' has submitted coursework marks for ' . $courseName . '. Please review and approve.';
+                $notifLink = BASE_URL . '/views/admin/results/submitted.php';
+                
+                // Insert notification for each admin
+                $notifStmt = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, link, created_at) VALUES (:uid, :title, :msg, 'info', :link, NOW())");
+                foreach ($admins as $admin) {
+                    $notifStmt->execute([
+                        'uid' => $admin['id'],
+                        'title' => $notifTitle,
+                        'msg' => $notifMsg,
+                        'link' => $notifLink
+                    ]);
+                }
+            }
+            
+            $session->setFlash('success', 'Coursework marks submitted successfully for approval. <a href="' . BASE_URL . '/views/lecturer/draft-results.php" class="alert-link">View your submitted results</a>');
         } else {
-            $session->setFlash('success', 'Coursework marks saved as draft.');
+            $session->setFlash('success', 'Coursework marks saved as draft. <a href="' . BASE_URL . '/views/lecturer/draft-results.php" class="alert-link">View all drafts</a>');
         }
 
         header('Location: ' . BASE_URL . '/views/lecturer/enter-results.php?academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber . '&course_id=' . $selectedCourseId);
@@ -332,7 +375,7 @@ include '../../includes/header.php';
 
                             <div class="mt-3">
                                 <button type="submit" name="save_draft" class="btn btn-secondary btn-sm">Save Draft</button>
-                                <button type="submit" name="submit_results" class="btn btn-primary btn-sm" onclick="return confirm('Submit coursework marks for approval? You will not be able to edit after approval/publication.');">Submit for Approval</button>
+                                <button type="submit" name="submit_results" class="btn btn-primary btn-sm" onclick="return confirm('Submit coursework marks for approval? You cannot edit after approval/publication.');">Submit for Approval</button>
                                 <p class="text-muted mt-2" style="font-size:12px;">
                                     Note: You can only enter Coursework (CW) marks out of 40. Exam marks (60%), final total and grade will be entered and approved by the examiner/auditor. You cannot modify exam or final marks.
                                 </p>
