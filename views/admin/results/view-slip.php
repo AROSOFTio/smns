@@ -230,7 +230,7 @@ include '../../../includes/header.php';
         <div class="card" id="results-slip">
             <div class="card-body">
                 <div class="results-header text-center mb-4">
-                    <img src="<?php echo BASE_URL; ?>/assets/img/logo.png" alt="University Logo" style="max-width: 100px;">
+                    <img src="<?php echo BASE_URL; ?>/uploads/students/Sem.PNG" alt="University Logo" style="max-width: 100px;">
                     <h4 class="mt-2 mb-0"><?php echo e(APP_NAME); ?></h4>
                     <p class="mb-0">Office of the Academic Registrar</p>
                     <h5>PROVISIONAL SEMESTER RESULTS</h5>
