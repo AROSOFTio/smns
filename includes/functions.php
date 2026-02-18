@@ -164,7 +164,7 @@ function fetchUnreadNotificationsForUser($userId, $limit = 10) {
     $db = new Database();
     $conn = $db->getConnection();
 
-    // Ensure helper tables exist (notifications_read)
+    // Ensure helper tables exist (notifications_read and notification_archive)
     $conn->exec("CREATE TABLE IF NOT EXISTS notifications_read (
         notification_id INT NOT NULL,
         user_id INT NOT NULL,
@@ -172,18 +172,33 @@ function fetchUnreadNotificationsForUser($userId, $limit = 10) {
         PRIMARY KEY(notification_id, user_id),
         INDEX idx_user (user_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+    
+    $conn->exec("CREATE TABLE IF NOT EXISTS notification_archive (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        notification_id INT NULL,
+        user_id INT NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        message TEXT NULL,
+        link VARCHAR(255) NULL,
+        archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_user (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
     // Fetch notifications visible to this user: personal (user_id = $userId) or broadcasts (user_id IS NULL or 0)
+    // Exclude notifications that have been archived by this user
     $sql = "SELECT n.*, nr.read_at AS my_read_at
             FROM notifications n
             LEFT JOIN notifications_read nr ON nr.notification_id = n.id AND nr.user_id = :uid_read
-            WHERE (n.user_id = :uid) OR (n.user_id IS NULL) OR (n.user_id = 0)
+            LEFT JOIN notification_archive na ON na.notification_id = n.id AND na.user_id = :uid_archive
+            WHERE ((n.user_id = :uid) OR (n.user_id IS NULL) OR (n.user_id = 0))
+            AND na.id IS NULL
             ORDER BY n.created_at DESC
             LIMIT :limit";
 
     $stmt = $conn->prepare($sql);
     $stmt->bindValue(':uid', (int)$userId, PDO::PARAM_INT);
     $stmt->bindValue(':uid_read', (int)$userId, PDO::PARAM_INT);
+    $stmt->bindValue(':uid_archive', (int)$userId, PDO::PARAM_INT);
     $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);

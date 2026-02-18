@@ -75,6 +75,9 @@ if ($semesterId) {
     $registeredStudents = $rsStmt->fetchAll();
 }
 
+// Fetch unread notifications for header bell
+$unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
+
 $pageTitle = 'My Courses - ' . APP_NAME;
 include '../../includes/header.php';
 ?>

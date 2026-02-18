@@ -43,14 +43,14 @@ $semesterRow  = $mapStmt->fetch();
 $semesterId   = $semesterRow['id'] ?? (Helper::getCurrentSemester()['id'] ?? 0);
 $semesterName = $semesterRow['semester_name'] ?? (Helper::getCurrentSemester()['semester_name'] ?? 'Current Semester');
 
-// Courses that have submitted/draft results in this semester
+// Courses that have submitted/draft/published results in this semester
 $coursesWithResults = [];
 if ($semesterId) {
     $sql = "SELECT DISTINCT c.id, c.course_code, c.course_name
             FROM results r
             INNER JOIN courses c ON r.course_id = c.id
             WHERE r.semester_id = :semester_id
-              AND r.status IN ('submitted', 'approved')
+              AND r.status IN ('submitted', 'approved', 'published')
             ORDER BY c.course_code";
     $stmt = $conn->prepare($sql);
     $stmt->execute(['semester_id' => $semesterId]);
@@ -68,6 +68,26 @@ if ($selectedCourseId && !empty($coursesWithResults)) {
 }
 
 // ---------------------------------------------------------------------
+// Ensure results_audit table exists (auto-create)
+// ---------------------------------------------------------------------
+$conn->exec("CREATE TABLE IF NOT EXISTS `results_audit` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `result_id` int(11) NOT NULL,
+  `student_id` int(11) NOT NULL,
+  `course_id` int(11) NOT NULL,
+  `changed_by_user_id` int(11) NOT NULL,
+  `change_type` enum('publish','edit') NOT NULL,
+  `old_marks` longtext DEFAULT NULL,
+  `new_marks` longtext NOT NULL,
+  `reason` text DEFAULT NULL,
+  `changed_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `result_id` (`result_id`),
+  KEY `student_id` (`student_id`),
+  KEY `course_id` (`course_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+// ---------------------------------------------------------------------
 // Handle POST: Enter Exam Marks (60%) - Provisional Save
 // ---------------------------------------------------------------------
 
@@ -81,8 +101,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam']) && $semesterI
     }
 
     $examData = $_POST['exam']; // [result_id => exam_mark]
+    $editReason = trim($_POST['edit_reason'] ?? 'Exam marks entry/update');
     $now      = date('Y-m-d H:i:s');
     $adminId  = $adminProfile['id'] ?? null;
+    $adminUserId = $currentUser['id'] ?? 0;
 
     if (!$adminId) {
         $session->setFlash('error', 'Admin profile not found. Cannot save results.');
@@ -112,12 +134,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam']) && $semesterI
                 continue;
             }
 
-            // Update only exam mark; triggers handle total + grade. Keep status as approved (provisional).
+            // Fetch old marks before updating for audit log
+            $oldStmt = $conn->prepare("SELECT student_id, course_id, assignment_marks, final_exam_marks, total_marks, grade, status FROM results WHERE id = :id");
+            $oldStmt->execute(['id' => $resultId]);
+            $oldResult = $oldStmt->fetch(PDO::FETCH_ASSOC);
+
+            // Preserve published status if already published; otherwise keep as approved
+            $newStatus = ($oldResult['status'] === 'published') ? 'published' : 'approved';
+
+            // Update only exam mark; triggers handle total + grade.
             $updateSql = "UPDATE results
                           SET final_exam_marks = :exam,
                               approved_by      = :admin_id,
                               approved_date    = :approved_date,
-                              status           = 'approved',
+                              status           = :status,
                               updated_at       = :updated_at
                           WHERE id = :id
                             AND semester_id = :semester_id
@@ -127,15 +157,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam']) && $semesterI
                 'exam'         => $examMark,
                 'admin_id'     => $adminId,
                 'approved_date'=> $now,
+                'status'       => $newStatus,
                 'updated_at'   => $now,
                 'id'           => $resultId,
                 'semester_id'  => $semesterId,
                 'course_id'    => $selectedCourseId,
             ]);
+
+            // Fetch new marks after update
+            $newStmt = $conn->prepare("SELECT assignment_marks, final_exam_marks, total_marks, grade, status FROM results WHERE id = :id");
+            $newStmt->execute(['id' => $resultId]);
+            $newResult = $newStmt->fetch(PDO::FETCH_ASSOC);
+
+            // Log to audit table
+            $auditStmt = $conn->prepare("INSERT INTO results_audit (result_id, student_id, course_id, changed_by_user_id, change_type, old_marks, new_marks, reason) VALUES (:result_id, :student_id, :course_id, :user_id, 'edit', :old_marks, :new_marks, :reason)");
+            $auditStmt->execute([
+                'result_id'   => $resultId,
+                'student_id'  => $oldResult['student_id'],
+                'course_id'   => $selectedCourseId,
+                'user_id'     => $adminUserId,
+                'old_marks'   => json_encode($oldResult),
+                'new_marks'   => json_encode($newResult),
+                'reason'      => $editReason
+            ]);
         }
 
     $conn->commit();
-    $session->setFlash('success', 'Exam marks saved provisionally. Review and publish from Provisional Results.');
+    $session->setFlash('success', 'Exam marks saved provisionally. Changes have been logged for audit. Review and publish from Provisional Results.');
 
         header('Location: submitted.php?academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber . '&course_id=' . $selectedCourseId);
         exit;
@@ -198,6 +246,9 @@ include '../../../includes/header.php';
             <h4>Results Management - Exam Entry & Approval</h4>
         </div>
         <div class="topbar-right">
+            <a href="audit.php" class="btn btn-outline-secondary btn-sm mr-2" title="View Audit Trail">
+                <i class="fas fa-history"></i> Audit Trail
+            </a>
             <?php include '../../../includes/notification_bell.php'; ?>
         </div>
     </div>
@@ -250,6 +301,23 @@ include '../../../includes/header.php';
                     <?php if (empty($results)): ?>
                         <p class="text-muted mb-0">No results found for the selected course.</p>
                     <?php else: ?>
+                        <?php
+                        // Check if any results are published to show a warning
+                        $hasPublished = false;
+                        foreach ($results as $r) {
+                            if ($r['status'] === 'published') {
+                                $hasPublished = true;
+                                break;
+                            }
+                        }
+                        if ($hasPublished): ?>
+                            <div class="alert alert-warning mb-3">
+                                <i class="fas fa-exclamation-triangle"></i> <strong>Notice:</strong> 
+                                Some or all of these results are already published and visible to students. 
+                                Any changes you make will be immediately reflected on the student portal and saved to the audit trail.
+                            </div>
+                        <?php endif; ?>
+
                         <form method="POST">
                             <input type="hidden" name="academic_year_id" value="<?php echo $selectedAcademicYearId; ?>">
                             <input type="hidden" name="semester_number" value="<?php echo $selectedSemesterNumber; ?>">
@@ -310,10 +378,16 @@ include '../../../includes/header.php';
                             </div>
 
                             <div class="mt-3">
-                                <button type="submit" class="btn btn-primary btn-sm" onclick="return confirm('Save exam marks provisionally for this course?');">Save Exam Marks (Provisional)</button>
+                                <label class="d-block mb-2"><strong>Reason for Changes (Optional):</strong></label>
+                                <textarea name="edit_reason" class="form-control mb-2" rows="2" placeholder="Enter reason for editing marks (optional, will be logged in audit trail)"></textarea>
+                                
+                                <button type="submit" class="btn btn-primary btn-sm" onclick="return confirm('Save exam marks? Changes will be logged in the audit trail.');">
+                                    Save Exam Marks
+                                </button>
                                 <p class="text-muted mt-2" style="font-size:12px;">
-                                    Policy: Lecturers provide only coursework (40%). Admins/examiners enter exam marks (60%) here.
-                                    Saving here stores results as provisional (approved internally). Students will see results only after they are published.
+                                    <strong>Policy:</strong> Lecturers provide coursework (40%). Admins enter exam marks (60%) here.<br>
+                                    <strong>Status:</strong> Results marked as "Approved" are not yet visible to students. Results marked as "Published" are visible to students.<br>
+                                    <strong>Editing Published Results:</strong> Changes to published results are immediately visible to students and logged in the audit trail for record-keeping.
                                 </p>
                             </div>
                         </form>

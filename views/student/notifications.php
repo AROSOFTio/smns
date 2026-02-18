@@ -22,16 +22,19 @@ $studentId = $_SESSION['student_id'] ?? $currentUser['id'] ?? 0;
 $db = new Database();
 $conn = $db->getConnection();
 
-// Fetch all notifications (inbox)
+// Fetch all notifications (inbox) - excluding already archived ones
 $stmt = $conn->prepare("
     SELECT n.*, nr.read_at
     FROM notifications n
     LEFT JOIN notifications_read nr ON n.id = nr.notification_id AND nr.user_id = :user_id_join
-    WHERE n.user_id = :user_id_where OR n.user_id IS NULL OR n.user_id = 0
+    LEFT JOIN notification_archive na ON n.id = na.notification_id AND na.user_id = :user_id_archive
+    WHERE (n.user_id = :user_id_where OR n.user_id IS NULL OR n.user_id = 0)
+    AND na.id IS NULL
     ORDER BY n.created_at DESC
 ");
 $stmt->execute([
     'user_id_join' => $currentUser['id'],
+    'user_id_archive' => $currentUser['id'],
     'user_id_where' => $currentUser['id']
 ]);
 $inboxNotifications = $stmt->fetchAll();
@@ -154,9 +157,33 @@ include dirname(__DIR__, 2) . '/includes/header.php';
 document.addEventListener('DOMContentLoaded', function() {
     const API_URL = '/smns/api/notifications.php';
 
+    // Function to update/hide the bell counter
+    function updateBellCounter(decrementBy = 0) {
+        const bellBadge = document.querySelector('#notificationBell .notification-badge');
+        if (bellBadge) {
+            let currentCount = parseInt(bellBadge.textContent) || 0;
+            let newCount = Math.max(0, currentCount - decrementBy);
+            if (newCount <= 0) {
+                bellBadge.style.display = 'none';
+                bellBadge.textContent = '0';
+            } else {
+                bellBadge.textContent = newCount;
+            }
+        }
+    }
+
+    // Function to hide bell counter completely
+    function hideBellCounter() {
+        const bellBadge = document.querySelector('#notificationBell .notification-badge');
+        if (bellBadge) {
+            bellBadge.style.display = 'none';
+            bellBadge.textContent = '0';
+        }
+    }
+
     // Mark all as read
     document.getElementById('mark-all-read-btn').addEventListener('click', function() {
-        fetch(`${API_URL}?action=mark_all_read`, { method: 'POST' })
+        fetch(`${API_URL}?action=mark_all_read`, { method: 'POST', credentials: 'same-origin' })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
@@ -164,37 +191,59 @@ document.addEventListener('DOMContentLoaded', function() {
                     document.querySelectorAll('.list-group-item').forEach(item => {
                         item.classList.remove('font-weight-bold');
                     });
-
-                    // Find the notification bell count in the header and hide it
-                    const bellBadge = document.querySelector('#notificationBell .notification-badge');
-                    if (bellBadge) {
-                        bellBadge.textContent = '0';
-                        bellBadge.style.display = 'none';
-                    }
-                    
-                    // No full page reload, just update UI dynamically
-                    // location.reload(); 
+                    // Hide the notification bell count
+                    hideBellCounter();
                 } else {
                     alert('Failed to mark notifications as read.');
                 }
             });
     });
 
-    // Archive notification
+    // Archive notification (also marks as read and updates bell)
     document.querySelectorAll('.archive-btn').forEach(button => {
         button.addEventListener('click', function() {
             const listItem = this.closest('li');
             const notificationId = listItem.dataset.notificationId;
-            fetch(`${API_URL}?action=archive&id=${notificationId}`, { method: 'POST' })
+            const wasUnread = listItem.classList.contains('font-weight-bold');
+            
+            fetch(`${API_URL}?action=archive&id=${notificationId}`, { method: 'POST', credentials: 'same-origin' })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
+                        // Remove the item from inbox
                         listItem.remove();
-                        // Optionally, refresh the archived tab or add the item there dynamically
-                        location.reload(); // Simple reload to see changes in both tabs
+                        
+                        // Update inbox count in tab
+                        const inboxTab = document.getElementById('inbox-tab');
+                        let inboxCount = document.querySelectorAll('#inbox .list-group-item').length;
+                        inboxTab.textContent = `Inbox (${inboxCount})`;
+                        
+                        // Update archived count in tab
+                        const archivedTab = document.getElementById('archived-tab');
+                        let archivedMatch = archivedTab.textContent.match(/\d+/);
+                        let archivedCount = archivedMatch ? parseInt(archivedMatch[0]) + 1 : 1;
+                        archivedTab.textContent = `Archived (${archivedCount})`;
+                        
+                        // If the archived notification was unread, update the bell counter
+                        if (wasUnread) {
+                            updateBellCounter(1);
+                        }
+                        
+                        // Show success message
+                        const alertDiv = document.createElement('div');
+                        alertDiv.className = 'alert alert-success alert-dismissible fade show';
+                        alertDiv.innerHTML = 'Notification saved to archive. <button type="button" class="close" data-dismiss="alert">&times;</button>';
+                        document.querySelector('.content-area').insertBefore(alertDiv, document.querySelector('.nav-tabs'));
+                        
+                        // Auto-dismiss after 3 seconds
+                        setTimeout(() => alertDiv.remove(), 3000);
                     } else {
-                        alert('Failed to archive notification.');
+                        alert('Failed to archive notification: ' + (data.error || 'Unknown error'));
                     }
+                })
+                .catch(err => {
+                    console.error('Archive error:', err);
+                    alert('Network error while archiving notification.');
                 });
         });
     });
@@ -204,8 +253,16 @@ document.addEventListener('DOMContentLoaded', function() {
         button.addEventListener('click', function() {
             const listItem = this.closest('li');
             const archiveId = listItem.dataset.archiveId;
-            fetch(`${API_URL}?action=delete_archive&id=${archiveId}`, { method: 'POST' })
-                .then(() => listItem.remove());
+            fetch(`${API_URL}?action=delete_archive&id=${archiveId}`, { method: 'POST', credentials: 'same-origin' })
+                .then(response => response.json())
+                .then(data => {
+                    listItem.remove();
+                    
+                    // Update archived count in tab
+                    const archivedTab = document.getElementById('archived-tab');
+                    let archivedCount = document.querySelectorAll('#archived .list-group-item').length;
+                    archivedTab.textContent = `Archived (${archivedCount})`;
+                });
         });
     });
 });

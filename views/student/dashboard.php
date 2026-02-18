@@ -62,12 +62,8 @@ $stmt = $conn->prepare("SELECT r.*, c.course_code, c.course_name, c.credit_hours
 $stmt->execute(['student_id' => $studentProfile['id']]);
 $recentResults = $stmt->fetchAll();
 
-// Notifications
-$stmt = $conn->prepare("SELECT * FROM notifications 
-                        WHERE user_id = :user_id AND read_status = 'unread'
-                        ORDER BY created_at DESC LIMIT 5");
-$stmt->execute(['user_id' => $currentUser['id']]);
-$unreadNotifications = $stmt->fetchAll();
+// Notifications - use helper function that handles personal + broadcasts + archived
+$unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
 
 // Ensure student_requests table exists and fetch recent requests for this student
 try {

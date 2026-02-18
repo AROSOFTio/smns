@@ -38,6 +38,9 @@ if ($semesterId) {
     $sstmt->execute(['id' => $semesterId]);
     $semester = $sstmt->fetch();
 
+    // Fetch unread notifications for header bell
+    $unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
+
     $pageTitle = 'My Registrations - ' . APP_NAME;
     include '../../includes/header.php';
     ?>
@@ -111,6 +114,9 @@ $sql = "SELECT cr.semester_id, sem.semester_name, ay.year_name, COUNT(*) as cour
 $stmt = $conn->prepare($sql);
 $stmt->execute(['student_id' => $studentProfile['id']]);
 $summary = $stmt->fetchAll();
+
+// Fetch unread notifications for header bell
+$unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
 
 $pageTitle = 'My Registrations - ' . APP_NAME;
 include '../../includes/header.php';

@@ -57,6 +57,24 @@ if ($selectedCourseId && !empty($coursesWithResults)) {
     }
 }
 
+// Ensure results_audit table exists (auto-create)
+$conn->exec("CREATE TABLE IF NOT EXISTS `results_audit` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `result_id` int(11) NOT NULL,
+  `student_id` int(11) NOT NULL,
+  `course_id` int(11) NOT NULL,
+  `changed_by_user_id` int(11) NOT NULL,
+  `change_type` enum('publish','edit') NOT NULL,
+  `old_marks` longtext DEFAULT NULL,
+  `new_marks` longtext NOT NULL,
+  `reason` text DEFAULT NULL,
+  `changed_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `result_id` (`result_id`),
+  KEY `student_id` (`student_id`),
+  KEY `course_id` (`course_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
 // Handle POST: Publish selected course results to students (status => published)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish']) && $semesterId) {
     $selectedCourseId = (int) ($_POST['course_id'] ?? 0);
@@ -68,9 +86,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish']) && $semest
     }
 
     $now = date('Y-m-d H:i:s');
+    $adminUserId = $currentUser['id'] ?? 0;
 
     try {
         $conn->beginTransaction();
+
+        // Fetch all results being published for audit logging
+        $fetchSql = "SELECT id, student_id, course_id, assignment_marks, final_exam_marks, total_marks, grade, status 
+                     FROM results 
+                     WHERE semester_id = :semester_id AND course_id = :course_id AND status = 'approved'";
+        $fetchStmt = $conn->prepare($fetchSql);
+        $fetchStmt->execute(['semester_id' => $semesterId, 'course_id' => $selectedCourseId]);
+        $resultsToPublish = $fetchStmt->fetchAll(PDO::FETCH_ASSOC);
 
         $updateSql = "UPDATE results
                       SET status = 'published',
@@ -87,8 +114,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish']) && $semest
             'course_id'      => $selectedCourseId,
         ]);
 
+        // Log each result to audit table as 'publish'
+        $auditStmt = $conn->prepare("INSERT INTO results_audit (result_id, student_id, course_id, changed_by_user_id, change_type, old_marks, new_marks, reason) VALUES (:result_id, :student_id, :course_id, :user_id, 'publish', :old_marks, :new_marks, :reason)");
+        foreach ($resultsToPublish as $res) {
+            $oldMarks = $res;
+            $newMarks = $res;
+            $newMarks['status'] = 'published';
+            $auditStmt->execute([
+                'result_id'   => $res['id'],
+                'student_id'  => $res['student_id'],
+                'course_id'   => $res['course_id'],
+                'user_id'     => $adminUserId,
+                'old_marks'   => json_encode($oldMarks),
+                'new_marks'   => json_encode($newMarks),
+                'reason'      => 'Published to student portal'
+            ]);
+        }
+
         $conn->commit();
-        $session->setFlash('success', 'Results published to student portals successfully.');
+        $session->setFlash('success', 'Results published to student portals successfully. A copy has been saved for record keeping.');
 
         header('Location: provisional.php?academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber . '&course_id=' . $selectedCourseId);
         exit;
@@ -144,6 +188,9 @@ include '../../../includes/header.php';
             <h4>Results Management - Provisional Review</h4>
         </div>
         <div class="topbar-right">
+            <a href="audit.php" class="btn btn-outline-secondary btn-sm mr-2" title="View Audit Trail">
+                <i class="fas fa-history"></i> Audit Trail
+            </a>
             <?php include '../../../includes/notification_bell.php'; ?>
         </div>
     </div>

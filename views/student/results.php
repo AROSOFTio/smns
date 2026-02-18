@@ -162,12 +162,8 @@ if ($semesterId) {
     }
 }
 
-// Notifications for header bell
-$stmt = $conn->prepare("SELECT * FROM notifications 
-                        WHERE user_id = :user_id AND read_status = 'unread'
-                        ORDER BY created_at DESC LIMIT 5");
-$stmt->execute(['user_id' => $currentUser['id']]);
-$unreadNotifications = $stmt->fetchAll();
+// Notifications for header bell - use helper function that handles personal + broadcasts + archived
+$unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
 
 $pageTitle = 'My Results - ' . APP_NAME;
 include '../../includes/header.php';

@@ -385,17 +385,23 @@ switch ($action) {
                 $notification = $stmt->fetch();
 
                 if ($notification) {
-                    // 2. Insert into archive
-                    $stmt = $conn->prepare("INSERT INTO notification_archive (notification_id, user_id, title, message, link) VALUES (:nid, :uid, :title, :msg, :link)");
-                    $stmt->execute([
-                        'nid' => $notification['id'],
-                        'uid' => $userId,
-                        'title' => $notification['title'],
-                        'msg' => $notification['message'],
-                        'link' => $notification['link']
-                    ]);
+                    // 2. Check if already archived for this user
+                    $chk = $conn->prepare("SELECT id FROM notification_archive WHERE notification_id = :nid AND user_id = :uid LIMIT 1");
+                    $chk->execute(['nid' => $notificationId, 'uid' => $userId]);
+                    
+                    if (!$chk->fetch()) {
+                        // 3. Insert into archive only if not already archived
+                        $stmt = $conn->prepare("INSERT INTO notification_archive (notification_id, user_id, title, message, link) VALUES (:nid, :uid, :title, :msg, :link)");
+                        $stmt->execute([
+                            'nid' => $notification['id'],
+                            'uid' => $userId,
+                            'title' => $notification['title'],
+                            'msg' => $notification['message'],
+                            'link' => $notification['link']
+                        ]);
+                    }
 
-                    // 3. Mark as read (to remove from unread count)
+                    // 4. Mark as read (to remove from unread count)
                     $stmt = $conn->prepare("INSERT IGNORE INTO notifications_read (notification_id, user_id, read_at) VALUES (:nid, :uid, NOW())");
                     $stmt->execute(['nid' => $notificationId, 'uid' => $userId]);
                     
@@ -410,6 +416,8 @@ switch ($action) {
                 error_log("Archive error: " . $e->getMessage());
                 echo json_encode(['success' => false, 'error' => 'Failed to archive notification.']);
             }
+        } else {
+            echo json_encode(['success' => false, 'error' => 'Invalid notification ID']);
         }
         break;
 

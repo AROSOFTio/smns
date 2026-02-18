@@ -732,6 +732,9 @@ if (!empty($approvedCourses) || $fromAssignments) {
     $selectionAllowed = false;
 }
 
+// Fetch unread notifications for header bell
+$unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
+
 $pageTitle = 'Course Registration - ' . APP_NAME;
 include '../../includes/header.php';
 ?>
