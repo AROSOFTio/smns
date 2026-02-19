@@ -53,8 +53,11 @@ if (!empty($studentProfile['entry_semester_id'])) {
 }
 
 // ---------------------------------------------------------------------
-// Fetch ALL registered courses + results across ALL semesters
-// Use courses.level_year for year and courses.semester_offered for semester
+// Fetch ALL registered courses + results across ALL semesters.
+// FIX: Use positional ? placeholders instead of named :sid1 / :sid2.
+// PDO does not allow the same named parameter more than once per query
+// (SQLSTATE[HY093]: Invalid parameter number). Positional ? placeholders
+// have no such restriction — just pass the value twice in the array.
 // ---------------------------------------------------------------------
 
 $allResultsSql = "
@@ -79,7 +82,7 @@ $allResultsSql = "
     INNER JOIN (
         SELECT student_id, course_id, MAX(semester_id) AS latest_semester_id
         FROM course_registrations
-        WHERE student_id = :sid1
+        WHERE student_id = ?
           AND status IN ('pending', 'approved')
         GROUP BY student_id, course_id
     ) latest ON cr.student_id = latest.student_id
@@ -94,34 +97,35 @@ $allResultsSql = "
         ON r.student_id  = cr.student_id
        AND r.course_id   = cr.course_id
        AND r.semester_id  = cr.semester_id
-    WHERE cr.student_id = :sid2
+    WHERE cr.student_id = ?
       AND cr.status IN ('pending', 'approved')
     ORDER BY COALESCE(sr.year_of_study, c.level_year, 1) ASC, s.semester_number ASC, c.course_code ASC
 ";
 $allStmt = $conn->prepare($allResultsSql);
-$allStmt->execute(['sid1' => $studentProfile['id'], 'sid2' => $studentProfile['id']]);
+// Pass the student ID twice: first ? = subquery, second ? = outer WHERE
+$allStmt->execute([$studentProfile['id'], $studentProfile['id']]);
 $allRows = $allStmt->fetchAll(PDO::FETCH_ASSOC);
+
 
 // Group: [year_of_study][course_semester] => { academic_year, semester_name, courses[], semester_id }
 // Deduplicate: track seen course_codes per block to avoid repeats
-$grouped = [];
-$seenCourses = []; // key => [course_code => true]
+$grouped     = [];
+$seenCourses = [];
+
+// ...existing code...
+
 foreach ($allRows as $row) {
     $yos = (int)$row['year_of_study'] ?: 1;
     $sn  = (int)$row['course_semester'];
-    // Normalize to Semester 1 or 2 per study year.
-    // In our schema, semester_number runs 1..8 across all years,
-    // so map odd numbers to 1 and even numbers to 2.
-    if ($sn < 1) {
-        $sn = 1;
-    } elseif ($sn > 2) {
-        $sn = ($sn % 2 === 1) ? 1 : 2;
-    }
-    $key = $yos . '-' . $sn;
+    // Map global semester_number → 1 or 2 within each year_of_study
+    // Year 1: sem 1,2 → 1,2 | Year 2: sem 3,4 → 1,2 | etc.
+    $sn_within_year = (($sn - 1) % 2) + 1;
+    $key = $yos . '-' . $sn_within_year;
+
     if (!isset($grouped[$key])) {
         $grouped[$key] = [
             'year_of_study'   => $yos,
-            'semester_number' => $sn,
+            'semester_number' => $sn_within_year,
             'academic_year'   => $row['academic_year'],
             'semester_name'   => $row['semester_name'],
             'semester_id'     => $row['semester_id'],
@@ -130,12 +134,15 @@ foreach ($allRows as $row) {
         ];
         $seenCourses[$key] = [];
     }
+
     // Skip duplicate course codes within the same year-semester block
     $cc = $row['course_code'];
     if (isset($seenCourses[$key][$cc])) continue;
-    $seenCourses[$key][$cc] = true;
+    $seenCourses[$key][$cc]     = true;
     $grouped[$key]['courses'][] = $row;
 }
+
+// ...existing code...
 
 // Sort by year_of_study ASC, semester_number ASC
 uasort($grouped, function($a, $b) {
@@ -168,9 +175,9 @@ foreach ($grouped as $key => &$block) {
     $allPublished = ($semTotal > 0 && $semPublished === $semTotal && $semCredits > 0);
 
     // SGPA
-    $block['sgpa']         = $allPublished ? ($semPoints / $semCredits) : null;
-    $block['sgpa_display'] = $allPublished ? number_format($semPoints / $semCredits, 2) : 'PA';
-    $block['total_credits']= $semCredits;
+    $block['sgpa']          = $allPublished ? ($semPoints / $semCredits) : null;
+    $block['sgpa_display']  = $allPublished ? number_format($semPoints / $semCredits, 2) : 'PA';
+    $block['total_credits'] = $semCredits;
 
     // Running CGPA (only accumulate when fully published)
     if ($allPublished) {
@@ -188,10 +195,8 @@ foreach ($grouped as $key => &$block) {
     $block['decision'] = null;
     if ($allPublished && $cgpaValue !== null) {
         if ($block['semester_number'] == 2) {
-            // End of academic year: decide promotion vs retention
             $block['decision'] = ($cgpaValue >= 2.00) ? 'Promoted' : 'Retained';
         } else {
-            // Mid-year (Semester 1): show standing
             $block['decision'] = ($cgpaValue >= 2.00) ? 'Good Standing' : 'Probation';
         }
     }
@@ -203,13 +208,9 @@ unset($block);
 // Overall academic status
 $overallCGPA = ($cumulativeCredits > 0) ? ($cumulativePoints / $cumulativeCredits) : null;
 if ($overallCGPA !== null) {
-    if ($overallCGPA >= 2.00) {
-        $academicStatus = 'Good Standing';
-    } elseif ($overallCGPA >= 1.50) {
-        $academicStatus = 'Probation';
-    } else {
-        $academicStatus = 'At Risk';
-    }
+    if ($overallCGPA >= 2.00)     $academicStatus = 'Good Standing';
+    elseif ($overallCGPA >= 1.50) $academicStatus = 'Probation';
+    else                          $academicStatus = 'At Risk';
 } else {
     $academicStatus = empty($semesterBlocks) ? 'Not Registered' : 'In Progress';
 }
@@ -225,8 +226,6 @@ include '../../includes/header.php';
 
 <style>
 .results-section-header {
-    color: #2d3748;
-    font-size: 1.4rem;
     font-weight: 700;
     margin-bottom: 1.25rem;
     padding-bottom: 0.5rem;
@@ -236,9 +235,7 @@ include '../../includes/header.php';
     gap: 0.5rem;
 }
 .results-section-header i { color: #4a5568; }
-
 .year-section { margin-bottom: 2rem; }
-
 .year-title {
     font-size: 1.1rem;
     font-weight: 700;
@@ -249,7 +246,6 @@ include '../../includes/header.php';
     border-left: 4px solid #4a5568;
     border-radius: 2px;
 }
-
 .results-card {
     margin-bottom: 1rem;
     background: #fff;
@@ -258,7 +254,6 @@ include '../../includes/header.php';
     overflow: hidden;
     border: 1px solid #e2e8f0;
 }
-
 .semester-header {
     background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
     border-bottom: 1px solid #e2e8f0;
@@ -268,15 +263,8 @@ include '../../includes/header.php';
     flex-wrap: wrap;
     gap: 0.5rem;
 }
-.semester-header h5 {
-    margin: 0;
-    font-size: 0.95rem;
-    font-weight: 600;
-    color: #2d3748;
-}
+.semester-header h5 { margin: 0; font-size: 0.95rem; font-weight: 600; color: #2d3748; }
 .semester-header .badge { font-size: 0.72rem; }
-
-/* GPA pills in semester header */
 .gpa-pill {
     display: inline-flex;
     align-items: center;
@@ -289,7 +277,6 @@ include '../../includes/header.php';
 .gpa-pill-sgpa { background: #dbeafe; color: #1e3a8a; border: 1px solid #93c5fd; }
 .gpa-pill-cgpa { background: #f0fdf4; color: #14532d; border: 1px solid #86efac; }
 .gpa-pill-pa   { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; }
-
 .decision-badge {
     display: inline-block;
     padding: 2px 10px;
@@ -303,7 +290,6 @@ include '../../includes/header.php';
 .decision-probation { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
 .decision-retained  { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
 .decision-pa        { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; }
-
 .results-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .results-table thead th {
     background: #f8fafc;
@@ -321,7 +307,6 @@ include '../../includes/header.php';
 }
 .results-table tbody tr:last-child td { border-bottom: none; }
 .results-table tbody tr:hover { background: #f8fafc; }
-
 .sgpa-summary-row td {
     background: #f0f4f8;
     font-weight: 700;
@@ -329,7 +314,6 @@ include '../../includes/header.php';
     border-top: 2px solid #cbd5e1;
     padding: 8px 10px;
 }
-
 .overall-card {
     background: linear-gradient(135deg, #f0fdf4, #ecfdf5);
     border: 2px solid #86efac;
@@ -409,42 +393,32 @@ include '../../includes/header.php';
         <?php else: ?>
 
             <?php
-            // ----------------------------------------------------------------
-            // Reorganize blocks: byYear[year_of_study][semester_number] = block
-            // Also collect distinct academic_year labels per year_of_study
-            // ----------------------------------------------------------------
             $byYear           = [];
-            $yearLabels       = []; // year_of_study => display academic year string
-            $baseAcademicYear = 2025; // Year 1 -> 2025/2026, Year 2 -> 2026/2027, etc.
+            $yearLabels       = [];
+            $baseAcademicYear = 2025; // Year 1 → 2025/2026, Year 2 → 2026/2027, etc.
 
             foreach ($semesterBlocks as $key => $block) {
                 $yos = $block['year_of_study'];
                 $sn  = $block['semester_number'];
 
-                if (!isset($byYear[$yos])) {
-                    $byYear[$yos] = [];
-                }
+                if (!isset($byYear[$yos])) $byYear[$yos] = [];
                 $byYear[$yos][$sn] = $block;
 
-                // Derive academic year label purely from year_of_study
                 if (!isset($yearLabels[$yos])) {
-                    $startYear             = $baseAcademicYear + ((int)$yos - 1);
-                    $endYear               = $startYear + 1;
-                    $yearLabels[$yos]      = $startYear . '/' . $endYear;
+                    $startYear        = $baseAcademicYear + ((int)$yos - 1);
+                    $yearLabels[$yos] = $startYear . '/' . ($startYear + 1);
                 }
             }
             ksort($byYear);
             foreach ($byYear as &$sems) { ksort($sems); }
             unset($sems);
 
-            // Collect all distinct academic year labels for the section heading
             $distinctAcademicYears = array_unique(array_values($yearLabels));
             $academicYearHeading   = !empty($distinctAcademicYears)
                                         ? implode(', ', $distinctAcademicYears)
                                         : 'Academic Record';
             ?>
 
-            <!-- Dynamic Academic Year Section Header -->
             <h3 class="results-section-header">
                 <i class="fas fa-graduation-cap"></i>
                 Academic Year<?php echo count($distinctAcademicYears) > 1 ? 's' : ''; ?>:
@@ -453,7 +427,6 @@ include '../../includes/header.php';
 
             <?php foreach ($byYear as $yearNum => $semesters): ?>
                 <div class="year-section">
-                    <!-- Year heading, show its academic year label if available -->
                     <h4 class="year-title">
                         Year <?php echo (int)$yearNum; ?>
                         <?php if (!empty($yearLabels[$yearNum])): ?>
@@ -465,15 +438,13 @@ include '../../includes/header.php';
 
                     <?php foreach ($semesters as $semNum => $block): ?>
                         <?php
-                        // Determine decision badge CSS class
                         $decisionClass = 'decision-pa';
-                        if ($block['decision'] === 'Promoted')      $decisionClass = 'decision-promoted';
+                        if ($block['decision'] === 'Promoted')          $decisionClass = 'decision-promoted';
                         elseif ($block['decision'] === 'Good Standing') $decisionClass = 'decision-good';
-                        elseif ($block['decision'] === 'Probation') $decisionClass = 'decision-probation';
-                        elseif ($block['decision'] === 'Retained')  $decisionClass = 'decision-retained';
+                        elseif ($block['decision'] === 'Probation')     $decisionClass = 'decision-probation';
+                        elseif ($block['decision'] === 'Retained')      $decisionClass = 'decision-retained';
                         ?>
                         <div class="results-card">
-                            <!-- Semester header: title + course count + SGPA + CGPA + Decision -->
                             <div class="semester-header">
                                 <i class="fas fa-calendar-alt" style="color:#4a5568;"></i>
                                 <h5>Semester <?php echo (int)$semNum; ?></h5>
@@ -482,33 +453,26 @@ include '../../includes/header.php';
                                     <?php echo count($block['courses']); ?> Course<?php echo count($block['courses']) !== 1 ? 's' : ''; ?>
                                 </span>
 
-                                <!-- SGPA pill -->
                                 <?php if ($block['sgpa_display'] !== 'PA'): ?>
-                                    <span class="gpa-pill gpa-pill-sgpa">
-                                        SGPA:&nbsp;<?php echo e($block['sgpa_display']); ?>
-                                    </span>
+                                    <span class="gpa-pill gpa-pill-sgpa">SGPA:&nbsp;<?php echo e($block['sgpa_display']); ?></span>
                                 <?php else: ?>
                                     <span class="gpa-pill gpa-pill-pa">SGPA: PA</span>
                                 <?php endif; ?>
 
-                                <!-- CGPA pill -->
                                 <?php if ($block['cgpa_display'] !== 'PA'): ?>
-                                    <span class="gpa-pill gpa-pill-cgpa">
-                                        CGPA:&nbsp;<?php echo e($block['cgpa_display']); ?>
-                                    </span>
+                                    <span class="gpa-pill gpa-pill-cgpa">CGPA:&nbsp;<?php echo e($block['cgpa_display']); ?></span>
                                 <?php else: ?>
                                     <span class="gpa-pill gpa-pill-pa">CGPA: PA</span>
                                 <?php endif; ?>
 
-                                <!-- Decision / Standing badge -->
                                 <?php if ($block['decision'] !== null): ?>
                                     <span class="decision-badge <?php echo $decisionClass; ?>">
                                         <?php
                                         $icon = '';
-                                        if ($block['decision'] === 'Promoted')       $icon = '✓ ';
+                                        if ($block['decision'] === 'Promoted')          $icon = '✓ ';
                                         elseif ($block['decision'] === 'Good Standing') $icon = '✓ ';
-                                        elseif ($block['decision'] === 'Probation')  $icon = '⚠ ';
-                                        elseif ($block['decision'] === 'Retained')   $icon = '✗ ';
+                                        elseif ($block['decision'] === 'Probation')     $icon = '⚠ ';
+                                        elseif ($block['decision'] === 'Retained')      $icon = '✗ ';
                                         echo $icon . e($block['decision']);
                                         ?>
                                     </span>
@@ -517,7 +481,6 @@ include '../../includes/header.php';
                                 <?php endif; ?>
                             </div>
 
-                            <!-- Course results table -->
                             <div class="table-responsive">
                                 <table class="results-table">
                                     <thead>
@@ -559,7 +522,6 @@ include '../../includes/header.php';
                                         </tr>
                                         <?php endforeach; ?>
 
-                                        <!-- Summary row: credits + SGPA -->
                                         <tr class="sgpa-summary-row">
                                             <td colspan="3" class="text-right">
                                                 Semester Credits: <strong><?php echo (int)$block['total_credits']; ?> CU</strong>
@@ -575,7 +537,6 @@ include '../../includes/header.php';
                 </div>
             <?php endforeach; ?>
 
-            <!-- Overall Summary Card -->
             <?php if ($overallCGPA !== null): ?>
                 <div class="overall-card <?php echo $overallCGPA < 1.5 ? 'at-risk' : ($overallCGPA < 2.0 ? 'probation' : ''); ?> mt-3">
                     <div class="row align-items-center">
@@ -607,7 +568,6 @@ include '../../includes/header.php';
 
         <?php endif; ?>
 
-        <!-- Legend -->
         <div class="mt-3" style="font-size:12px; color:#555;">
             <p class="mb-1"><strong>Legend:</strong></p>
             <p class="mb-1">
