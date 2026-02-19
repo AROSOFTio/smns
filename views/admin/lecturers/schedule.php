@@ -18,6 +18,24 @@ $currentUser = $auth->getCurrentUser();
 $db   = new Database();
 $conn = $db->getConnection();
 
+// Handle DELETE assignment (POST)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignment_id'])) {
+    $assignmentId = (int)$_POST['delete_assignment_id'];
+    if ($assignmentId > 0) {
+        $delStmt = $conn->prepare("DELETE FROM course_assignments WHERE id = :id");
+        $delStmt->execute(['id' => $assignmentId]);
+        // Redirect back preserving filters
+        $qs = http_build_query(array_filter([
+            'year'     => $_POST['filter_year'] ?? '',
+            'semester' => $_POST['filter_semester'] ?? '',
+            'lecturer' => $_POST['filter_lecturer'] ?? '',
+            'level'    => $_POST['filter_level'] ?? '',
+        ]));
+        header('Location: schedule.php' . ($qs ? '?' . $qs : ''));
+        exit;
+    }
+}
+
 // Filters
 $filterYear     = $_GET['year']     ?? '';
 $filterSemester = $_GET['semester'] ?? '';
@@ -37,6 +55,7 @@ $sql = "
         c.course_code,
         c.course_name,
         c.credit_hours,
+        ca.id           AS assignment_id,
         ca.status       AS assignment_status
     FROM course_assignments ca
     INNER JOIN lecturers      l  ON ca.lecturer_id  = l.id
@@ -168,11 +187,12 @@ include '../../../includes/header.php';
 /* Fixed-layout table — NO horizontal scroll */
 .sched-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
 .sched-table col.col-num    { width: 4%; }
-.sched-table col.col-lec    { width: 18%; }
-.sched-table col.col-code   { width: 11%; }
-.sched-table col.col-name   { width: 37%; }
-.sched-table col.col-cu     { width: 9%; }
-.sched-table col.col-status { width: 10%; }
+.sched-table col.col-lec    { width: 16%; }
+.sched-table col.col-code   { width: 10%; }
+.sched-table col.col-name   { width: 32%; }
+.sched-table col.col-cu     { width: 8%; }
+.sched-table col.col-status { width: 9%; }
+.sched-table col.col-action { width: 10%; }
 
 .sched-table thead th { background: #f1f5f9; font-size: 0.78rem; text-transform: uppercase; letter-spacing:0.04em; color:#475569; padding:8px 10px; vertical-align:middle; border-bottom: 2px solid #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sched-table tbody td { padding: 8px 10px; vertical-align: middle; font-size: 0.85rem; border-top: 1px solid #f1f5f9; word-wrap: break-word; overflow-wrap: break-word; }
@@ -336,6 +356,7 @@ include '../../../includes/header.php';
                                         <col class="col-name">
                                         <col class="col-cu">
                                         <col class="col-status">
+                                        <col class="col-action">
                                     </colgroup>
                                         <tr>
                                             <th>#</th>
@@ -344,6 +365,7 @@ include '../../../includes/header.php';
                                             <th>Course Name</th>
                                             <th>Credit Units</th>
                                             <th>Status</th>
+                                            <th>Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -368,6 +390,18 @@ include '../../../includes/header.php';
                                                         <span class="status-<?php echo $c['assignment_status']; ?>">
                                                             <?php echo ucfirst($c['assignment_status']); ?>
                                                         </span>
+                                                    </td>
+                                                    <td>
+                                                        <form method="POST" class="d-inline delete-assignment-form">
+                                                            <input type="hidden" name="delete_assignment_id" value="<?php echo $c['assignment_id']; ?>">
+                                                            <input type="hidden" name="filter_year" value="<?php echo e($filterYear); ?>">
+                                                            <input type="hidden" name="filter_semester" value="<?php echo e($filterSemester); ?>">
+                                                            <input type="hidden" name="filter_lecturer" value="<?php echo e($filterLecturer); ?>">
+                                                            <input type="hidden" name="filter_level" value="<?php echo e($filterLevel); ?>">
+                                                            <button type="submit" class="btn btn-danger btn-sm" title="Remove this course assignment">
+                                                                <i class="fas fa-trash-alt"></i>
+                                                            </button>
+                                                        </form>
                                                     </td>
                                                 </tr>
                                             <?php endforeach; ?>
@@ -459,6 +493,17 @@ include '../../../includes/header.php';
 // Auto-submit on dropdown change
 document.querySelectorAll('select[name="year"], select[name="semester"], select[name="level"], select[name="lecturer"]')
     .forEach(el => el.addEventListener('change', () => el.closest('form').submit()));
+
+// Confirm before deleting a course assignment
+document.querySelectorAll('.delete-assignment-form').forEach(form => {
+    form.addEventListener('submit', function(e) {
+        const row = this.closest('tr');
+        const courseName = row.querySelector('td:nth-child(2), td:nth-child(4)');
+        if (!confirm('Are you sure you want to remove this course assignment? This action cannot be undone.')) {
+            e.preventDefault();
+        }
+    });
+});
 </script>
 
 <?php include '../../../includes/footer.php'; ?>

@@ -19,13 +19,36 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
 
 $currentUser = $auth->getCurrentUser();
 
-// Get filter parameters
-$search = $_GET['search'] ?? '';
-$level = $_GET['level'] ?? '';
-
 // Build query
 $db = new Database();
 $conn = $db->getConnection();
+
+// Handle DELETE course (POST)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_course_id'])) {
+    $courseId = (int)$_POST['delete_course_id'];
+    if ($courseId > 0) {
+        try {
+            // Remove related records first, then delete course
+            $conn->prepare("DELETE FROM course_registrations WHERE course_id = :id")->execute(['id' => $courseId]);
+            $conn->prepare("DELETE FROM course_assignments WHERE course_id = :id")->execute(['id' => $courseId]);
+            $conn->prepare("DELETE FROM courses WHERE id = :id")->execute(['id' => $courseId]);
+            $session->setFlash('success', 'Course deleted successfully.');
+        } catch (Exception $ex) {
+            $session->setFlash('success', 'Error deleting course: ' . $ex->getMessage());
+        }
+        // Redirect back preserving filters
+        $qs = http_build_query(array_filter([
+            'search' => $_POST['filter_search'] ?? '',
+            'level'  => $_POST['filter_level'] ?? '',
+        ]));
+        header('Location: list.php' . ($qs ? '?' . $qs : ''));
+        exit;
+    }
+}
+
+// Get filter parameters
+$search = $_GET['search'] ?? '';
+$level = $_GET['level'] ?? '';
 
 // Get courses organized by academic year and semester
 $sql = "SELECT c.*
@@ -442,6 +465,14 @@ include '../../../includes/header.php';
                                                                             <a href="assign.php?id=<?php echo $course['id']; ?>" class="btn btn-outline-success btn-sm" title="Assign">
                                                                                 <i class="fas fa-user-plus"></i>
                                                                             </a>
+                                                                            <form method="POST" class="d-inline delete-course-form">
+                                                                                <input type="hidden" name="delete_course_id" value="<?php echo $course['id']; ?>">
+                                                                                <input type="hidden" name="filter_search" value="<?php echo e($search); ?>">
+                                                                                <input type="hidden" name="filter_level" value="<?php echo e($level); ?>">
+                                                                                <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete">
+                                                                                    <i class="fas fa-trash-alt"></i>
+                                                                                </button>
+                                                                            </form>
                                                                         </div>
                                                                     </td>
                                                                 </tr>
@@ -584,6 +615,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         '<a href="view.php?id=' + encodeURIComponent(course.id) + '" class="btn btn-outline-info btn-sm" title="View"><i class="fas fa-eye"></i></a>' +
                         '<a href="edit.php?id=' + encodeURIComponent(course.id) + '" class="btn btn-outline-warning btn-sm" title="Edit"><i class="fas fa-edit"></i></a>' +
                         '<a href="assign.php?id=' + encodeURIComponent(course.id) + '" class="btn btn-outline-success btn-sm" title="Assign"><i class="fas fa-user-plus"></i></a>' +
+                        '<form method="POST" class="d-inline delete-course-form" style="display:inline">' +
+                        '<input type="hidden" name="delete_course_id" value="' + escapeHtml(String(course.id)) + '">' +
+                        '<input type="hidden" name="filter_search" value="' + escapeHtml(document.querySelector('input[name=search]').value || '') + '">' +
+                        '<input type="hidden" name="filter_level" value="' + escapeHtml(document.querySelector('select[name=level]').value || '') + '">' +
+                        '<button type="submit" class="btn btn-outline-danger btn-sm" title="Delete"><i class="fas fa-trash-alt"></i></button>' +
+                        '</form>' +
                         '</div></td>' +
                         '</tr>';
                     });
@@ -637,7 +674,29 @@ document.addEventListener('DOMContentLoaded', function() {
     // Auto-load on page ready
     fetchAndRender();
 
+    // Re-bind delete confirmations after AJAX render
+    var observer = new MutationObserver(function() { bindDeleteForms(); });
+    observer.observe(container, { childList: true, subtree: true });
+
 })();
+</script>
+
+<script>
+// Confirm before deleting a course
+function bindDeleteForms() {
+    document.querySelectorAll('.delete-course-form').forEach(function(form) {
+        if (form.dataset.bound) return;
+        form.dataset.bound = '1';
+        form.addEventListener('submit', function(e) {
+            var row = this.closest('tr');
+            var code = row ? row.querySelector('td:first-child').textContent.trim() : 'this course';
+            if (!confirm('Are you sure you want to delete "' + code + '"? This will also remove all related registrations and assignments. This action cannot be undone.')) {
+                e.preventDefault();
+            }
+        });
+    });
+}
+bindDeleteForms();
 </script>
 
 <?php include '../../../includes/footer.php'; ?>
