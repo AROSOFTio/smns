@@ -1,590 +1,609 @@
+
 <?php
-/**
- * Student Dashboard
- */
 require_once '../../config.php';
-
-// Initialize session and auth with student module context
 $session = new Session('student');
-$auth = new Auth('student');
-
-// Verify student access
-if (!$auth->isLoggedIn() || $auth->getRole() !== 'student') {
+$auth    = new Auth('student');
+if (!isset($_SESSION['student_logged_in']) || $_SESSION['student_logged_in'] !== true || $_SESSION['student_role'] !== 'student') {
     header('Location: ' . BASE_URL . '/views/student/login.php?error=unauthorized');
     exit;
 }
-
-$currentUser = $auth->getCurrentUser();
+$currentUser    = $auth->getCurrentUser();
 $studentProfile = $currentUser['profile'];
+$currentUserId = (int)($currentUser['id'] ?? 0);
 
-// Get statistics
 $db = new Database();
 $conn = $db->getConnection();
+$studentDbId = (int)($studentProfile['id'] ?? 0);
 
-// Student's courses this semester
-$currentSemester = Helper::getCurrentSemester();
-$stmt = $conn->prepare("SELECT COUNT(*) as count FROM course_registrations 
-                        WHERE student_id = :student_id 
-                        AND semester_id = :semester_id 
-                        AND status = 'approved'");
-$stmt->execute([
-    'student_id' => $studentProfile['id'],
-    'semester_id' => $currentSemester['id'] ?? 0
-]);
-$registeredCourses = $stmt->fetch()['count'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_contacts' && $studentDbId > 0) {
+    if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $session->setFlash('error', 'Invalid request token.');
+        header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+        exit;
+    }
 
-// GPA
-$stmt = $conn->prepare("SELECT cumulative_gpa FROM student_gpas 
-                        WHERE student_id = :student_id 
-                        ORDER BY id DESC LIMIT 1");
-$stmt->execute(['student_id' => $studentProfile['id']]);
-$gpaData = $stmt->fetch();
-$cumulativeGPA = $gpaData['cumulative_gpa'] ?? 0.00;
+    $phone = trim(Security::sanitize($_POST['phone'] ?? ''));
+    $email = trim($_POST['email'] ?? '');
+    $address = trim(Security::sanitize($_POST['address'] ?? ''));
+    $city = trim(Security::sanitize($_POST['city'] ?? ''));
+    $country = trim(Security::sanitize($_POST['country'] ?? ''));
 
-// Outstanding balance
-$stmt = $conn->prepare("SELECT balance FROM student_balances 
-                        WHERE student_id = :student_id 
-                        AND semester_id = :semester_id");
-$stmt->execute([
-    'student_id' => $studentProfile['id'],
-    'semester_id' => $currentSemester['id'] ?? 0
-]);
-$balanceData = $stmt->fetch();
-$outstandingBalance = $balanceData['balance'] ?? 0.00;
+    if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $session->setFlash('error', 'Please enter a valid email address.');
+        header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+        exit;
+    }
 
-// Recent results
-$stmt = $conn->prepare("SELECT r.*, c.course_code, c.course_name, c.credit_hours, s.semester_name
-                        FROM results r
-                        INNER JOIN courses c ON r.course_id = c.id
-                        INNER JOIN semesters s ON r.semester_id = s.id
-                        WHERE r.student_id = :student_id AND r.status = 'published'
-                        ORDER BY r.created_at DESC LIMIT 5");
-$stmt->execute(['student_id' => $studentProfile['id']]);
-$recentResults = $stmt->fetchAll();
+    try {
+        $updStmt = $conn->prepare("
+            UPDATE students
+            SET phone = :phone,
+                email = :email,
+                address = :address,
+                city = :city,
+                country = :country,
+                updated_at = NOW()
+            WHERE id = :student_id
+        ");
+        $updStmt->execute([
+            'phone' => $phone !== '' ? $phone : null,
+            'email' => $email !== '' ? $email : null,
+            'address' => $address !== '' ? $address : null,
+            'city' => $city !== '' ? $city : null,
+            'country' => $country !== '' ? $country : null,
+            'student_id' => $studentDbId
+        ]);
 
-// Notifications - use helper function that handles personal + broadcasts + archived
-$unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
+        // Keep user email in sync when changed from contacts.
+        if (!empty($studentProfile['user_id']) && $email !== '') {
+            $uStmt = $conn->prepare("UPDATE users SET email = :email, updated_at = NOW() WHERE id = :user_id");
+            $uStmt->execute([
+                'email' => $email,
+                'user_id' => (int)$studentProfile['user_id']
+            ]);
+        }
 
-// Ensure student_requests table exists and fetch recent requests for this student
-try {
-    $conn->exec("CREATE TABLE IF NOT EXISTS student_requests (
-        id INT PRIMARY KEY AUTO_INCREMENT,
-        student_id INT NOT NULL,
-        user_id INT NOT NULL,
-        request_type VARCHAR(100) NOT NULL,
-        reason TEXT NOT NULL,
-        status ENUM('pending','approved','rejected') DEFAULT 'pending',
-        admin_response TEXT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_student (student_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
-} catch (Exception $e) {
-    // ignore table creation errors
+        $session->setFlash('success', 'Contacts updated successfully.');
+    } catch (Exception $e) {
+        $session->setFlash('error', 'Failed to update contacts.');
+    }
+
+    header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+    exit;
 }
 
-try {
-    $reqStmt = $conn->prepare("SELECT * FROM student_requests WHERE student_id = :sid ORDER BY created_at DESC LIMIT 6");
-    $reqStmt->execute(['sid' => $studentProfile['id']]);
-    $studentRequests = $reqStmt->fetchAll();
-} catch (Exception $e) {
-    $studentRequests = [];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'change_password' && $currentUserId > 0) {
+    if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $session->setFlash('error', 'Invalid request token.');
+        header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+        exit;
+    }
+
+    $currentPassword = $_POST['current_password'] ?? '';
+    $newPassword = $_POST['new_password'] ?? '';
+    $confirmPassword = $_POST['confirm_password'] ?? '';
+
+    if ($currentPassword === '' || $newPassword === '' || $confirmPassword === '') {
+        $session->setFlash('error', 'All password fields are required.');
+        header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+        exit;
+    }
+    if ($newPassword !== $confirmPassword) {
+        $session->setFlash('error', 'New password and confirmation do not match.');
+        header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+        exit;
+    }
+    if (strlen($newPassword) < 8) {
+        $session->setFlash('error', 'Password must be at least 8 characters.');
+        header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+        exit;
+    }
+
+    try {
+        $pStmt = $conn->prepare('SELECT password_hash FROM users WHERE id = :id LIMIT 1');
+        $pStmt->execute(['id' => $currentUserId]);
+        $row = $pStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row || !Security::verifyPassword($currentPassword, $row['password_hash'])) {
+            $session->setFlash('error', 'Current password is incorrect.');
+            header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+            exit;
+        }
+
+        $hash = Security::hashPassword($newPassword);
+        $uStmt = $conn->prepare('UPDATE users SET password_hash = :hash, require_password_change = 0, updated_at = NOW() WHERE id = :id');
+        $uStmt->execute(['hash' => $hash, 'id' => $currentUserId]);
+
+        // Optional history insert; do not fail password change if history table is unavailable.
+        try {
+            $hStmt = $conn->prepare('INSERT INTO password_history (user_id, password_hash) VALUES (:user_id, :password_hash)');
+            $hStmt->execute(['user_id' => $currentUserId, 'password_hash' => $hash]);
+        } catch (Exception $e) {
+        }
+
+        $session->setFlash('success', 'Password changed successfully.');
+    } catch (Exception $e) {
+        $session->setFlash('error', 'Failed to change password.');
+    }
+
+    header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+    exit;
 }
 
-// Check for pending registration for current semester
-$pendingRegStmt = $conn->prepare("SELECT * FROM semester_registrations WHERE student_id = :sid AND semester_id = :semid AND status = 'pending'");
-$pendingRegStmt->execute(['sid' => $studentProfile['id'], 'semid' => $currentSemester['id']]);
-$pendingRegistration = $pendingRegStmt->fetch();
+$studentRow = [];
+if ($studentDbId > 0) {
+    try {
+        $sStmt = $conn->prepare("
+            SELECT s.*, p.program_name
+            FROM students s
+            LEFT JOIN programs p ON s.program_id = p.id
+            WHERE s.id = :student_id
+            LIMIT 1
+        ");
+        $sStmt->execute(['student_id' => $studentDbId]);
+        $studentRow = $sStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    } catch (Exception $e) {
+        $studentRow = [];
+    }
+}
 
-$pageTitle = 'Student Dashboard - ' . APP_NAME;
+$currentSemester = [
+    'academic_year' => '-',
+    'semester_name' => '-',
+    'id' => 0
+];
+
+$activeSemester = Helper::getCurrentSemester();
+if (!empty($activeSemester)) {
+    $currentSemester['semester_name'] = $activeSemester['semester_name'] ?? '-';
+    $currentSemester['id'] = (int)($activeSemester['id'] ?? 0);
+
+    if (!empty($activeSemester['academic_year_id'])) {
+        $ayStmt = $conn->prepare("SELECT year_name FROM academic_years WHERE id = :id LIMIT 1");
+        $ayStmt->execute(['id' => (int)$activeSemester['academic_year_id']]);
+        $yearName = $ayStmt->fetchColumn();
+        if ($yearName) {
+            $currentSemester['academic_year'] = $yearName;
+        }
+    }
+}
+
+$outstandingBalance = (float)($studentProfile['account_balance'] ?? 0);
+if (!empty($studentProfile['id']) && $currentSemester['id'] > 0) {
+    try {
+        $balStmt = $conn->prepare("
+            SELECT COALESCE(SUM(balance), 0)
+            FROM student_balances
+            WHERE student_id = :student_id AND semester_id = :semester_id
+        ");
+        $balStmt->execute([
+            'student_id' => (int)$studentProfile['id'],
+            'semester_id' => (int)$currentSemester['id']
+        ]);
+        $outstandingBalance = (float)$balStmt->fetchColumn();
+    } catch (Exception $e) {
+        $outstandingBalance = (float)($studentProfile['account_balance'] ?? 0);
+    }
+}
+
+$academicStatus = 'Normal Progress';
+if (!empty($studentProfile['id'])) {
+    try {
+        $standingStmt = $conn->prepare("
+            SELECT sg.academic_standing
+            FROM student_gpas sg
+            WHERE sg.student_id = :student_id
+            ORDER BY
+                CASE WHEN :semester_id > 0 AND sg.semester_id = :semester_id THEN 0 ELSE 1 END,
+                sg.semester_id DESC,
+                sg.id DESC
+            LIMIT 1
+        ");
+        $standingStmt->execute([
+            'student_id' => (int)$studentProfile['id'],
+            'semester_id' => (int)$currentSemester['id']
+        ]);
+        $standing = trim((string)$standingStmt->fetchColumn());
+
+        if ($standing !== '') {
+            $standingLower = strtolower($standing);
+            if ($standingLower === 'good standing') {
+                $academicStatus = 'Normal Progress';
+            } elseif ($standingLower === 'suspension') {
+                $academicStatus = 'Suspended';
+            } else {
+                $academicStatus = $standing;
+            }
+        } elseif (!empty($studentProfile['academic_status'])) {
+            $rawAcademic = trim((string)$studentProfile['academic_status']);
+            $rawLower = strtolower($rawAcademic);
+            $academicStatus = ($rawLower === 'active' || $rawLower === 'good standing')
+                ? 'Normal Progress'
+                : $rawAcademic;
+        }
+    } catch (Exception $e) {
+        if (!empty($studentProfile['academic_status'])) {
+            $rawAcademic = trim((string)$studentProfile['academic_status']);
+            $rawLower = strtolower($rawAcademic);
+            $academicStatus = ($rawLower === 'active' || $rawLower === 'good standing')
+                ? 'Normal Progress'
+                : $rawAcademic;
+        }
+    }
+}
+
+// Always resolve programme from admin-assigned student record.
+$registeredProgramName = '-';
+if (!empty($studentProfile['id'])) {
+    try {
+        $progStmt = $conn->prepare("
+            SELECT p.program_name
+            FROM students s
+            LEFT JOIN programs p ON s.program_id = p.id
+            WHERE s.id = :student_id
+            LIMIT 1
+        ");
+        $progStmt->execute(['student_id' => (int)$studentProfile['id']]);
+        $programName = $progStmt->fetchColumn();
+        if (!empty($programName)) {
+            $registeredProgramName = $programName;
+        } elseif (!empty($studentProfile['program_name'])) {
+            $registeredProgramName = $studentProfile['program_name'];
+        }
+    } catch (Exception $e) {
+        $registeredProgramName = !empty($studentProfile['program_name']) ? $studentProfile['program_name'] : '-';
+    }
+}
+
+// Navigation links with safe fallbacks for pages that may not exist yet.
+$studentViewsPath = BASE_PATH . '/views/student/';
+$linkDashboard = 'dashboard.php';
+$linkResults = 'results.php';
+$linkInvoices = file_exists($studentViewsPath . 'invoices.php') ? 'invoices.php' : 'notifications.php';
+$linkFees = file_exists($studentViewsPath . 'fees.php') ? 'fees.php' : 'notifications.php';
+$linkGeneratePrn = file_exists($studentViewsPath . 'generate_prn.php') ? 'generate_prn.php' : 'course-registration.php';
+$linkEnroll = 'course-registration.php';
+$linkPayments = file_exists($studentViewsPath . 'payments.php') ? 'payments.php' : 'notifications.php';
+$linkProgramme = 'my-courses.php';
+$linkApplyServices = file_exists($studentViewsPath . 'services.php') ? 'services.php' : 'dashboard.php';
+$linkServiceHistory = 'notifications.php';
+$linkNewIdCards = file_exists($studentViewsPath . 'new-id-cards.php') ? 'new-id-cards.php' : 'dashboard.php';
+$linkMailbox = 'notifications.php';
+$linkAcademicCalendar = file_exists($studentViewsPath . 'academic-calendar.php') ? 'academic-calendar.php' : 'notifications.php';
+
+$pageTitle = 'Student Portal - ' . APP_NAME;
 include '../../includes/header.php';
 ?>
 
-<?php include '../../includes/student/sidebar.php'; ?>
+<style>
+body { background: #f8fafc; }
+.student-sidebar {
+    width: 230px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    min-height: 100vh;
+    border-right: 1px solid #e5e7eb;
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 100;
+    box-shadow: 2px 0 12px rgba(15, 23, 42, 0.04);
+    transition: transform 0.25s ease;
+}
+.student-sidebar ul {
+    list-style: none;
+    padding: 10px 8px;
+    margin: 0;
+}
+.student-sidebar li {
+    padding: 9px 12px;
+    margin-bottom: 4px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    letter-spacing: 0.02em;
+    color: #334155;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.student-sidebar li a {
+    color: inherit;
+    text-decoration: none;
+    display: block;
+}
+.student-sidebar li.active {
+    background: #eaf2ff;
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+    font-weight: 700;
+}
+.student-sidebar li:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+.student-sidebar .sidebar-section { font-size: 0.9rem; color: #888; padding: 10px 28px 4px 28px; text-transform: uppercase; letter-spacing: 0.04em; }
+.main-content {
+    margin-left: 230px;
+    width: calc(100vw - 230px);
+    max-width: calc(100vw - 230px);
+    min-height: 100vh;
+    background: #f8fafc;
+    transition: margin-left 0.25s ease, width 0.25s ease;
+}
+.student-sidebar.sidebar-collapsed {
+    transform: translateX(-100%);
+}
+.main-content.full-width {
+    margin-left: 0;
+    width: 100vw;
+    max-width: 100vw;
+}
+.student-topbar {
+    display: flex; align-items: center; justify-content: space-between; background: #fff; border-bottom: 1px solid #e5e7eb; padding: 0.7rem 2.5rem 0.7rem 2.5rem; position: sticky; top: 0; z-index: 10;
+}
+.student-profile-pic { width: 70px; height: 70px; border-radius: 50%; object-fit: cover; border: 2px solid #e5e7eb; }
+.bio-card { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); padding: 2rem 2.5rem; margin-top: 2rem; }
+.bio-header { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.5rem; }
+.bio-header .status-badge { font-size: 0.95rem; padding: 4px 14px; border-radius: 12px; margin-left: 0.7rem; }
+.status-active { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+.status-notreg { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+.bio-details-table { width: 100%; font-size: 0.82rem; margin-top: 1rem; }
+.bio-details-table td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; }
+.bio-details-table tr:last-child td { border-bottom: none; }
+.bio-actions { margin-top: 1.5rem; display: flex; gap: 1rem; }
+.bio-actions button { padding: 7px 18px; border-radius: 6px; border: none; background: #2563eb; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.82rem; }
+.bio-actions button.reload { background: #f1f5f9; color: #222; border: 1px solid #e5e7eb; }
+.bio-edit-link { color: #2563eb; font-size: 0.82rem; float: right; cursor: pointer; }
+.bio-section-tabs { margin-top: 2rem; display: flex; gap: 1.5rem; border-bottom: 2px solid #e5e7eb; }
+.bio-section-tabs .tab { padding: 10px 0; font-size: 0.82rem; color: #222; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; background: transparent; border-top: none; border-left: none; border-right: none; }
+.bio-section-tabs .tab.active { color: #2563eb; border-bottom: 3px solid #2563eb; font-weight: 600; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+.bio-card,
+.bio-card label,
+.bio-card .form-control-sm,
+.bio-card .btn,
+.bio-card .btn-sm {
+    font-size: 0.82rem !important;
+}
+</style>
 
-<div class="main-content" id="mainContent">
-    <div class="topbar">
-        <div class="topbar-left">
-            <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar">
-                <i class="fas fa-bars"></i>
-            </button>
-            <h4>Dashboard</h4>
+<div class="student-sidebar">
+    <div style="padding: 2rem 1.5rem 1rem 1.5rem; border-bottom: 1px solid #e5e7eb;">
+        <div style="font-weight:700; font-size:1.1rem; color:#2563eb;">
+            <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?>
         </div>
-        <div class="topbar-right">
-            <div class="topbar-time">
-                <div id="current-date-time">
-                    <div class="time-display"><?php echo date('h:i:s A'); ?></div>
-                    <div class="date-display"><?php echo date('l, F j, Y'); ?></div>
-                </div>
-            </div>
-            <?php include '../../includes/notification_bell.php'; ?>
-            <div class="user-info">
-                <div class="user-dropdown">
-                    <button class="user-dropdown-toggle" id="userDropdown">
-                        <div class="user-avatar">
-                            <?php if (!empty($studentProfile['photo'])): ?>
-                                <img src="<?php echo BASE_URL . '/' . $studentProfile['photo']; ?>" alt="Profile Photo" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
-                            <?php else: ?>
-                                <?php echo strtoupper(substr($studentProfile['first_name'], 0, 1) . substr($studentProfile['last_name'], 0, 1)); ?>
-                            <?php endif; ?>
-                        </div>
-                        <div>
-                            <strong><?php echo e($studentProfile['first_name']); ?> <?php echo e($studentProfile['last_name']); ?></strong>
-                            <br><small><?php echo e($studentProfile['student_id']); ?></small>
-                        </div>
-                        <i class="dropdown-arrow">▼</i>
-                    </button>
-                    <div class="user-dropdown-menu" id="userDropdownMenu">
-                        <!-- change-password moved to header quick dropdown -->
-                        <a href="transcript.php" class="dropdown-item">
-                            <i>📄</i> My Transcript
-                        </a>
-                        <a href="fees.php" class="dropdown-item">
-                            <i>💰</i> Fee Statement
-                        </a>
-                        <div class="dropdown-divider"></div>
-                        <a href="<?php echo BASE_URL; ?>/views/student/logout.php" class="dropdown-item logout-item">
-                            <i class="fas fa-sign-out-alt"></i> Logout
-                        </a>
-                    </div>
+        <div style="font-size:0.98rem; color:#222;">STUDENT NO.: <?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+    </div>
+    <ul>
+        <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
+        <li><a href="<?php echo e($linkEnroll); ?>">ENROLLMENT & REGISTRATION</a></li>
+        <li><a href="<?php echo e($linkPayments); ?>">PAYMENTS</a></li>
+        <li><a href="<?php echo e($linkProgramme); ?>">MY PROGRAMME</a></li>
+        <li><a href="<?php echo e($linkApplyServices); ?>">SERVICES</a></li>
+        <li><a href="<?php echo e($linkApplyServices); ?>">APPLY FOR SERVICES</a></li>
+        <li><a href="<?php echo e($linkServiceHistory); ?>">SERVICE HISTORY</a></li>
+        <li><a href="<?php echo e($linkNewIdCards); ?>">NEW ID CARDS</a></li>
+        <li class="active"><a href="<?php echo e($linkDashboard); ?>">BIO DATA</a></li>
+        <li><a href="<?php echo e($linkMailbox); ?>">MY MAILBOX</a></li>
+        <li><a href="<?php echo e($linkAcademicCalendar); ?>">ACADEMIC CALENDAR</a></li>
+    </ul>
+</div>
+
+<div class="main-content">
+    <div class="student-topbar" style="padding:0.5rem 1.2rem; font-size:0.92rem; display:flex; align-items:center; justify-content:space-between;">
+        <div style="display:flex; align-items:center; gap:0.7rem;">
+            <button id="menuBtn" style="background:none; border:none; font-size:1.1rem; cursor:pointer;" title="Toggle Sidebar"><i class="fas fa-bars"></i></button>
+            <button onclick="location.href='<?php echo e($linkDashboard); ?>'" style="background:#2563eb; color:#fff; border:none; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW BIO DATA</button>
+            <button onclick="location.href='<?php echo e($linkResults); ?>'" style="background:#f1f5f9; color:#222; border:1px solid #e5e7eb; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW RESULTS</button>
+            <button onclick="location.href='<?php echo e($linkInvoices); ?>'" style="background:#f1f5f9; color:#222; border:1px solid #e5e7eb; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW INVOICES</button>
+            <button onclick="location.href='<?php echo e($linkFees); ?>'" style="background:#f1f5f9; color:#222; border:1px solid #e5e7eb; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW FEES STRUCTURE</button>
+            <button onclick="location.href='<?php echo e($linkGeneratePrn); ?>'" style="background:#f1f5f9; color:#222; border:1px solid #e5e7eb; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">Generate PRN</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:0.5rem; position:relative;">
+            <?php if (!empty($studentProfile['photo'])): ?>
+                <img src="<?php echo BASE_URL . '/' . $studentProfile['photo']; ?>" alt="Profile" class="student-profile-pic" style="width:48px;height:48px;">
+            <?php else: ?>
+                <img src="/assets/img/student_sample.jpg" alt="Profile" class="student-profile-pic" style="width:48px;height:48px;">
+            <?php endif; ?>
+            <span style="font-size:0.98rem; color:#222; font-weight:600; white-space:nowrap;"> <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?> </span>
+            <div class="profile-dropdown" style="position:relative;">
+                <button id="profileDropBtn" style="background:none; border:none; font-size:0.98rem; cursor:pointer; padding:0 6px;">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div id="profileDropMenu" style="display:none; position:absolute; top:120%; right:0; background:#fff; border:1px solid #e5e7eb; border-radius:6px; box-shadow:0 2px 8px rgba(0,0,0,0.08); min-width:140px; z-index:100;">
+                    <a href="logout.php" style="display:block; padding:8px 14px; color:#dc2626; text-decoration:none; font-weight:600; font-size:0.92rem;">Logout</a>
                 </div>
             </div>
         </div>
     </div>
-    
-    <div class="content-area">
+
+    <div style="padding:0.7rem 1.2rem 0.2rem 1.2rem; font-size:0.98rem; font-weight:600; display:flex; align-items:center; gap:0.7rem; flex-wrap:wrap;">
+        <span>PROGRAMME: <?php echo e($registeredProgramName); ?></span>
+        <span class="status-badge status-active" style="font-size:0.85rem; padding:3px 10px;"><?php echo !empty($studentProfile['status']) ? strtoupper(e($studentProfile['status'])) : 'ACTIVE'; ?></span>
+        <span style="margin-left:auto; font-size:1.05rem; color:#222;">ACADEMIC STATUS: <span style="background:#fee2e2; color:#991b1b; border-radius:6px; padding:4px 12px; font-weight:600;">
+            <?php echo !empty($academicStatus) ? e($academicStatus) : '-'; ?>
+        </span></span>
+    </div>
+<script>
+// Sidebar toggle
+document.getElementById('menuBtn').addEventListener('click', function() {
+    var sidebar = document.querySelector('.student-sidebar');
+    var main = document.querySelector('.main-content');
+    sidebar.classList.toggle('sidebar-collapsed');
+    if (main) main.classList.toggle('full-width');
+});
+// Profile dropdown
+document.getElementById('profileDropBtn').addEventListener('click', function(e) {
+    e.stopPropagation();
+    var menu = document.getElementById('profileDropMenu');
+    menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+});
+document.addEventListener('click', function() {
+    var menu = document.getElementById('profileDropMenu');
+    if (menu) menu.style.display = 'none';
+});
+</script>
+
+    <div style="padding:2.5rem 3rem 1rem 3rem;">
         <?php if ($session->getFlash('success')): ?>
-            <div class="alert alert-success">
-                <?php echo e($session->getFlash('success')); ?>
-            </div>
+            <div class="alert alert-success"><?php echo e($session->getFlash('success')); ?></div>
         <?php endif; ?>
-        
+        <?php if ($session->getFlash('error')): ?>
+            <div class="alert alert-danger"><?php echo e($session->getFlash('error')); ?></div>
+        <?php endif; ?>
 
-        <?php
-        // --- Build extended profile details (derived from admin-provided admission data) ---
-        $programInfo = null;
-        if (!empty($studentProfile['program_id'])) {
-            $pstmt = $conn->prepare("SELECT program_name, department FROM programs WHERE id = :id LIMIT 1");
-            $pstmt->execute(['id' => $studentProfile['program_id']]);
-            $programInfo = $pstmt->fetch();
-        }
-
-        // Resolve intake (use entry semester start date when available)
-        $entrySemester = null;
-        $intakeLabel = '-';
-        if (!empty($studentProfile['entry_semester_id'])) {
-            $es = $conn->prepare("SELECT s.semester_name, s.start_date, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id WHERE s.id = :id LIMIT 1");
-            $es->execute(['id' => $studentProfile['entry_semester_id']]);
-            $entrySemester = $es->fetch();
-            if ($entrySemester && !empty($entrySemester['start_date'])) {
-                $intakeLabel = date('M', strtotime($entrySemester['start_date'])) . ' - ' . ($entrySemester['year_name'] ?? $studentProfile['entry_year']);
-            }
-        } elseif (!empty($studentProfile['entry_year'])) {
-            $intakeLabel = $studentProfile['entry_year'];
-        }
-
-        // Academic status: consider student 'Reported' when there are approved registrations for current semester
-        $academicStatus = 'Not Reported';
-        try {
-            $rstmt = $conn->prepare("SELECT COUNT(*) as cnt FROM course_registrations WHERE student_id = :student_id AND semester_id = :semester_id AND status = 'approved'");
-            $rstmt->execute(['student_id' => $studentProfile['id'], 'semester_id' => $currentSemester['id'] ?? 0]);
-            $regApproved = intval($rstmt->fetch()['cnt'] ?? 0);
-            if ($regApproved > 0) $academicStatus = 'Reported';
-        } catch (Exception $e) {
-            // ignore — we'll show fallback value
-        }
-
-        // Disciplinary default
-        $disciplinary = ($studentProfile['status'] === 'suspended') ? 'Suspended' : 'Clean';
-
-        // Sponsorship (fallback)
-        $sponsorship = $studentProfile['sponsorship'] ?? 'Not set';
-        ?>
-
-        <!-- Student Profile Header -->
-        <div class="card mb-3">
-            <div class="card-body" style="background:#f8f9fa;">
-                <div class="row align-items-center">
-                    <div class="col-auto">
-                        <div style="width:120px; height:120px; border-radius:50%; overflow:hidden; background:#fff; border:4px solid #fff; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
-                            <?php if (!empty($studentProfile['photo'])): ?>
-                                <img src="<?php echo BASE_URL . '/' . $studentProfile['photo']; ?>" alt="Profile Photo" style="width:100%; height:100%; object-fit:cover;">
-                            <?php else: ?>
-                                <div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; background:#667eea; font-size:36px;">
-                                    <?php echo strtoupper(substr($studentProfile['first_name'] ?? 'A',0,1) . substr($studentProfile['last_name'] ?? 'D',0,1)); ?>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                    <div class="col">
-                        <div class="text-right">
-                            <h4 class="mb-1" style="text-transform:uppercase; font-weight:600; font-size:18px;">
-                                <?php echo e($studentProfile['last_name']); ?>, <?php echo e($studentProfile['first_name']); ?>
-                            </h4>
-                            <p class="mb-1" style="font-size:16px; color:#666;">
-                                <?php echo e($studentProfile['student_id'] ?? '-'); ?>
-                            </p>
-                            <p class="mb-0" style="font-size:14px; color:#999;">
-                                <strong>ADMISSION NO:</strong> <?php echo e($studentProfile['admission_number'] ?? '-'); ?>
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <div style="display:flex; align-items:center; gap:0.35rem; margin-bottom:1.2rem; flex-wrap:nowrap; white-space:nowrap;">
+            <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">CURRENT YR. <span style="color:#2563eb;"><?php echo !empty($currentSemester['academic_year']) ? e($currentSemester['academic_year']) : '-'; ?></span></span>
+            <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">CURRENT SEM. <span style="color:#2563eb;"><?php echo !empty($currentSemester['semester_name']) ? e($currentSemester['semester_name']) : '-'; ?></span></span>
+            <span style="background:#fee2e2; color:#991b1b; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">
+                <?php echo (isset($studentProfile['enrollment_status']) && strtolower($studentProfile['enrollment_status']) === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?>
+            </span>
+            <span style="background:#fee2e2; color:#991b1b; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">
+                <?php echo (isset($studentProfile['registration_status']) && strtolower($studentProfile['registration_status']) === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?>
+            </span>
+            <span style="background:#f1f5f9; color:#991b1b; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">TOTAL FEES BAL DUE: <?php echo isset($outstandingBalance) ? number_format($outstandingBalance) : '0'; ?>/=</span>
+            <span style="background:#2563eb; color:#fff; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">BALANCE ON ACCOUNT: <?php echo isset($studentProfile['account_balance']) ? number_format($studentProfile['account_balance']) : '0'; ?>/=</span>
         </div>
 
-        <!-- Tab-like Navigation -->
-        <div class="card mb-3">
-            <div class="card-body py-2">
-                <ul class="nav nav-tabs border-0" style="border-bottom:2px solid #eee;" id="profileTabs" role="tablist">
-                    <li class="nav-item">
-                        <a class="nav-link active" id="profile-tab" data-toggle="tab" href="#profile-content" role="tab" style="border:none; border-bottom:3px solid #28a745; color:#28a745; font-weight:600; cursor:pointer;">Profile</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" id="requests-tab" data-toggle="tab" href="#requests-content" role="tab" style="border:none; color:#666; cursor:pointer;">Requests</a>
-                    </li>
-                </ul>
-            </div>
-        </div>
-
-        <!-- Tab Content -->
-        <div class="tab-content" id="profileTabContent">
-            <!-- Profile Tab -->
-            <div class="tab-pane fade show active" id="profile-content" role="tabpanel">
-                <!-- Information Cards -->
-                <div class="row">
-                <!-- Academic Summary -->
-            <!-- Left Column: Basic Information -->
-            <div class="col-md-6 mb-3">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="mb-4" style="font-weight:600;">Basic Information</h5>
-                        
-                        <table class="table table-borderless" style="font-size:14px;">
-                            <tbody>
-                                <tr>
-                                    <td width="40%" style="color:#666;">Surname</td>
-                                    <td style="font-weight:500;"><?php echo e($studentProfile['last_name'] ?? ''); ?></td>
-                                    <td width="60"></td>
-                                <tr>
-                                    <td style="color:#000000;">SMNS email</td>
-                                    <td style="color:#666;">Other names</td>
-                                    <td style="font-weight:500;"><?php echo e(trim($studentProfile['first_name'] . ' ' . ($studentProfile['middle_name'] ?? ''))); ?></td>
-                                    <td></td>
-                                </tr>
-                                <tr>
-                                    <td style="color:#666;">Primary number</td>
-                                    <td style="font-weight:500;"><?php echo e($studentProfile['phone'] ?? ''); ?></td>
-                                    <td><a href="#" style="color:#28a745; font-size:13px;">Edit</a></td>
-                                </tr>
-                                <tr>
-                                    <td style="color:#666;">Secondary number</td>
-                                    <td style="font-weight:500;"><?php echo e($studentProfile['secondary_phone'] ?? ''); ?></td>
-                                    <td></td>
-                                </tr>
-                                <tr>
-                                    <td style="color:#666;">Email</td>
-                                    <td style="font-weight:500;"><?php echo e($studentProfile['email'] ?? ''); ?></td>
-                                    <td><a href="#" style="color:#28a745; font-size:13px;">Edit</a></td>
-                                </tr>
-                                <tr>
-                                    <td style="color:#666;">SMNS email</td>
-                                    <td style="font-weight:500;"><?php echo e($currentUser['email'] ?? ''); ?></td>
-                                    <td></td>
-                                </tr>
-                                <tr>
-                                    <td style="color:#666;">Nationality</td>
-                                    <td style="font-weight:500;"><?php echo e($studentProfile['country'] ?? 'Ugandan'); ?></td>
-                                    <td></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Right Column: Disciplinary & Financial Info -->
-            <div class="col-md-6 mb-3">
-                <!-- Disciplinary Status -->
-                <div class="card mb-3">
-                    <div class="card-body">
-                        <h5 class="mb-3" style="font-weight:600;">Disciplinary status</h5>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <span style="color:#666;">Status:</span>
-                                <span class="ml-2" style="color:#28a745; font-weight:600;"><?php echo e($disciplinary); ?></span>
-                            </div>
-                            <a href="#" style="color:#28a745; font-size:14px;">History</a>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Financial Information -->
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="mb-3" style="font-weight:600;">Financial information</h5>
-                        <p class="mb-2" style="font-size:14px;">
-                            <strong>Sponsorship:</strong> <?php echo e($sponsorship); ?>
-                        </p>
-                        <div class="alert alert-<?php echo $outstandingBalance == 0 ? 'success' : 'warning'; ?> py-2 px-3 mb-0" style="font-size:13px;">
-                            <strong>Outstanding Balance:</strong> UGX <?php echo number_format($outstandingBalance, 0); ?>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Academic Information -->
-        <div class="row">
-            <div class="col-12 mb-3">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="mb-4" style="font-weight:600;">Academic information</h5>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <table class="table table-borderless" style="font-size:14px;">
-                                    <tbody>
-                                        <tr>
-                                            <td width="40%" style="color:#666;">Programme</td>
-                                            <td style="font-weight:500;"><?php echo e($programInfo['program_name'] ?? $studentProfile['program_name'] ?? '-'); ?></td>
-                                        </tr>
-                                        <tr>
-                                            <td style="color:#666;">School/College</td>
-                                            <td style="font-weight:500;"><?php echo e(!empty($programInfo['department']) ? 'School of ' . $programInfo['department'] : '-'); ?></td>
-                                        </tr>
-                                        <tr>
-                                            <td style="color:#666;">Department</td>
-                                            <td style="font-weight:500;"><?php echo e($programInfo['department'] ?? '-'); ?></td>
-                                        </tr>
-                                        <tr>
-                                            <td style="color:#666;">Campus</td>
-                                            <td style="font-weight:500;"><?php echo e($studentProfile['campus'] ?? 'Main campus'); ?></td>
-                                        </tr>
-                                        <tr>
-                                            <td style="color:#666;">Study Year</td>
-                                            <td style="font-weight:500;">Year <?php echo e($studentProfile['level_year'] ?? '-'); ?></td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div class="col-md-6">
-                                <table class="table table-borderless" style="font-size:14px;">
-                                    <tbody>
-                                        <tr>
-                                            <td width="40%" style="color:#666;">Current Semester</td>
-                                            <td style="font-weight:500;"><?php echo e($currentSemester['semester_name'] ?? '-'); ?></td>
-                                        </tr>
-                                        <tr>
-                                            <td style="color:#666;">Intake</td>
-                                            <td style="font-weight:500;"><?php echo e($intakeLabel); ?></td>
-                                        </tr>
-                                        <tr>
-                                            <td style="color:#666;">Entry Mode</td>
-                                            <td style="font-weight:500;"><?php echo e($studentProfile['entry_mode'] ?? '-'); ?></td>
-                                        </tr>
-                                        <tr>
-                                            <td style="color:#666;">Session</td>
-                                            <td style="font-weight:500;"><?php echo e($studentProfile['enrollment_type'] ?? 'Day'); ?></td>
-                                        </tr>
-                                        <tr>
-                                            <td style="color:#666;">Academic Status</td>
-                                            <td>
-                                                <span class="badge badge-<?php echo $academicStatus === 'Reported' ? 'success' : 'warning'; ?>">
-                                                    <?php echo e($academicStatus); ?>
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Current Semester & Recent Results -->
-        <div class="row">
-            <div class="col-md-6">
-                <?php if ($currentSemester): ?>
-                <div class="card">
-                    <div class="card-header">
-                        Current Semester
-                    </div>
-                    <div class="card-body">
-                        <h5><?php echo e($currentSemester['semester_name']); ?></h5>
-                        <p><strong>Status:</strong> <span class="badge badge-<?php echo Helper::getStatusColor($currentSemester['status']); ?>"><?php echo e($currentSemester['status']); ?></span></p>
-                        <p><strong>Start:</strong> <?php echo Helper::formatDate($currentSemester['start_date']); ?></p>
-                        <p><strong>End:</strong> <?php echo Helper::formatDate($currentSemester['end_date']); ?></p>
-                        <?php if ($currentSemester['registration_start_date']): ?>
-                        <p><strong>Registration:</strong> <?php echo Helper::formatDate($currentSemester['registration_start_date']); ?> - <?php echo Helper::formatDate($currentSemester['registration_end_date']); ?></p>
-                        <?php endif; ?>
-                    </div>
-                </div>
-                <?php endif; ?>
-            </div>
-
-            <!-- Recent Results -->
-            <div class="col-md-6">
-                <?php if (count($recentResults) > 0): ?>
-                <div class="card">
-                    <div class="card-header">Recent Results</div>
-                    <div class="card-body p-0">
-                        <table class="table table-hover table-sm mb-0" style="font-size:13px;">
-                            <thead>
-                                <tr>
-                                    <th>Course</th>
-                                    <th>Marks</th>
-                                    <th>Grade</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach($recentResults as $result): ?>
-                                <tr>
-                                    <td><?php echo e($result['course_code']); ?><br><small class="text-muted"><?php echo e($result['course_name']); ?></small></td>
-                                    <td><?php echo number_format($result['total_marks'], 1); ?>%</td>
-                                    <td>
-                                        <?php 
-                                        // Use grade_points for color if available, otherwise fallback to grade letter
-                                        $badgeColor = ($result['grade_points'] !== null && $result['grade_points'] > 0) 
-                                            ? Helper::getGPAColor($result['grade_points']) 
-                                            : Helper::getGradeColor($result['grade'] ?? '');
-                                        ?>
-                                        <span class="badge badge-<?php echo $badgeColor; ?>"><?php echo e($result['grade'] ?? 'N/A'); ?></span>
-                                    </td>
-                                </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+        <div class="bio-card">
+            <div class="bio-header">
+                <?php if (!empty($studentProfile['photo'])): ?>
+                    <img src="<?php echo BASE_URL . '/' . $studentProfile['photo']; ?>" alt="Profile" class="student-profile-pic">
                 <?php else: ?>
-                <div class="card">
-                    <div class="card-body text-center text-muted py-3">
-                        <small>No results published yet</small>
-                    </div>
-                </div>
+                    <img src="/assets/img/student_sample.jpg" alt="Profile" class="student-profile-pic">
                 <?php endif; ?>
-            </div>
-        </div>
-            </div>
-            <!-- End Profile Tab -->
-
-            <!-- Requests Tab -->
-            <div class="tab-pane fade" id="requests-content" role="tabpanel">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="mb-4" style="font-weight:600;">Student requests</h5>
-                        
-                        <form id="studentRequestForm" method="POST" action="<?php echo BASE_URL; ?>/views/student/submit-request.php">
-                                    <?php echo csrfField(); ?>
-                            <div class="form-group">
-                                <label for="requestType" style="font-weight:500;">Apply for:</label>
-                                <select class="form-control" id="requestType" name="request_type" required style="font-size:14px;">
-                                    <option value="">Click to select</option>
-                                    <option value="transcript">Official Transcript</option>
-                                    <option value="recommendation_letter">Letter of Recommendation</option>
-                                    <option value="certificate">Course Completion Certificate</option>
-                                    <option value="enrollment_verification">Enrollment Verification Letter</option>
-                                    <option value="course_add_drop">Add/Drop Course Request</option>
-                                    <option value="grade_appeal">Grade Appeal</option>
-                                    <option value="semester_deferment">Semester Deferment</option>
-                                    <option value="leave_of_absence">Leave of Absence</option>
-                                    <option value="fee_payment_plan">Fee Payment Plan</option>
-                                    <option value="id_card_replacement">Student ID Card Replacement</option>
-                                    <option value="exam_special_arrangement">Special Exam Arrangement</option>
-                                    <option value="internship_approval">Internship Approval</option>
-                                    <option value="other">Other Request</option>
-                                </select>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label for="requestReason" style="font-weight:500;">Describe your reason:</label>
-                                <textarea class="form-control" id="requestReason" name="reason" rows="8" required style="font-size:14px; resize:vertical;" placeholder="Please provide detailed information about your request..."></textarea>
-                            </div>
-                            
-                            <div class="text-center mt-4">
-                                <button type="submit" class="btn btn-success px-5" style="font-size:16px; border-radius:4px;">Submit</button>
-                            </div>
-                        </form>
-                        
-                        <!-- Previous Requests (if any) -->
-                        <hr class="my-4">
-                        <h6 class="mb-3" style="font-weight:600;">Recent Requests</h6>
-                        <div class="table-responsive">
-                            <table class="table table-sm table-hover" style="font-size:13px;">
-                                <thead style="background:#f8f9fa;">
-                                    <tr>
-                                        <th>Date</th>
-                                        <th>Request Type</th>
-                                        <th>Status</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                <?php if (!empty($studentRequests)): ?>
-                                    <?php foreach ($studentRequests as $r): ?>
-                                        <tr>
-                                            <td><?php echo e(Helper::formatDateTime($r['created_at'], 'M d, Y')); ?></td>
-                                            <td><?php echo e(ucwords(str_replace('_',' ', $r['request_type']))); ?></td>
-                                            <td><span class="badge badge-<?php echo $r['status'] === 'pending' ? 'warning' : ($r['status'] === 'approved' ? 'success' : 'secondary'); ?>"><?php echo e(ucfirst($r['status'])); ?></span></td>
-                                            <td>
-                                                <a href="javascript:void(0)" class="btn btn-sm btn-outline-secondary" onclick="alert(<?php echo json_encode(substr($r['reason'],0,100) . (strlen($r['reason'])>100? '...':'') ); ?>)">View</a>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <tr>
-                                        <td colspan="4" class="text-center text-muted py-3">No previous requests found</td>
-                                    </tr>
-                                <?php endif; ?>
-                                </tbody>
-                            </table>
-                        </div>
+                <div>
+                    <div style="font-size:1.2rem; font-weight:700; color:#2563eb;">
+                        <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?>
                     </div>
+                    <div style="font-size:1.05rem; color:#222;">STUDENT NO.: <?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+                    <span class="status-badge status-notreg" style="margin-top:0.5rem;">
+                        <?php echo ($studentProfile['registration_status'] ?? '') === 'registered' ? 'REGISTERED' : 'NOT REGISTERED'; ?>
+                    </span>
+                </div>
+                <div style="margin-left:auto;">
+                    <button class="bio-actions">Print Bio Data</button>
+                    <button class="bio-actions reload">RELOAD</button>
                 </div>
             </div>
-            <!-- End Requests Tab -->
+            <div style="margin-bottom:1.2rem;">
+                <div class="bio-section-tabs" id="bioTabs">
+                    <button type="button" class="tab active" data-tab="personal">PERSONAL DETAILS</button>
+                    <button type="button" class="tab" data-tab="academic">ACADEMIC DETAILS</button>
+                    <button type="button" class="tab" data-tab="guardian">GUARDIAN DETAILS</button>
+                    <button type="button" class="tab" data-tab="nextkin">NEXT OF KIN</button>
+                    <button type="button" class="tab" data-tab="password">CHANGE PASSWORD</button>
+                </div>
+            </div>
+            <div style="margin-top:1.5rem;" id="bioTabPanels">
+                <div class="tab-panel active" data-panel="personal">
+                    <table class="bio-details-table">
+                        <tr><td><b>SURNAME</b></td><td>:<?php echo e($studentRow['last_name'] ?? ($studentProfile['last_name'] ?? '-')); ?></td><td><b>RELIGION</b></td><td>:<?php echo e($studentRow['religion'] ?? ($studentProfile['religion'] ?? '-')); ?></td></tr>
+                        <tr><td><b>OTHER NAMES</b></td><td>:<?php echo e(trim(($studentRow['first_name'] ?? ($studentProfile['first_name'] ?? '')) . ' ' . ($studentRow['middle_name'] ?? ($studentProfile['middle_name'] ?? ''))) ?: '-'); ?></td><td><b>DISTRICT</b></td><td>:<?php echo e($studentRow['district'] ?? ($studentRow['city'] ?? ($studentProfile['district'] ?? '-'))); ?></td></tr>
+                        <tr><td><b>EMAIL</b></td><td>:<?php echo e($studentRow['email'] ?? ($studentProfile['email'] ?? '-')); ?></td><td><b>NATIONALITY</b></td><td>:<?php echo e($studentRow['country'] ?? ($studentProfile['country'] ?? '-')); ?></td></tr>
+                        <tr><td><b>TEL. PHONE</b></td><td>:<?php echo e($studentRow['phone'] ?? ($studentProfile['phone'] ?? '-')); ?></td><td><b>NATIONAL ID NO.</b></td><td>:<?php echo e($studentRow['national_id'] ?? ($studentProfile['national_id'] ?? '-')); ?></td></tr>
+                        <tr><td><b>SEX</b></td><td>:<?php echo e($studentRow['gender'] ?? ($studentProfile['gender'] ?? '-')); ?></td><td><b>PASSPORT</b></td><td>:<?php echo e($studentRow['passport'] ?? ($studentProfile['passport'] ?? '-')); ?></td></tr>
+                        <tr><td><b>DATE OF BIRTH</b></td><td>:<?php echo !empty($studentRow['date_of_birth'] ?? $studentProfile['date_of_birth']) ? date('d/m/Y', strtotime($studentRow['date_of_birth'] ?? $studentProfile['date_of_birth'])) : '-'; ?></td><td></td><td></td></tr>
+                    </table>
+                    <div class="bio-edit-link" id="editContactsBtn">Edit Contacts</div>
+                    <form method="POST" id="editContactsForm" style="display:none; margin-top:1rem;">
+                        <?php echo csrfField(); ?>
+                        <input type="hidden" name="action" value="update_contacts">
+                        <div class="form-row">
+                            <div class="form-group col-md-4">
+                                <label>Phone</label>
+                                <input type="text" name="phone" class="form-control form-control-sm" value="<?php echo e($studentRow['phone'] ?? ($studentProfile['phone'] ?? '')); ?>">
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label>Email</label>
+                                <input type="email" name="email" class="form-control form-control-sm" value="<?php echo e($studentRow['email'] ?? ($studentProfile['email'] ?? '')); ?>">
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label>City</label>
+                                <input type="text" name="city" class="form-control form-control-sm" value="<?php echo e($studentRow['city'] ?? ''); ?>">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group col-md-6">
+                                <label>Address</label>
+                                <input type="text" name="address" class="form-control form-control-sm" value="<?php echo e($studentRow['address'] ?? ''); ?>">
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label>Country</label>
+                                <input type="text" name="country" class="form-control form-control-sm" value="<?php echo e($studentRow['country'] ?? ''); ?>">
+                            </div>
+                            <div class="form-group col-md-2 d-flex align-items-end">
+                                <button type="submit" class="btn btn-primary btn-sm w-100">Save</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="tab-panel" data-panel="academic">
+                    <table class="bio-details-table">
+                        <tr><td><b>PROGRAMME</b></td><td>:<?php echo e($registeredProgramName); ?></td><td><b>YEAR OF STUDY</b></td><td>:<?php echo e($studentRow['level_year'] ?? ($studentProfile['level_year'] ?? '-')); ?></td></tr>
+                        <tr><td><b>ENTRY YEAR</b></td><td>:<?php echo e($studentRow['entry_year'] ?? ($studentProfile['entry_year'] ?? '-')); ?></td><td><b>ENTRY MODE</b></td><td>:<?php echo e($studentRow['entry_mode'] ?? ($studentProfile['entry_mode'] ?? '-')); ?></td></tr>
+                        <tr><td><b>ENROLLMENT TYPE</b></td><td>:<?php echo e($studentRow['enrollment_type'] ?? ($studentProfile['enrollment_type'] ?? '-')); ?></td><td><b>ACADEMIC STATUS</b></td><td>:<?php echo e($academicStatus); ?></td></tr>
+                    </table>
+                </div>
+
+                <div class="tab-panel" data-panel="guardian">
+                    <table class="bio-details-table">
+                        <tr><td><b>GUARDIAN NAME</b></td><td>:<?php echo e($studentRow['guardian_name'] ?? '-'); ?></td><td><b>RELATION</b></td><td>:<?php echo e($studentRow['guardian_relation'] ?? '-'); ?></td></tr>
+                        <tr><td><b>GUARDIAN PHONE</b></td><td>:<?php echo e($studentRow['guardian_phone'] ?? '-'); ?></td><td><b>GUARDIAN EMAIL</b></td><td>:<?php echo e($studentRow['guardian_email'] ?? '-'); ?></td></tr>
+                    </table>
+                </div>
+
+                <div class="tab-panel" data-panel="nextkin">
+                    <table class="bio-details-table">
+                        <tr><td><b>NAME</b></td><td>:<?php echo e($studentRow['emergency_contact_name'] ?? '-'); ?></td><td><b>RELATIONSHIP</b></td><td>:<?php echo e($studentRow['emergency_contact_relationship'] ?? '-'); ?></td></tr>
+                        <tr><td><b>PHONE</b></td><td>:<?php echo e($studentRow['emergency_contact_phone'] ?? '-'); ?></td><td></td><td></td></tr>
+                    </table>
+                </div>
+
+                <div class="tab-panel" data-panel="password">
+                    <form method="POST" style="max-width:460px;">
+                        <?php echo csrfField(); ?>
+                        <input type="hidden" name="action" value="change_password">
+                        <div class="form-group">
+                            <label style="font-size:0.85rem; font-weight:600;">Current Password</label>
+                            <input type="password" name="current_password" class="form-control form-control-sm" required>
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size:0.85rem; font-weight:600;">New Password</label>
+                            <input type="password" name="new_password" class="form-control form-control-sm" minlength="8" required>
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size:0.85rem; font-weight:600;">Confirm New Password</label>
+                            <input type="password" name="confirm_password" class="form-control form-control-sm" minlength="8" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm">Update Password</button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
-// Handle tab switching
-document.addEventListener('DOMContentLoaded', function() {
-    const profileTab = document.getElementById('profile-tab');
-    const requestsTab = document.getElementById('requests-tab');
-    
-    profileTab.addEventListener('click', function(e) {
-        e.preventDefault();
-        // Update active styles
-        profileTab.style.borderBottom = '3px solid #28a745';
-        profileTab.style.color = '#28a745';
-        profileTab.style.fontWeight = '600';
-        requestsTab.style.borderBottom = 'none';
-        requestsTab.style.color = '#666';
-        requestsTab.style.fontWeight = 'normal';
-        
-        // Show/hide content
-        document.getElementById('profile-content').classList.add('show', 'active');
-        document.getElementById('requests-content').classList.remove('show', 'active');
-    });
-    
-    requestsTab.addEventListener('click', function(e) {
-        e.preventDefault();
-        // Update active styles
-        requestsTab.style.borderBottom = '3px solid #28a745';
-        requestsTab.style.color = '#28a745';
-        requestsTab.style.fontWeight = '600';
-        profileTab.style.borderBottom = 'none';
-        profileTab.style.color = '#666';
-        profileTab.style.fontWeight = 'normal';
-        
-        // Show/hide content
-        document.getElementById('requests-content').classList.add('show', 'active');
-        document.getElementById('profile-content').classList.remove('show', 'active');
+document.querySelectorAll('#bioTabs .tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+        var target = tab.getAttribute('data-tab');
+        document.querySelectorAll('#bioTabs .tab').forEach(function(t) { t.classList.remove('active'); });
+        document.querySelectorAll('#bioTabPanels .tab-panel').forEach(function(p) { p.classList.remove('active'); });
+        tab.classList.add('active');
+        var panel = document.querySelector('#bioTabPanels .tab-panel[data-panel="' + target + '"]');
+        if (panel) panel.classList.add('active');
     });
 });
+
+var editBtn = document.getElementById('editContactsBtn');
+if (editBtn) {
+    editBtn.addEventListener('click', function() {
+        var form = document.getElementById('editContactsForm');
+        if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    });
+}
 </script>
 
 <?php include '../../includes/footer.php'; ?>
