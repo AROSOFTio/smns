@@ -225,6 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }, 30000);
             </script>
+            <script src="../../assets/js/login-theme.js"></script>
         </div>
     </div>
 </body>

@@ -250,6 +250,72 @@
         border-color: #334155;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
     }
+
+    /* Contrast fixes for Bootstrap/light utility classes in dark mode */
+    html[data-theme='dark'] a {
+        color: #93c5fd;
+    }
+    html[data-theme='dark'] a:hover {
+        color: #bfdbfe;
+    }
+    html[data-theme='dark'] .bg-light,
+    html[data-theme='dark'] .card-header.bg-light,
+    html[data-theme='dark'] .card.bg-light,
+    html[data-theme='dark'] .thead-light th,
+    html[data-theme='dark'] .table .thead-light th {
+        background: var(--app-surface-2) !important;
+        color: var(--app-text) !important;
+        border-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .table-striped tbody tr:nth-of-type(odd) {
+        background-color: rgba(148, 163, 184, 0.08) !important;
+    }
+    html[data-theme='dark'] .table-hover tbody tr:hover {
+        background-color: rgba(148, 163, 184, 0.14) !important;
+    }
+    html[data-theme='dark'] .dropdown-item,
+    html[data-theme='dark'] .dropdown-item-text {
+        color: var(--app-text) !important;
+    }
+    html[data-theme='dark'] .dropdown-item:hover,
+    html[data-theme='dark'] .dropdown-item:focus {
+        background: var(--app-surface-2) !important;
+        color: #ffffff !important;
+    }
+    html[data-theme='dark'] .badge {
+        color: #ffffff !important;
+    }
+    html[data-theme='dark'] .badge-light {
+        background: #334155 !important;
+        color: #f8fafc !important;
+        border: 1px solid #475569;
+    }
+    html[data-theme='dark'] .text-dark,
+    html[data-theme='dark'] .text-body,
+    html[data-theme='dark'] .text-black-50 {
+        color: var(--app-text) !important;
+    }
+    html[data-theme='dark'] .small,
+    html[data-theme='dark'] .form-text,
+    html[data-theme='dark'] small {
+        color: var(--app-muted) !important;
+    }
+    html[data-theme='dark'] .alert {
+        color: var(--app-text) !important;
+        border-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .alert-light {
+        background: var(--app-surface-2) !important;
+        color: var(--app-text) !important;
+    }
+    html[data-theme='dark'] .alert-secondary {
+        background: #1f2937 !important;
+        color: #e5e7eb !important;
+    }
+    html[data-theme='dark'] .text-white,
+    html[data-theme='dark'] .text-white * {
+        color: #ffffff !important;
+    }
     </style>
 
     <button id="themeToggleBtn" type="button" title="Toggle Dark/Light Mode" aria-label="Toggle Dark/Light Mode">

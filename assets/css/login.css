@@ -14,6 +14,9 @@
     --lecturer-secondary: #138496;
     --finance-primary: #ffc107;
     --finance-secondary: #e0a800;
+    --login-theme-btn-bg: rgba(255, 255, 255, 0.92);
+    --login-theme-btn-border: rgba(0, 0, 0, 0.12);
+    --login-theme-btn-color: #1f2937;
 }
 
 * {
@@ -31,6 +34,35 @@ body {
     padding: 20px;
     position: relative;
     overflow-x: hidden;
+}
+
+.login-theme-toggle {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 999;
+    border: 1px solid var(--login-theme-btn-border);
+    background: var(--login-theme-btn-bg);
+    color: var(--login-theme-btn-color);
+    border-radius: 999px;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.login-theme-toggle:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.22);
+}
+
+.login-theme-toggle:focus-visible {
+    outline: 2px solid var(--login-primary);
+    outline-offset: 2px;
 }
 
 /* Animated background particles */
@@ -393,6 +425,83 @@ body::before {
 
 .login-info strong {
     color: #333;
+}
+
+html[data-theme='dark'] {
+    --login-theme-btn-bg: rgba(17, 24, 39, 0.9);
+    --login-theme-btn-border: rgba(255, 255, 255, 0.16);
+    --login-theme-btn-color: #e5e7eb;
+}
+
+html[data-theme='dark'] body::before {
+    background-image:
+        radial-gradient(circle at 20% 80%, rgba(0,0,0,0.22) 0%, transparent 55%),
+        radial-gradient(circle at 80% 20%, rgba(0,0,0,0.22) 0%, transparent 55%),
+        radial-gradient(circle at 40% 40%, rgba(0,0,0,0.20) 0%, transparent 35%);
+}
+
+html[data-theme='dark'] .login-card {
+    background: rgba(17, 24, 39, 0.95);
+    box-shadow: 0 14px 30px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06);
+}
+
+html[data-theme='dark'] .login-header h2,
+html[data-theme='dark'] .login-form label,
+html[data-theme='dark'] .login-info strong,
+html[data-theme='dark'] .badge-info {
+    color: #f9fafb !important;
+}
+
+html[data-theme='dark'] .login-header p,
+html[data-theme='dark'] .form-check-label,
+html[data-theme='dark'] .login-info,
+html[data-theme='dark'] .login-info p {
+    color: #cbd5e1;
+}
+
+html[data-theme='dark'] .login-form .form-control {
+    background: #111827;
+    border-color: #334155;
+    color: #f9fafb;
+}
+
+html[data-theme='dark'] .login-form .form-control::placeholder {
+    color: #94a3b8;
+}
+
+html[data-theme='dark'] .login-form .form-control:focus {
+    background: #0f172a;
+}
+
+html[data-theme='dark'] .login-footer {
+    border-top-color: rgba(255,255,255,0.12);
+}
+
+html[data-theme='dark'] .login-footer .other-logins a {
+    background: #1f2937;
+    color: #e5e7eb;
+}
+
+html[data-theme='dark'] .login-footer .other-logins a:hover {
+    background: #334155;
+}
+
+html[data-theme='dark'] .alert-danger {
+    background: linear-gradient(135deg, rgba(127, 29, 29, 0.55) 0%, rgba(69, 10, 10, 0.7) 100%);
+    border-color: rgba(248, 113, 113, 0.35);
+    color: #fee2e2;
+}
+
+html[data-theme='dark'] .alert-success {
+    background: linear-gradient(135deg, rgba(20, 83, 45, 0.55) 0%, rgba(5, 46, 22, 0.7) 100%);
+    border-color: rgba(74, 222, 128, 0.35);
+    color: #dcfce7;
+}
+
+html[data-theme='dark'] .btn-outline-secondary {
+    background: #111827;
+    border-color: #475569;
+    color: #e2e8f0;
 }
 
 /* Password visibility toggle */
