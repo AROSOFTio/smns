@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once '../../config.php';
 
 $session = new Session('student');
@@ -132,8 +132,8 @@ if (!empty($studentProfile['id'])) {
 $studentViewsPath = BASE_PATH . '/views/student/';
 $linkDashboard = 'dashboard.php';
 $linkResults = 'results.php';
-$linkInvoices = file_exists($studentViewsPath . 'invoices.php') ? 'invoices.php' : 'notifications.php';
-$linkFees = file_exists($studentViewsPath . 'fees.php') ? 'fees.php' : 'notifications.php';
+$linkInvoices = file_exists($studentViewsPath . 'invoices.php') ? 'invoices.php' : 'payments.php?section=bills';
+$linkFees = file_exists($studentViewsPath . 'fees.php') ? 'fees.php' : 'payments.php?section=fees';
 $linkGeneratePrn = file_exists($studentViewsPath . 'generate_prn.php') ? 'generate_prn.php' : 'course-registration.php';
 $linkEnroll = 'course-registration.php';
 $linkPayments = file_exists($studentViewsPath . 'payments.php') ? 'payments.php' : 'notifications.php';
@@ -143,6 +143,7 @@ $linkServiceHistory = 'notifications.php';
 $linkNewIdCards = file_exists($studentViewsPath . 'new-id-cards.php') ? 'new-id-cards.php' : 'dashboard.php';
 $linkMailbox = 'notifications.php';
 $linkAcademicCalendar = file_exists($studentViewsPath . 'academic-calendar.php') ? 'academic-calendar.php' : 'notifications.php';
+$mailUnreadCount = !empty($currentUser['id']) ? getUnreadNotificationCountForUser((int)$currentUser['id']) : 0;
 
 $results = [];
 $organizedResults = [];
@@ -257,6 +258,9 @@ body { background: #f8fafc; }
     width: 230px;
     background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
     min-height: 100vh;
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
     border-right: 1px solid #e5e7eb;
     position: fixed;
     left: 0;
@@ -270,6 +274,7 @@ body { background: #f8fafc; }
     padding: 10px 8px;
     margin: 0;
 }
+.student-sidebar > ul { padding-bottom: 20px; }
 .student-sidebar li {
     padding: 9px 12px;
     margin-bottom: 4px;
@@ -296,6 +301,26 @@ body { background: #f8fafc; }
     background: #f1f5f9;
     color: #0f172a;
 }
+.sidebar-user-card {
+    margin: 0.45rem 0.45rem 0.2rem;
+    background: #2b3c4f;
+    border-radius: 8px;
+    color: #fff;
+    text-align: center;
+    padding: 0.6rem 0.55rem 0.6rem;
+}
+.sidebar-user-card img {
+    width: 62px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.35);
+    margin-bottom: 0.3rem;
+}
+.sidebar-user-name { font-size: 0.82rem; line-height: 1.2; }
+.sidebar-user-no { font-size: 0.9rem; font-weight: 700; }
+
+.sidebar-portal-title { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: #cbd5e1; margin-bottom: 0.4rem; font-weight: 700; }
 .main-content {
     margin-left: 230px;
     width: calc(100vw - 230px);
@@ -335,21 +360,29 @@ body { background: #f8fafc; }
 </style>
 
 <div class="student-sidebar">
-    <div style="padding: 2rem 1.5rem 1rem 1.5rem; border-bottom: 1px solid #e5e7eb;">
-        <div style="font-weight:700; font-size:1.1rem; color:#2563eb;">
-            <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?>
+    <div class="sidebar-user-card">
+        <div class="sidebar-portal-title">SMNS-STUDENT PORTAL</div>
+        <?php if (!empty($studentProfile['photo'])): ?>
+            <img src="<?php echo BASE_URL . '/' . $studentProfile['photo']; ?>" alt="Profile">
+        <?php else: ?>
+            <img src="/assets/img/student_sample.jpg" alt="Profile">
+        <?php endif; ?>
+        <div class="sidebar-user-name">
+            <?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?>
         </div>
-        <div style="font-size:0.98rem; color:#222;">STUDENT NO.: <?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no">STUDENT NO.: <?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
     </div>
     <ul>
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
         <li><a href="<?php echo e($linkEnroll); ?>">ENROLLMENT & REGISTRATION</a></li>
         <li><a href="<?php echo e($linkPayments); ?>">PAYMENTS</a></li>
         <li><a href="<?php echo e($linkProgramme); ?>">MY PROGRAMME</a></li>
-        <li><a href="<?php echo e($linkApplyServices); ?>">SERVICES</a></li>
-        <li><a href="<?php echo e($linkApplyServices); ?>">APPLY FOR SERVICES</a></li>
-        <li><a href="<?php echo e($linkServiceHistory); ?>">SERVICE HISTORY</a></li>
-        <li><a href="<?php echo e($linkNewIdCards); ?>">NEW ID CARDS</a></li>
+        <li><a href="services.php?tab=apply">SERVICES</a></li>
+        <ul class="services-submenu">
+            <li><a href="services.php?tab=apply">APPLY FOR SERVICES</a></li>
+            <li><a href="services.php?tab=history">SERVICE HISTORY</a></li>
+            <li><a href="services.php?tab=new_id">NEW ID CARDS</a></li>
+        </ul>
         <li><a href="<?php echo e($linkDashboard); ?>">BIO DATA</a></li>
         <li class="active"><a href="<?php echo e($linkResults); ?>">VIEW RESULTS</a></li>
         <li><a href="<?php echo e($linkMailbox); ?>">MY MAILBOX</a></li>
@@ -376,11 +409,19 @@ body { background: #f8fafc; }
             <span style="font-size:0.98rem; color:#222; font-weight:600; white-space:nowrap;">
                 <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?>
             </span>
+            <a href="<?php echo e($linkMailbox); ?>" title="My Mailbox" style="position:relative; display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border:1px solid #dbe3ef; border-radius:50%; color:#1f7aa8; text-decoration:none; background:#fff;">
+                <i class="far fa-envelope"></i>
+                <?php if ($mailUnreadCount > 0): ?>
+                    <span style="position:absolute; top:-6px; right:-6px; min-width:16px; height:16px; padding:0 4px; border-radius:999px; background:#ef4444; color:#fff; font-size:10px; font-weight:700; line-height:16px; text-align:center;"><?php echo $mailUnreadCount > 99 ? '99+' : $mailUnreadCount; ?></span>
+                <?php endif; ?>
+            </a>
             <div class="profile-dropdown" style="position:relative;">
                 <button id="profileDropBtn" style="background:none; border:none; font-size:0.98rem; cursor:pointer; padding:0 6px;">
                     <i class="fas fa-chevron-down"></i>
                 </button>
                 <div id="profileDropMenu" style="display:none; position:absolute; top:120%; right:0; background:#fff; border:1px solid #e5e7eb; border-radius:6px; box-shadow:0 2px 8px rgba(0,0,0,0.08); min-width:140px; z-index:100;">
+                    <a href="dashboard.php" style="display:block; padding:8px 14px; color:#1f2937; text-decoration:none; font-weight:600; font-size:0.92rem; border-bottom:1px solid #f1f5f9;">Profile</a>
+                    <a href="services.php?tab=apply" style="display:block; padding:8px 14px; color:#1f2937; text-decoration:none; font-weight:600; font-size:0.92rem; border-bottom:1px solid #f1f5f9;">Services</a>
                     <a href="logout.php" style="display:block; padding:8px 14px; color:#dc2626; text-decoration:none; font-weight:600; font-size:0.92rem;">Logout</a>
                 </div>
             </div>
@@ -548,3 +589,4 @@ document.addEventListener('click', function() {
 </script>
 
 <?php include '../../includes/footer.php'; ?>
+

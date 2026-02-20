@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * Student - Course Registration
  * Modified to require admin approval before showing courses
@@ -41,6 +41,12 @@ $defaultAcademicYearId = Helper::getCurrentAcademicYear()['id'] ?? ($academicYea
 // Determine selected academic year & semester number from GET (or fallbacks)
 $selectedAcademicYearId = isset($_GET['academic_year_id']) ? (int)$_GET['academic_year_id'] : $defaultAcademicYearId;
 $selectedSemesterNumber = isset($_GET['semester_number']) ? (int)$_GET['semester_number'] : ($currentSemester['semester_number'] ?? 1);
+$selectedEnrollingAs = isset($_GET['enrolling_as']) ? trim((string)$_GET['enrolling_as']) : 'normal';
+$selectedHasRetakes = isset($_GET['has_retakes']) ? trim((string)$_GET['has_retakes']) : 'no';
+$regTab = isset($_GET['tab']) ? trim((string)$_GET['tab']) : 'enroll';
+if (!in_array($regTab, ['enroll', 'enrollment_history', 'registration_history', 'migrated_history'], true)) {
+    $regTab = 'enroll';
+}
 
 // Resolve selected academic year name for display
 $selectedAcademicYearName = '';
@@ -48,6 +54,28 @@ foreach ($academicYears as $ay) {
     if ((int)$ay['id'] === (int)$selectedAcademicYearId) {
         $selectedAcademicYearName = $ay['year_name'];
         break;
+    }
+}
+
+$registeredProgramName = '-';
+if (!empty($studentProfile['id'])) {
+    try {
+        $progStmt = $conn->prepare("
+            SELECT p.program_name
+            FROM students s
+            LEFT JOIN programs p ON s.program_id = p.id
+            WHERE s.id = :student_id
+            LIMIT 1
+        ");
+        $progStmt->execute(['student_id' => (int)$studentProfile['id']]);
+        $programName = $progStmt->fetchColumn();
+        if (!empty($programName)) {
+            $registeredProgramName = $programName;
+        } elseif (!empty($studentProfile['program_name'])) {
+            $registeredProgramName = $studentProfile['program_name'];
+        }
+    } catch (Exception $e) {
+        $registeredProgramName = !empty($studentProfile['program_name']) ? $studentProfile['program_name'] : '-';
     }
 }
 
@@ -491,7 +519,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 error_log("Assigned $assignedCount courses to student " . $studentProfile['id']);
             }
         } catch (PDOException $innerEx) {
-            // non-fatal: if course auto-assign fails, continue — student can still select courses manually
+            // non-fatal: if course auto-assign fails, continue â€” student can still select courses manually
             error_log("Course auto-assign error: " . $innerEx->getMessage());
         }
 
@@ -726,7 +754,7 @@ if ($semesterId && $semesterApproval) {
 
 // Determine whether selection should be allowed. If courses were assigned by admin
 // (`course_assignments`) or the student already has approved course_registrations,
-// do not allow manual selection — show read-only list instead.
+// do not allow manual selection â€” show read-only list instead.
 $selectionAllowed = true;
 if (!empty($approvedCourses) || $fromAssignments) {
     $selectionAllowed = false;
@@ -734,6 +762,60 @@ if (!empty($approvedCourses) || $fromAssignments) {
 
 // Fetch unread notifications for header bell
 $unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
+
+// Navigation links with safe fallbacks for pages that may not exist yet.
+$studentViewsPath = BASE_PATH . '/views/student/';
+$linkDashboard = 'dashboard.php';
+$linkResults = 'results.php';
+$linkInvoices = file_exists($studentViewsPath . 'invoices.php') ? 'invoices.php' : 'payments.php?section=bills';
+$linkFees = file_exists($studentViewsPath . 'fees.php') ? 'fees.php' : 'payments.php?section=fees';
+$linkGeneratePrn = file_exists($studentViewsPath . 'generate_prn.php') ? 'generate_prn.php' : 'course-registration.php';
+$linkEnroll = 'course-registration.php';
+$linkPayments = file_exists($studentViewsPath . 'payments.php') ? 'payments.php' : 'notifications.php';
+$linkProgramme = 'my-courses.php';
+$linkApplyServices = file_exists($studentViewsPath . 'services.php') ? 'services.php' : 'dashboard.php';
+$linkServiceHistory = 'notifications.php';
+$linkNewIdCards = file_exists($studentViewsPath . 'new-id-cards.php') ? 'new-id-cards.php' : 'dashboard.php';
+$linkMailbox = 'notifications.php';
+$linkAcademicCalendar = file_exists($studentViewsPath . 'academic-calendar.php') ? 'academic-calendar.php' : 'notifications.php';
+$mailUnreadCount = !empty($currentUser['id']) ? getUnreadNotificationCountForUser((int)$currentUser['id']) : 0;
+
+$enrollmentHistory = [];
+if (!empty($studentProfile['id'])) {
+    try {
+        $ehStmt = $conn->prepare("
+            SELECT
+                sr.id,
+                sr.semester_id,
+                sr.year_of_study,
+                sr.status,
+                sr.request_date,
+                sr.created_at,
+                sr.updated_at,
+                s.semester_number,
+                s.semester_name,
+                ay.year_name
+            FROM semester_registrations sr
+            INNER JOIN (
+                SELECT semester_id, MAX(id) AS max_id
+                FROM semester_registrations
+                WHERE student_id = :student_id_group
+                GROUP BY semester_id
+            ) latest ON latest.max_id = sr.id
+            INNER JOIN semesters s ON sr.semester_id = s.id
+            INNER JOIN academic_years ay ON s.academic_year_id = ay.id
+            WHERE sr.student_id = :student_id_where
+            ORDER BY ay.start_date DESC, s.semester_number ASC
+        ");
+        $ehStmt->execute([
+            'student_id_group' => (int)$studentProfile['id'],
+            'student_id_where' => (int)$studentProfile['id']
+        ]);
+        $enrollmentHistory = $ehStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Exception $e) {
+        $enrollmentHistory = [];
+    }
+}
 
 $pageTitle = 'Course Registration - ' . APP_NAME;
 include '../../includes/header.php';
@@ -747,8 +829,88 @@ include '../../includes/header.php';
     }
     
     .main-content {
+        margin-left: 230px;
+        width: calc(100vw - 230px);
+        max-width: calc(100vw - 230px);
+        min-height: 100vh;
         overflow-x: hidden;
-        max-width: 100%;
+        background: #f8fafc;
+        transition: margin-left 0.25s ease, width 0.25s ease;
+    }
+    .main-content.full-width {
+        margin-left: 0;
+        width: 100vw;
+        max-width: 100vw;
+    }
+    .student-sidebar {
+        width: 230px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        min-height: 100vh;
+        height: 100vh;
+        overflow-y: auto;
+        overflow-x: hidden;
+        border-right: 1px solid #e5e7eb;
+        position: fixed;
+        left: 0;
+        top: 0;
+        z-index: 100;
+        box-shadow: 2px 0 12px rgba(15, 23, 42, 0.04);
+        transition: transform 0.25s ease;
+    }
+    .student-sidebar.sidebar-collapsed {
+        transform: translateX(-100%);
+    }
+    .student-sidebar ul { list-style: none; padding: 10px 8px; margin: 0; }
+    .student-sidebar > ul { padding-bottom: 20px; }
+    .student-sidebar li {
+        padding: 9px 12px;
+        margin-bottom: 4px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        font-size: 0.82rem;
+        letter-spacing: 0.02em;
+        color: #334155;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .student-sidebar li a { color: inherit; text-decoration: none; display: block; }
+    .student-sidebar li.active {
+        background: #eaf2ff;
+        border-color: #bfdbfe;
+        color: #1d4ed8;
+        font-weight: 700;
+    }
+    .student-sidebar li:hover { background: #f1f5f9; color: #0f172a; }
+    .sidebar-user-card {
+    margin: 0.45rem 0.45rem 0.2rem;
+    background: #2b3c4f;
+    border-radius: 8px;
+    color: #fff;
+    text-align: center;
+    padding: 0.6rem 0.55rem 0.6rem;
+}
+    .sidebar-user-card img {
+    width: 62px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.35);
+    margin-bottom: 0.3rem;
+}
+    .sidebar-user-name { font-size: 0.82rem; line-height: 1.2; }
+    .sidebar-user-no { font-size: 0.9rem; font-weight: 700; }
+    
+.sidebar-portal-title { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: #cbd5e1; margin-bottom: 0.4rem; font-weight: 700; }
+.enroll-submenu { list-style:none; padding:0 0 0 10px; margin:0 0 6px 0; }
+.enroll-submenu li { font-size:.79rem; margin-bottom:3px; }
+.enroll-submenu li.active { background:#dceaf3; color:#0e7490; border-color:#bfddeb; }
+.student-topbar {
+        display: flex; align-items: center; justify-content: space-between;
+        background: #fff; border-bottom: 1px solid #e5e7eb;
+        padding: 0.5rem 1.2rem; position: sticky; top: 0; z-index: 10;
+    }
+    .student-profile-pic {
+        width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid #e5e7eb;
     }
     
     .content-area.container {
@@ -836,6 +998,123 @@ include '../../includes/header.php';
         -webkit-overflow-scrolling: touch;
         margin-bottom: 1rem;
     }
+
+    .enroll-shell {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        background: #fff;
+        overflow: hidden;
+    }
+    .enroll-shell-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 0.9rem 1.1rem;
+        border-bottom: 1px solid #e5e7eb;
+        background: #fafafa;
+    }
+    .enroll-tab {
+        border: 1px solid #dbe1e8;
+        border-bottom-color: #fff;
+        background: #fff;
+        color: #1f7aa8;
+        border-radius: 8px 8px 0 0;
+        padding: 8px 18px;
+        font-size: 0.85rem;
+        font-weight: 700;
+    }
+    .enroll-reload {
+        border: 1px dashed #f87171;
+        background: #fff;
+        color: #ef4444;
+        border-radius: 8px;
+        padding: 7px 14px;
+        font-size: 0.82rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .enroll-title-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 0.95rem 1.1rem;
+        border-bottom: 1px solid #e5e7eb;
+        background: #f7f7f8;
+    }
+    .enroll-title {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #4b5563;
+    }
+    .enroll-prog {
+        font-size: 0.9rem;
+        color: #52525b;
+        font-weight: 700;
+    }
+    .enroll-form-row {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(170px, 1fr));
+        gap: 14px;
+        padding: 1rem 1.1rem;
+        border-bottom: 1px solid #e5e7eb;
+        background: #fbfbfb;
+    }
+    .enroll-field label {
+        display: block;
+        font-size: 0.8rem;
+        color: #4b5563;
+        margin-bottom: 0.35rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+    }
+    .enroll-field .req { color: #dc2626; }
+    .enroll-field select {
+        width: 100%;
+        min-height: 40px;
+        border: 1px solid #cbd5e1;
+        border-radius: 0;
+        font-size: 0.95rem;
+        padding: 7px 12px;
+        background: #fff;
+        color: #1f2937;
+    }
+    .enroll-action-row {
+        display: flex;
+        justify-content: flex-end;
+        padding: 0.7rem 1.1rem;
+        background: #fff;
+    }
+    .enroll-now-btn {
+        border: 1px solid #1f7aa8;
+        background: #1f7aa8;
+        color: #fff;
+        border-radius: 10px;
+        padding: 10px 22px;
+        font-size: 0.95rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .history-shell { border:1px solid #e5e7eb; border-radius:10px; background:#fff; overflow:hidden; }
+    .history-shell-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:0.9rem 1.1rem; border-bottom:1px solid #e5e7eb; background:#fafafa; }
+    .history-title { color:#1f7aa8; font-size:1.15rem; font-weight:700; margin:0; }
+    .history-list { padding:1rem; display:grid; gap:10px; }
+    .history-item { border:1px solid #dbe1e8; border-radius:10px; background:#fff; overflow:hidden; }
+    .history-item summary { list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0.85rem 1rem; font-weight:700; color:#b42318; background:#fff; }
+    .history-item summary::-webkit-details-marker { display:none; }
+    .history-item[open] summary { border-bottom:1px solid #e5e7eb; background:#f8fafc; }
+    .history-summary-label { display:flex; align-items:center; gap:8px; }
+    .history-body { padding:0.9rem 1rem 1rem; background:#fff; }
+    .history-meta { display:grid; grid-template-columns:repeat(3,minmax(180px,1fr)); gap:10px; margin-bottom:10px; }
+    .history-meta-card { border:1px solid #e5e7eb; border-radius:8px; background:#f8fafc; padding:10px 12px; font-size:0.85rem; color:#334155; }
+    .history-meta-card strong { color:#111827; }
+    .history-actions { display:flex; justify-content:flex-end; margin-bottom:10px; }
+    .history-print { border:1px solid #cbd5e1; background:#fff; color:#3559a0; border-radius:8px; font-size:.83rem; font-weight:700; padding:8px 12px; cursor:pointer; }
+    .history-status { border-radius:999px; padding:3px 10px; font-size:.75rem; font-weight:700; text-transform:uppercase; }
+    .history-status.approved { background:#dcfce7; color:#166534; }
+    .history-status.pending { background:#ffedd5; color:#9a3412; }
+    .history-status.rejected { background:#fee2e2; color:#991b1b; }
     
     /* Additional fixes for narrow screens */
     @media (max-width: 576px) {
@@ -845,20 +1124,90 @@ include '../../includes/header.php';
             font-size: 0.65rem !important;
         }
     }
+    @media (max-width: 992px) {
+        .enroll-form-row {
+            grid-template-columns: 1fr;
+        }
+        .enroll-title-row {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .history-meta { grid-template-columns:1fr; }
+    }
 </style>
 
-<?php include '../../includes/student/sidebar.php'; ?>
+<div class="student-sidebar">
+    <div class="sidebar-user-card">
+        <div class="sidebar-portal-title">SMNS-STUDENT PORTAL</div>
+        <?php if (!empty($studentProfile['photo'])): ?>
+            <img src="<?php echo BASE_URL . '/' . $studentProfile['photo']; ?>" alt="Profile">
+        <?php else: ?>
+            <img src="/assets/img/student_sample.jpg" alt="Profile">
+        <?php endif; ?>
+        <div class="sidebar-user-name">
+            <?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?>
+        </div>
+        <div class="sidebar-user-no">STUDENT NO.: <?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+    </div>
+    <ul>
+        <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
+        <li class="active"><a href="<?php echo e($linkEnroll); ?>">ENROLLMENT & REGISTRATION</a></li>
+        <ul class="enroll-submenu">
+            <li class="<?php echo $regTab === 'enroll' ? 'active' : ''; ?>"><a href="course-registration.php?tab=enroll">ENROLL OR REGISTER</a></li>
+            <li class="<?php echo $regTab === 'enrollment_history' ? 'active' : ''; ?>"><a href="course-registration.php?tab=enrollment_history">ENROLLMENT HISTORY</a></li>
+            <li class="<?php echo $regTab === 'registration_history' ? 'active' : ''; ?>"><a href="course-registration.php?tab=registration_history">REGISTRATION HISTORY</a></li>
+            <li class="<?php echo $regTab === 'migrated_history' ? 'active' : ''; ?>"><a href="course-registration.php?tab=migrated_history">MIGRATED HISTORY</a></li>
+        </ul>
+        <li><a href="<?php echo e($linkPayments); ?>">PAYMENTS</a></li>
+        <li><a href="<?php echo e($linkProgramme); ?>">MY PROGRAMME</a></li>
+        <li><a href="services.php?tab=apply">SERVICES</a></li>
+        <ul class="services-submenu">
+            <li><a href="services.php?tab=apply">APPLY FOR SERVICES</a></li>
+            <li><a href="services.php?tab=history">SERVICE HISTORY</a></li>
+            <li><a href="services.php?tab=new_id">NEW ID CARDS</a></li>
+        </ul>
+        <li><a href="<?php echo e($linkDashboard); ?>">BIO DATA</a></li>
+        <li><a href="<?php echo e($linkResults); ?>">VIEW RESULTS</a></li>
+        <li><a href="<?php echo e($linkMailbox); ?>">MY MAILBOX</a></li>
+        <li><a href="<?php echo e($linkAcademicCalendar); ?>">ACADEMIC CALENDAR</a></li>
+    </ul>
+</div>
 
 <div class="main-content" id="mainContent" style="max-width: 100vw; overflow-x: hidden;">
-    <div class="topbar">
-        <div class="topbar-left">
-            <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar">
-                <i class="fas fa-bars"></i>
-            </button>
-            <h4>My Courses</h4>
+    <div class="student-topbar">
+        <div style="display:flex; align-items:center; gap:0.7rem;">
+            <button id="menuBtn" style="background:none; border:none; font-size:1.1rem; cursor:pointer;" title="Toggle Sidebar"><i class="fas fa-bars"></i></button>
+            <button onclick="location.href='<?php echo e($linkDashboard); ?>'" style="background:#f1f5f9; color:#222; border:1px solid #e5e7eb; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW BIO DATA</button>
+            <button onclick="location.href='<?php echo e($linkResults); ?>'" style="background:#f1f5f9; color:#222; border:1px solid #e5e7eb; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW RESULTS</button>
+            <button onclick="location.href='<?php echo e($linkInvoices); ?>'" style="background:#f1f5f9; color:#222; border:1px solid #e5e7eb; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW INVOICES</button>
+            <button onclick="location.href='<?php echo e($linkFees); ?>'" style="background:#f1f5f9; color:#222; border:1px solid #e5e7eb; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW FEES STRUCTURE</button>
+            <button onclick="location.href='<?php echo e($linkGeneratePrn); ?>'" style="background:#f1f5f9; color:#222; border:1px solid #e5e7eb; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">Generate PRN</button>
         </div>
-        <div class="topbar-right">
-            <?php include '../../includes/notification_bell.php'; ?>
+        <div style="display:flex; align-items:center; gap:0.5rem; position:relative;">
+            <?php if (!empty($studentProfile['photo'])): ?>
+                <img src="<?php echo BASE_URL . '/' . $studentProfile['photo']; ?>" alt="Profile" class="student-profile-pic">
+            <?php else: ?>
+                <img src="/assets/img/student_sample.jpg" alt="Profile" class="student-profile-pic">
+            <?php endif; ?>
+            <span style="font-size:0.98rem; color:#222; font-weight:600; white-space:nowrap;">
+                <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?>
+            </span>
+            <a href="<?php echo e($linkMailbox); ?>" title="My Mailbox" style="position:relative; display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border:1px solid #dbe3ef; border-radius:50%; color:#1f7aa8; text-decoration:none; background:#fff;">
+                <i class="far fa-envelope"></i>
+                <?php if ($mailUnreadCount > 0): ?>
+                    <span style="position:absolute; top:-6px; right:-6px; min-width:16px; height:16px; padding:0 4px; border-radius:999px; background:#ef4444; color:#fff; font-size:10px; font-weight:700; line-height:16px; text-align:center;"><?php echo $mailUnreadCount > 99 ? '99+' : $mailUnreadCount; ?></span>
+                <?php endif; ?>
+            </a>
+            <div class="profile-dropdown" style="position:relative;">
+                <button id="profileDropBtn" style="background:none; border:none; font-size:0.98rem; cursor:pointer; padding:0 6px;">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div id="profileDropMenu" style="display:none; position:absolute; top:120%; right:0; background:#fff; border:1px solid #e5e7eb; border-radius:6px; box-shadow:0 2px 8px rgba(0,0,0,0.08); min-width:140px; z-index:100;">
+                    <a href="dashboard.php" style="display:block; padding:8px 14px; color:#1f2937; text-decoration:none; font-weight:600; font-size:0.92rem; border-bottom:1px solid #f1f5f9;">Profile</a>
+                    <a href="services.php?tab=apply" style="display:block; padding:8px 14px; color:#1f2937; text-decoration:none; font-weight:600; font-size:0.92rem; border-bottom:1px solid #f1f5f9;">Services</a>
+                    <a href="logout.php" style="display:block; padding:8px 14px; color:#dc2626; text-decoration:none; font-weight:600; font-size:0.92rem;">Logout</a>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -882,59 +1231,137 @@ include '../../includes/header.php';
             </div>
         <?php endif; ?>
 
+        <?php if ($regTab === 'enrollment_history'): ?>
+            <div class="history-shell mb-3">
+                <div class="history-shell-head">
+                    <h4 class="history-title">MY ENROLLMENT HISTORY (<?php echo count($enrollmentHistory); ?>)</h4>
+                    <button type="button" class="enroll-reload" onclick="window.location.href='course-registration.php?tab=enrollment_history'">
+                        <i class="fas fa-sync-alt mr-1"></i> RELOAD
+                    </button>
+                </div>
+                <div class="history-list">
+                    <?php if (empty($enrollmentHistory)): ?>
+                        <div class="alert alert-info mb-0">No enrollment history found yet.</div>
+                    <?php else: ?>
+                        <?php foreach ($enrollmentHistory as $idx => $h): ?>
+                            <?php
+                                $hStatus = strtolower((string)($h['status'] ?? 'pending'));
+                                if (!in_array($hStatus, ['approved', 'pending', 'rejected'], true)) {
+                                    $hStatus = 'pending';
+                                }
+                                $hYear = (int)($h['year_of_study'] ?? 1);
+                                $hSemNum = (int)($h['semester_number'] ?? 1);
+                                $hSemLabel = $hSemNum === 2 ? 'SEMESTER II' : 'SEMESTER I';
+                                $hAy = (string)($h['year_name'] ?? '-');
+                            ?>
+                            <details class="history-item" <?php echo $idx === 0 ? 'open' : ''; ?>>
+                                <summary>
+                                    <span class="history-summary-label">
+                                        <i class="fas fa-user-graduate"></i>
+                                        YEAR <?php echo $hYear; ?>, <?php echo $hSemLabel; ?> - <?php echo e($hAy); ?>
+                                    </span>
+                                    <span class="history-status <?php echo e($hStatus); ?>"><?php echo e(strtoupper($hStatus)); ?></span>
+                                </summary>
+                                <div class="history-body">
+                                    <div class="history-actions">
+                                        <button type="button" class="history-print" onclick="window.print();">
+                                            <i class="fas fa-print mr-1"></i> PRINT PROOF OF ENROLLMENT
+                                        </button>
+                                    </div>
+                                    <div class="history-meta">
+                                        <div class="history-meta-card">
+                                            <div><strong>ACADEMIC YEAR:</strong> <?php echo e($hAy); ?></div>
+                                            <div><strong>SEMESTER:</strong> <?php echo e($hSemLabel); ?></div>
+                                            <div><strong>STUDY YEAR:</strong> YEAR <?php echo $hYear; ?></div>
+                                        </div>
+                                        <div class="history-meta-card">
+                                            <div><strong>ENROLLED AS:</strong> <?php echo e(ucfirst($selectedEnrollingAs)); ?></div>
+                                            <div><strong>ENROLLED BY:</strong> SELF</div>
+                                            <div><strong>STATUS:</strong> <?php echo e(strtoupper($hStatus)); ?></div>
+                                        </div>
+                                        <div class="history-meta-card">
+                                            <div><strong>ENROLLMENT TOKEN:</strong> ENR<?php echo str_pad((string)($h['id'] ?? 0), 8, '0', STR_PAD_LEFT); ?></div>
+                                            <div><strong>ENROLLED ON:</strong> <?php echo !empty($h['request_date']) ? e(date('D, M jS Y, g:i:s a', strtotime($h['request_date']))) : '-'; ?></div>
+                                            <div><strong>UPDATED ON:</strong> <?php echo !empty($h['updated_at']) ? e(date('D, M jS Y, g:i:s a', strtotime($h['updated_at']))) : '-'; ?></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </details>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+        <?php elseif ($regTab === 'registration_history' || $regTab === 'migrated_history'): ?>
+            <div class="history-shell mb-3">
+                <div class="history-shell-head">
+                    <h4 class="history-title"><?php echo $regTab === 'registration_history' ? 'REGISTRATION HISTORY' : 'MIGRATED HISTORY'; ?></h4>
+                    <button type="button" class="enroll-reload" onclick="window.location.href='course-registration.php?tab=<?php echo e($regTab); ?>'">
+                        <i class="fas fa-sync-alt mr-1"></i> RELOAD
+                    </button>
+                </div>
+                <div class="history-list">
+                    <div class="alert alert-info mb-0">
+                        <?php echo $regTab === 'registration_history' ? 'Registration history will appear here once available.' : 'No migrated enrollment history found.'; ?>
+                    </div>
+                </div>
+            </div>
+        <?php else: ?>
         <div class="card mb-3">
             <div class="card-body" style="padding: 1rem;">
                 <form id="courseFilterForm" method="GET" class="mb-3">
                     <?php echo csrfField(); ?>
-                    <div class="form-row">
-                        <div class="form-group col-12 col-md-4 mb-3">
-                            <label class="mb-2" style="color:#374151; font-weight:600; font-size: 0.875rem;">Academic year</label>
-                            <select name="academic_year_id" class="form-control form-control-sm">
-                                <?php foreach ($academicYears as $ay): ?>
-                                    <option value="<?php echo $ay['id']; ?>" <?php echo $selectedAcademicYearId == $ay['id'] ? 'selected' : ''; ?>><?php echo e($ay['year_name']); ?></option>
-                                <?php endforeach; ?>
-                            </select>
+                    <input type="hidden" name="tab" value="enroll">
+                    <div class="enroll-shell">
+                        <div class="enroll-shell-head">
+                            <div class="enroll-tab"><i class="fas fa-edit mr-2"></i>ENROLLMENT</div>
+                            <button type="button" class="enroll-reload" onclick="window.location.href='course-registration.php'">
+                                <i class="fas fa-sync-alt mr-1"></i> RELOAD
+                            </button>
                         </div>
-
-                        <div class="form-group col-12 col-md-4 mb-3">
-                            <label class="mb-2" style="color:#374151; font-weight:600; font-size: 0.875rem;">Semester</label>
-                            <select name="semester_number" class="form-control form-control-sm">
-                                <option value="1" <?php echo $selectedSemesterNumber == 1 ? 'selected' : ''; ?>>Semester 1</option>
-                                <option value="2" <?php echo $selectedSemesterNumber == 2 ? 'selected' : ''; ?>>Semester 2</option>
-                            </select>
+                        <div class="enroll-title-row">
+                            <div class="enroll-title">
+                                ENROLL FOR SEMESTER <?php echo $selectedSemesterNumber == 1 ? 'I' : 'II'; ?>, <?php echo e($selectedAcademicYearName ?: '-'); ?>
+                            </div>
+                            <div class="enroll-prog">PROG: <?php echo e(strtoupper($registeredProgramName)); ?></div>
                         </div>
-
-                        <div class="form-group col-12 col-md-4 mb-3">
-                            <label class="mb-2" style="color:#374151; font-weight:600; font-size: 0.875rem;">Year of study</label>
-                            <select id="year_of_study_select" name="year_of_study" class="form-control form-control-sm">
-                                <?php for ($y = 1; $y <= 4; $y++): ?>
-                                    <option value="<?php echo $y; ?>" <?php echo $yearOfStudy == $y ? 'selected' : ''; ?>>Year <?php echo $y; ?></option>
-                                <?php endfor; ?>
-                            </select>
+                        <div class="enroll-form-row">
+                            <div class="enroll-field">
+                                <label>YEAR OF STUDY <span class="req">*</span></label>
+                                <select id="year_of_study_select" name="year_of_study">
+                                    <?php for ($y = 1; $y <= 4; $y++): ?>
+                                        <option value="<?php echo $y; ?>" <?php echo $yearOfStudy == $y ? 'selected' : ''; ?>>Year <?php echo $y; ?></option>
+                                    <?php endfor; ?>
+                                </select>
+                            </div>
+                            <div class="enroll-field">
+                                <label>SEMESTER <span class="req">*</span></label>
+                                <select name="semester_number">
+                                    <option value="1" <?php echo $selectedSemesterNumber == 1 ? 'selected' : ''; ?>>Semester 1</option>
+                                    <option value="2" <?php echo $selectedSemesterNumber == 2 ? 'selected' : ''; ?>>Semester 2</option>
+                                </select>
+                            </div>
+                            <div class="enroll-field">
+                                <label>ENROLLING AS? <span class="req">*</span></label>
+                                <select name="enrolling_as">
+                                    <option value="normal" <?php echo $selectedEnrollingAs === 'normal' ? 'selected' : ''; ?>>Normal Student</option>
+                                    <option value="private" <?php echo $selectedEnrollingAs === 'private' ? 'selected' : ''; ?>>Private Student</option>
+                                    <option value="supplementary" <?php echo $selectedEnrollingAs === 'supplementary' ? 'selected' : ''; ?>>Supplementary</option>
+                                </select>
+                            </div>
+                            <div class="enroll-field">
+                                <label>HAVE RETAKES? <span class="req">*</span></label>
+                                <select name="has_retakes">
+                                    <option value="no" <?php echo $selectedHasRetakes === 'no' ? 'selected' : ''; ?>>No</option>
+                                    <option value="yes" <?php echo $selectedHasRetakes === 'yes' ? 'selected' : ''; ?>>Yes</option>
+                                </select>
+                            </div>
+                            <input type="hidden" name="academic_year_id" value="<?php echo (int)$selectedAcademicYearId; ?>">
+                        </div>
+                        <div class="enroll-action-row">
+                            <button type="submit" class="enroll-now-btn">ENROLL NOW</button>
                         </div>
                     </div>
                 </form>
-
-                <script>
-                // Auto-submit form when filters change to reload courses
-                (function(){
-                    var form = document.getElementById('courseFilterForm');
-                    if (!form) return;
-                    var selects = form.querySelectorAll('select[name="academic_year_id"], select[name="semester_number"], select[name="year_of_study"]');
-                    var timeout = null;
-
-                    function debouncedSubmit() {
-                        clearTimeout(timeout);
-                        timeout = setTimeout(function(){
-                            form.submit();
-                        }, 300);
-                    }
-
-                    selects.forEach(function(s){ 
-                        s.addEventListener('change', debouncedSubmit); 
-                    });
-                })();
-                </script>
 
                 <?php if (!$semesterApproval): ?>
                     <!-- This should rarely show since auto-registration happens above -->
@@ -1061,7 +1488,28 @@ include '../../includes/header.php';
                 <?php endif; ?>
             </div>
         </div>
+        <?php endif; ?>
     </div>
 </div>
 
+<script>
+document.getElementById('menuBtn').addEventListener('click', function() {
+    var sidebar = document.querySelector('.student-sidebar');
+    var main = document.querySelector('.main-content');
+    sidebar.classList.toggle('sidebar-collapsed');
+    if (main) main.classList.toggle('full-width');
+});
+
+document.getElementById('profileDropBtn').addEventListener('click', function(e) {
+    e.stopPropagation();
+    var menu = document.getElementById('profileDropMenu');
+    menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+});
+document.addEventListener('click', function() {
+    var menu = document.getElementById('profileDropMenu');
+    if (menu) menu.style.display = 'none';
+});
+</script>
+
 <?php include '../../includes/footer.php'; ?>
+

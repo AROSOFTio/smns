@@ -1,4 +1,4 @@
-
+﻿
 <?php
 require_once '../../config.php';
 $session = new Session('student');
@@ -259,8 +259,8 @@ if (!empty($studentProfile['id'])) {
 $studentViewsPath = BASE_PATH . '/views/student/';
 $linkDashboard = 'dashboard.php';
 $linkResults = 'results.php';
-$linkInvoices = file_exists($studentViewsPath . 'invoices.php') ? 'invoices.php' : 'notifications.php';
-$linkFees = file_exists($studentViewsPath . 'fees.php') ? 'fees.php' : 'notifications.php';
+$linkInvoices = file_exists($studentViewsPath . 'invoices.php') ? 'invoices.php' : 'payments.php?section=bills';
+$linkFees = file_exists($studentViewsPath . 'fees.php') ? 'fees.php' : 'payments.php?section=fees';
 $linkGeneratePrn = file_exists($studentViewsPath . 'generate_prn.php') ? 'generate_prn.php' : 'course-registration.php';
 $linkEnroll = 'course-registration.php';
 $linkPayments = file_exists($studentViewsPath . 'payments.php') ? 'payments.php' : 'notifications.php';
@@ -270,6 +270,7 @@ $linkServiceHistory = 'notifications.php';
 $linkNewIdCards = file_exists($studentViewsPath . 'new-id-cards.php') ? 'new-id-cards.php' : 'dashboard.php';
 $linkMailbox = 'notifications.php';
 $linkAcademicCalendar = file_exists($studentViewsPath . 'academic-calendar.php') ? 'academic-calendar.php' : 'notifications.php';
+$mailUnreadCount = !empty($currentUser['id']) ? getUnreadNotificationCountForUser((int)$currentUser['id']) : 0;
 
 $pageTitle = 'Student Portal - ' . APP_NAME;
 include '../../includes/header.php';
@@ -281,6 +282,9 @@ body { background: #f8fafc; }
     width: 230px;
     background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
     min-height: 100vh;
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
     border-right: 1px solid #e5e7eb;
     position: fixed;
     left: 0;
@@ -294,6 +298,7 @@ body { background: #f8fafc; }
     padding: 10px 8px;
     margin: 0;
 }
+.student-sidebar > ul { padding-bottom: 20px; }
 .student-sidebar li {
     padding: 9px 12px;
     margin-bottom: 4px;
@@ -332,6 +337,26 @@ body { background: #f8fafc; }
 .student-sidebar.sidebar-collapsed {
     transform: translateX(-100%);
 }
+.sidebar-user-card {
+    margin: 0.45rem 0.45rem 0.2rem;
+    background: #2b3c4f;
+    border-radius: 8px;
+    color: #fff;
+    text-align: center;
+    padding: 0.6rem 0.55rem 0.6rem;
+}
+.sidebar-user-card img {
+    width: 62px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.35);
+    margin-bottom: 0.3rem;
+}
+.sidebar-user-name { font-size: 0.82rem; line-height: 1.2; }
+.sidebar-user-no { font-size: 0.9rem; font-weight: 700; }
+
+.sidebar-portal-title { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: #cbd5e1; margin-bottom: 0.4rem; font-weight: 700; }
 .main-content.full-width {
     margin-left: 0;
     width: 100vw;
@@ -349,15 +374,43 @@ body { background: #f8fafc; }
 .bio-details-table { width: 100%; font-size: 0.82rem; margin-top: 1rem; }
 .bio-details-table td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; }
 .bio-details-table tr:last-child td { border-bottom: none; }
-.bio-actions { margin-top: 1.5rem; display: flex; gap: 1rem; }
-.bio-actions button { padding: 7px 18px; border-radius: 6px; border: none; background: #2563eb; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.82rem; }
-.bio-actions button.reload { background: #f1f5f9; color: #222; border: 1px solid #e5e7eb; }
+.bio-action-group { margin-left: auto; display: flex; gap: 0.55rem; align-items: center; }
+.bio-btn {
+    padding: 6px 12px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+.bio-btn.print {
+    background: #1f7aa8;
+    color: #fff;
+    border-color: #1f7aa8;
+}
+.bio-btn.print:hover {
+    background: #176488;
+    border-color: #176488;
+}
+.bio-btn.reload {
+    background: #fff;
+    color: #ef4444;
+    border-color: #fca5a5;
+}
+.bio-btn.reload:hover {
+    background: #fff1f2;
+    color: #dc2626;
+    border-color: #f87171;
+}
 .bio-edit-link { color: #2563eb; font-size: 0.82rem; float: right; cursor: pointer; }
 .bio-section-tabs { margin-top: 2rem; display: flex; gap: 1.5rem; border-bottom: 2px solid #e5e7eb; }
-.bio-section-tabs .tab { padding: 10px 0; font-size: 0.82rem; color: #222; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; background: transparent; border-top: none; border-left: none; border-right: none; }
+.bio-section-tabs .tab { padding: 10px 0; font-size: 0.82rem; color: #222; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; background: transparent; border-top: none; border-left: none; border-right: none; font-weight: 600; }
 .bio-section-tabs .tab.active { color: #2563eb; border-bottom: 3px solid #2563eb; font-weight: 600; }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
+#bioTabPanels { min-height: 260px; }
 .bio-card,
 .bio-card label,
 .bio-card .form-control-sm,
@@ -365,24 +418,51 @@ body { background: #f8fafc; }
 .bio-card .btn-sm {
     font-size: 0.82rem !important;
 }
+@media print {
+    .student-sidebar,
+    .student-topbar,
+    .bio-section-tabs,
+    .bio-action-group,
+    #editContactsBtn,
+    #editContactsForm {
+        display: none !important;
+    }
+    .main-content {
+        margin: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+    .bio-card {
+        box-shadow: none !important;
+        border: 1px solid #ddd !important;
+    }
+}
 </style>
 
 <div class="student-sidebar">
-    <div style="padding: 2rem 1.5rem 1rem 1.5rem; border-bottom: 1px solid #e5e7eb;">
-        <div style="font-weight:700; font-size:1.1rem; color:#2563eb;">
-            <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?>
+    <div class="sidebar-user-card">
+        <div class="sidebar-portal-title">SMNS-STUDENT PORTAL</div>
+        <?php if (!empty($studentProfile['photo'])): ?>
+            <img src="<?php echo BASE_URL . '/' . $studentProfile['photo']; ?>" alt="Profile">
+        <?php else: ?>
+            <img src="/assets/img/student_sample.jpg" alt="Profile">
+        <?php endif; ?>
+        <div class="sidebar-user-name">
+            <?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?>
         </div>
-        <div style="font-size:0.98rem; color:#222;">STUDENT NO.: <?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no">STUDENT NO.: <?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
     </div>
     <ul>
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
         <li><a href="<?php echo e($linkEnroll); ?>">ENROLLMENT & REGISTRATION</a></li>
         <li><a href="<?php echo e($linkPayments); ?>">PAYMENTS</a></li>
         <li><a href="<?php echo e($linkProgramme); ?>">MY PROGRAMME</a></li>
-        <li><a href="<?php echo e($linkApplyServices); ?>">SERVICES</a></li>
-        <li><a href="<?php echo e($linkApplyServices); ?>">APPLY FOR SERVICES</a></li>
-        <li><a href="<?php echo e($linkServiceHistory); ?>">SERVICE HISTORY</a></li>
-        <li><a href="<?php echo e($linkNewIdCards); ?>">NEW ID CARDS</a></li>
+        <li><a href="services.php?tab=apply">SERVICES</a></li>
+        <ul class="services-submenu">
+            <li><a href="services.php?tab=apply">APPLY FOR SERVICES</a></li>
+            <li><a href="services.php?tab=history">SERVICE HISTORY</a></li>
+            <li><a href="services.php?tab=new_id">NEW ID CARDS</a></li>
+        </ul>
         <li class="active"><a href="<?php echo e($linkDashboard); ?>">BIO DATA</a></li>
         <li><a href="<?php echo e($linkMailbox); ?>">MY MAILBOX</a></li>
         <li><a href="<?php echo e($linkAcademicCalendar); ?>">ACADEMIC CALENDAR</a></li>
@@ -406,11 +486,19 @@ body { background: #f8fafc; }
                 <img src="/assets/img/student_sample.jpg" alt="Profile" class="student-profile-pic" style="width:48px;height:48px;">
             <?php endif; ?>
             <span style="font-size:0.98rem; color:#222; font-weight:600; white-space:nowrap;"> <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?> </span>
+            <a href="<?php echo e($linkMailbox); ?>" title="My Mailbox" style="position:relative; display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border:1px solid #dbe3ef; border-radius:50%; color:#1f7aa8; text-decoration:none; background:#fff;">
+                <i class="far fa-envelope"></i>
+                <?php if ($mailUnreadCount > 0): ?>
+                    <span style="position:absolute; top:-6px; right:-6px; min-width:16px; height:16px; padding:0 4px; border-radius:999px; background:#ef4444; color:#fff; font-size:10px; font-weight:700; line-height:16px; text-align:center;"><?php echo $mailUnreadCount > 99 ? '99+' : $mailUnreadCount; ?></span>
+                <?php endif; ?>
+            </a>
             <div class="profile-dropdown" style="position:relative;">
                 <button id="profileDropBtn" style="background:none; border:none; font-size:0.98rem; cursor:pointer; padding:0 6px;">
                     <i class="fas fa-chevron-down"></i>
                 </button>
                 <div id="profileDropMenu" style="display:none; position:absolute; top:120%; right:0; background:#fff; border:1px solid #e5e7eb; border-radius:6px; box-shadow:0 2px 8px rgba(0,0,0,0.08); min-width:140px; z-index:100;">
+                    <a href="dashboard.php" style="display:block; padding:8px 14px; color:#1f2937; text-decoration:none; font-weight:600; font-size:0.92rem; border-bottom:1px solid #f1f5f9;">Profile</a>
+                    <a href="services.php?tab=apply" style="display:block; padding:8px 14px; color:#1f2937; text-decoration:none; font-weight:600; font-size:0.92rem; border-bottom:1px solid #f1f5f9;">Services</a>
                     <a href="logout.php" style="display:block; padding:8px 14px; color:#dc2626; text-decoration:none; font-weight:600; font-size:0.92rem;">Logout</a>
                 </div>
             </div>
@@ -481,9 +569,9 @@ document.addEventListener('click', function() {
                         <?php echo ($studentProfile['registration_status'] ?? '') === 'registered' ? 'REGISTERED' : 'NOT REGISTERED'; ?>
                     </span>
                 </div>
-                <div style="margin-left:auto;">
-                    <button class="bio-actions">Print Bio Data</button>
-                    <button class="bio-actions reload">RELOAD</button>
+                <div class="bio-action-group">
+                    <button type="button" id="printBioBtn" class="bio-btn print">Print Bio Data</button>
+                    <button type="button" id="reloadBioBtn" class="bio-btn reload">Reload</button>
                 </div>
             </div>
             <div style="margin-bottom:1.2rem;">
@@ -604,6 +692,21 @@ if (editBtn) {
         if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
     });
 }
+
+var printBtn = document.getElementById('printBioBtn');
+if (printBtn) {
+    printBtn.addEventListener('click', function() {
+        window.print();
+    });
+}
+
+var reloadBtn = document.getElementById('reloadBioBtn');
+if (reloadBtn) {
+    reloadBtn.addEventListener('click', function() {
+        window.location.reload();
+    });
+}
 </script>
 
 <?php include '../../includes/footer.php'; ?>
+

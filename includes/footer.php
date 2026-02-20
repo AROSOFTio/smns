@@ -125,6 +125,83 @@
     .sto-box #stoCountdown {
         font-weight: 700; color: #dc3545;
     }
+
+    /* Global Theme Toggle */
+    #themeToggleBtn {
+        position: fixed;
+        right: 22px;
+        bottom: 22px;
+        width: 62px;
+        height: 62px;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        background: #ffffff;
+        color: #222;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+        z-index: 10050;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 23px;
+    }
+    #themeToggleBtn:hover {
+        transform: translateY(-1px);
+    }
+    #themeToggleBtn:focus {
+        outline: 2px solid #2563eb;
+        outline-offset: 2px;
+    }
+
+    html[data-theme='dark'] {
+        filter: invert(1) hue-rotate(180deg);
+        background: #0f172a;
+    }
+    html[data-theme='dark'] img,
+    html[data-theme='dark'] video,
+    html[data-theme='dark'] iframe,
+    html[data-theme='dark'] svg,
+    html[data-theme='dark'] canvas,
+    html[data-theme='dark'] [style*='background-image'] {
+        filter: invert(1) hue-rotate(180deg);
+    }
     </style>
+
+    <button id="themeToggleBtn" type="button" title="Toggle Dark/Light Mode" aria-label="Toggle Dark/Light Mode">
+        <i class="fas fa-moon" aria-hidden="true"></i>
+    </button>
+    <script>
+    (function() {
+        var STORAGE_KEY = 'smns_theme_mode';
+        var root = document.documentElement;
+        var btn = document.getElementById('themeToggleBtn');
+        if (!btn) return;
+
+        function applyTheme(mode) {
+            if (mode === 'dark') {
+                root.setAttribute('data-theme', 'dark');
+                btn.innerHTML = '<i class="fas fa-sun" aria-hidden="true"></i>';
+                btn.setAttribute('title', 'Switch to Light Mode');
+                btn.setAttribute('aria-label', 'Switch to Light Mode');
+            } else {
+                root.removeAttribute('data-theme');
+                btn.innerHTML = '<i class="fas fa-moon" aria-hidden="true"></i>';
+                btn.setAttribute('title', 'Switch to Dark Mode');
+                btn.setAttribute('aria-label', 'Switch to Dark Mode');
+            }
+        }
+
+        var saved = localStorage.getItem(STORAGE_KEY);
+        var initial = (saved === 'dark' || saved === 'light') ? saved : 'light';
+        applyTheme(initial);
+
+        btn.addEventListener('click', function() {
+            var current = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+            var next = current === 'dark' ? 'light' : 'dark';
+            localStorage.setItem(STORAGE_KEY, next);
+            applyTheme(next);
+        });
+    })();
+    </script>
 </body>
 </html>

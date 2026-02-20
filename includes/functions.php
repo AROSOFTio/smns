@@ -224,6 +224,62 @@ function fetchUnreadNotificationsForUser($userId, $limit = 50) {
 }
 
 /**
+ * Get exact unread notification count for a user.
+ * Uses NOT EXISTS filters to avoid inflated counts from duplicate join rows.
+ */
+function getUnreadNotificationCountForUser($userId) {
+    $userId = (int)$userId;
+    if ($userId <= 0) {
+        return 0;
+    }
+
+    try {
+        $db = new Database();
+        $conn = $db->getConnection();
+
+        $sql = "
+            SELECT COUNT(*)
+            FROM notifications n
+            WHERE (n.user_id = :uid OR n.user_id IS NULL OR n.user_id = 0)
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM notification_archive na
+                    WHERE na.notification_id = n.id
+                      AND na.user_id = :uid_archive
+              )
+              AND (
+                    (
+                        n.user_id = :uid_personal
+                        AND COALESCE(n.read_status, '') <> 'read'
+                    )
+                    OR
+                    (
+                        (n.user_id IS NULL OR n.user_id = 0)
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM notifications_read nr
+                            WHERE nr.notification_id = n.id
+                              AND nr.user_id = :uid_read
+                        )
+                    )
+                  )
+        ";
+
+        $stmt = $conn->prepare($sql);
+        $stmt->execute([
+            'uid' => $userId,
+            'uid_archive' => $userId,
+            'uid_personal' => $userId,
+            'uid_read' => $userId
+        ]);
+
+        return (int)$stmt->fetchColumn();
+    } catch (Exception $e) {
+        return 0;
+    }
+}
+
+/**
  * Auto-assign courses to a student for a given semester.
  * Prefers explicit `course_assignments` for the semester, then falls back to courses by program/level.
  * Safe to call multiple times; avoids creating duplicates.

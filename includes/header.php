@@ -27,6 +27,9 @@ if ($currentUser && isset($currentUser['profile'])) {
     $lastName = $currentUser['profile']['last_name'] ?? '';
     $initials = strtoupper(substr($firstName, 0, 1) . substr($lastName, 0, 1));
 }
+
+$requestPath = $_SERVER['REQUEST_URI'] ?? '';
+$isStudentPortalPage = (strpos($requestPath, '/views/student/') !== false);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -42,6 +45,29 @@ if ($currentUser && isset($currentUser['profile'])) {
         <?php foreach($additionalCSS as $css): ?>
             <link rel="stylesheet" href="<?php echo BASE_URL . '/assets/css/' . $css; ?>">
         <?php endforeach; ?>
+    <?php endif; ?>
+    <?php if ($isStudentPortalPage): ?>
+    <style>
+        /* Student portal typography normalization: keep text medium and consistent */
+        .student-sidebar li { font-size: 0.82rem !important; }
+        .student-sidebar .services-submenu li,
+        .student-sidebar .programme-submenu li,
+        .student-sidebar .enroll-submenu li { font-size: 0.79rem !important; }
+        .main-content { font-size: 0.9rem; }
+        .main-content h1 { font-size: 1.28rem !important; }
+        .main-content h2 { font-size: 1.18rem !important; }
+        .main-content h3 { font-size: 1.08rem !important; }
+        .main-content h4 { font-size: 1rem !important; }
+        .main-content h5 { font-size: 0.94rem !important; }
+        .mail-title { font-size: 1.25rem !important; }
+        .mail-folder { font-size: 0.92rem !important; }
+        .mail-empty { font-size: 0.92rem !important; }
+        .cal-title { font-size: 1.3rem !important; }
+        .cal-block-head { font-size: 1.12rem !important; }
+        .cal-table th,
+        .cal-table td { font-size: 0.9rem !important; }
+        .history-title { font-size: 1rem !important; }
+    </style>
     <?php endif; ?>
 </head>
 <body>

@@ -16,13 +16,15 @@ if (
 $currentUser = $auth->getCurrentUser();
 $studentProfile = $currentUser['profile'] ?? [];
 $studentId = (int)($studentProfile['id'] ?? 0);
-$resultView = $_GET['view'] ?? 'results'; // results | provisional
-if (!in_array($resultView, ['results', 'provisional'], true)) {
-    $resultView = 'results';
-}
 
 $db = new Database();
 $conn = $db->getConnection();
+
+$tab = $_GET['tab'] ?? 'apply';
+$validTabs = ['apply', 'history', 'new_id'];
+if (!in_array($tab, $validTabs, true)) {
+    $tab = 'apply';
+}
 
 $currentSemester = [
     'academic_year' => '-',
@@ -113,126 +115,19 @@ if ($studentId > 0) {
     }
 }
 
-$rows = [];
-$organizedResults = [];
+$serviceHistory = [];
 if ($studentId > 0) {
-    $sql = "
-        SELECT
-            cr.semester_id,
-            cr.course_id,
-            c.course_code,
-            c.course_name,
-            c.credit_hours,
-            COALESCE(c.level_year, 1) AS year_of_study,
-            CASE
-                WHEN c.semester_offered = 3 THEN s.semester_number
-                ELSE c.semester_offered
-            END AS course_semester,
-            s.semester_name,
-            s.semester_number,
-            ay.year_name AS academic_year,
-            r.assignment_marks,
-            r.final_exam_marks,
-            r.total_marks,
-            r.grade,
-            r.grade_points,
-            r.status AS result_status
-        FROM course_registrations cr
-        INNER JOIN courses c ON cr.course_id = c.id
-        INNER JOIN semesters s ON cr.semester_id = s.id
-        INNER JOIN academic_years ay ON s.academic_year_id = ay.id
-        LEFT JOIN results r
-            ON r.student_id = cr.student_id
-            AND r.course_id = cr.course_id
-            AND r.semester_id = cr.semester_id
-        WHERE cr.student_id = :student_id
-        ORDER BY COALESCE(c.level_year, 1) ASC, course_semester ASC, c.course_code ASC
-    ";
-    $stmt = $conn->prepare($sql);
-    $stmt->execute(['student_id' => $studentId]);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-}
-
-$best = [];
-foreach ($rows as $row) {
-    $status = strtolower((string)($row['result_status'] ?? ''));
-    $isPublished = ($status === 'published');
-    if ($resultView === 'results' && !$isPublished) {
-        continue;
+    try {
+        $historyStmt = $conn->prepare("
+            SELECT request_type, reason, status, admin_response, created_at, updated_at
+            FROM student_requests
+            WHERE student_id = :student_id
+            ORDER BY created_at DESC
+        ");
+        $historyStmt->execute(['student_id' => $studentId]);
+        $serviceHistory = $historyStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Exception $e) {
     }
-    if ($resultView === 'provisional' && $isPublished) {
-        continue;
-    }
-
-    $year = (int)($row['year_of_study'] ?? 1);
-    $sem = (int)($row['course_semester'] ?? 1);
-    $code = strtoupper(trim((string)($row['course_code'] ?? '')));
-    $key = $year . '-' . $sem . '-' . $code;
-
-    $score = 0;
-    if ($status === 'published') {
-        $score += 100;
-    } elseif ($status === 'approved') {
-        $score += 70;
-    } elseif ($status === 'submitted') {
-        $score += 40;
-    } elseif ($status === 'draft') {
-        $score += 20;
-    }
-    if ($row['total_marks'] !== null) {
-        $score += 10;
-    }
-    if ($row['grade_points'] !== null) {
-        $score += 10;
-    }
-
-    if (!isset($best[$key]) || $score > $best[$key]['_score']) {
-        $row['_score'] = $score;
-        $best[$key] = $row;
-    }
-}
-
-foreach ($best as $row) {
-    $year = (int)($row['year_of_study'] ?? 1);
-    $sem = (int)($row['course_semester'] ?? 1);
-    if ($sem < 1 || $sem > 2) {
-        $sem = 1;
-    }
-    if (!isset($organizedResults[$year])) {
-        $organizedResults[$year] = [];
-    }
-    if (!isset($organizedResults[$year][$sem])) {
-        $organizedResults[$year][$sem] = [
-            'academic_year' => $row['academic_year'] ?? '-',
-            'courses' => []
-        ];
-    }
-    unset($row['_score']);
-    $organizedResults[$year][$sem]['courses'][] = $row;
-}
-ksort($organizedResults);
-foreach ($organizedResults as &$s) {
-    ksort($s);
-}
-unset($s);
-
-// In provisional view, always show all study-year/semester slots up to Year 4.
-if ($resultView === 'provisional') {
-    for ($y = 1; $y <= 4; $y++) {
-        if (!isset($organizedResults[$y])) {
-            $organizedResults[$y] = [];
-        }
-        for ($sem = 1; $sem <= 2; $sem++) {
-            if (!isset($organizedResults[$y][$sem])) {
-                $organizedResults[$y][$sem] = [
-                    'academic_year' => '-',
-                    'courses' => []
-                ];
-            }
-        }
-        ksort($organizedResults[$y]);
-    }
-    ksort($organizedResults);
 }
 
 $studentViewsPath = BASE_PATH . '/views/student/';
@@ -244,18 +139,15 @@ $linkGeneratePrn = file_exists($studentViewsPath . 'generate_prn.php') ? 'genera
 $linkEnroll = 'course-registration.php';
 $linkPayments = file_exists($studentViewsPath . 'payments.php') ? 'payments.php' : 'notifications.php';
 $linkProgramme = 'my-courses.php';
-$linkApplyServices = file_exists($studentViewsPath . 'services.php') ? 'services.php' : 'dashboard.php';
-$linkServiceHistory = 'notifications.php';
-$linkNewIdCards = file_exists($studentViewsPath . 'new-id-cards.php') ? 'new-id-cards.php' : 'dashboard.php';
 $linkMailbox = 'notifications.php';
 $linkAcademicCalendar = file_exists($studentViewsPath . 'academic-calendar.php') ? 'academic-calendar.php' : 'notifications.php';
 
-$pageTitle = 'My Programme - ' . APP_NAME;
+$pageTitle = 'Services - ' . APP_NAME;
 include '../../includes/header.php';
 ?>
 
 <style>
-body { background: #f8fafc; }
+body { background: #f2f4f7; }
 .student-sidebar { width:230px; background:linear-gradient(180deg,#fff 0%,#f8fafc 100%); min-height:100vh; height:100vh; overflow-y:auto; overflow-x:hidden; border-right:1px solid #e5e7eb; position:fixed; left:0; top:0; z-index:100; box-shadow:2px 0 12px rgba(15,23,42,.04); transition:transform .25s ease; }
 .student-sidebar ul { list-style:none; padding:10px 8px; margin:0; }
 .student-sidebar > ul { padding-bottom:20px; }
@@ -284,10 +176,11 @@ body { background: #f8fafc; }
 .sidebar-user-no { font-size: 0.9rem; font-weight: 700; }
 
 .sidebar-portal-title { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: #cbd5e1; margin-bottom: 0.4rem; font-weight: 700; }
-.programme-submenu { list-style:none; padding:0 0 0 10px; margin:0 0 6px 0; }
-.programme-submenu li { font-size:.79rem; margin-bottom:3px; }
+.services-submenu { list-style:none; padding:0 0 0 10px; margin:0 0 6px 0; }
+.services-submenu li { font-size:.79rem; margin-bottom:3px; }
+.services-submenu li.active { background:#dceaf3; color:#0e7490; border-color:#bfddeb; }
 
-.main-content { margin-left:230px; width:calc(100vw - 230px); max-width:calc(100vw - 230px); min-height:100vh; background:#f8fafc; transition:margin-left .25s ease, width .25s ease; }
+.main-content { margin-left:230px; width:calc(100vw - 230px); max-width:calc(100vw - 230px); min-height:100vh; transition:margin-left .25s ease, width .25s ease; }
 .main-content.full-width { margin-left:0; width:100vw; max-width:100vw; }
 .student-topbar { display:flex; align-items:center; justify-content:space-between; background:#fff; border-bottom:1px solid #e5e7eb; padding:.5rem 1.2rem; position:sticky; top:0; z-index:10; }
 .student-profile-pic { width:48px; height:48px; border-radius:50%; object-fit:cover; border:2px solid #e5e7eb; }
@@ -299,18 +192,32 @@ body { background: #f8fafc; }
 .chip.blue { background:#1f7aa8; color:#fff; }
 .chip.red { background:#fee2e2; color:#991b1b; }
 
-.wrap { padding:1rem 1.2rem; }
-.cardx { background:#fff; border:1px solid #e5e7eb; border-radius:10px; box-shadow:0 4px 16px rgba(15,23,42,.04); }
-.cardx-head { padding:1rem 1.2rem; border-bottom:1px solid #eef2f7; display:flex; align-items:center; justify-content:space-between; }
-.cardx-title { margin:0; font-size:1.05rem; font-weight:700; color:#0f172a; }
-.view-switch a { text-decoration:none; padding:6px 10px; border:1px solid #dbe3ef; border-radius:7px; font-size:.8rem; font-weight:700; color:#334155; margin-left:5px; }
-.view-switch a.active { background:#1f7aa8; border-color:#1f7aa8; color:#fff; }
-.tbl { width:100%; border-collapse:collapse; border:1px solid #e2e8f0; }
-.tbl th,.tbl td { padding:8px 10px; border-bottom:1px solid #edf2f7; font-size:.83rem; }
-.tbl th { background:#f8fafc; color:#1f2937; font-weight:700; }
-.badge-published { background:#dcfce7; border:1px solid #86efac; color:#166534; padding:2px 8px; border-radius:999px; font-size:.75rem; }
-.badge-provisional { background:#ffedd5; border:1px solid #fdba74; color:#9a3412; padding:2px 8px; border-radius:999px; font-size:.75rem; }
-.semester-title { background:#f8fafc; border:1px solid #e2e8f0; border-bottom:none; padding:.65rem .9rem; font-size:.94rem; font-weight:600; color:#334155; margin-top:1rem; }
+.wrap { padding:.9rem 1.2rem 1.3rem; }
+.cardx { background:#f6f7f9; border:1px solid #e5e7eb; border-radius:10px; padding:.9rem; }
+.service-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+.service-tile {
+    border:1px solid #d1d5db;
+    border-radius:12px;
+    background:#fff;
+    text-align:center;
+    padding:24px 12px;
+    text-decoration:none;
+    color:#1f2937;
+    font-weight:700;
+    font-size:.95rem;
+}
+.service-tile i { display:block; font-size:3rem; margin-bottom:12px; color:#111827; }
+.tbl { width:100%; border-collapse:collapse; background:#fff; border:1px solid #e5e7eb; }
+.tbl th,.tbl td { border:1px solid #e5e7eb; padding:8px; font-size:.82rem; }
+.tbl th { background:#f8fafc; font-weight:700; }
+.status-pill { border-radius:999px; padding:2px 8px; font-size:.74rem; font-weight:700; }
+.status-pill.pending { background:#ffedd5; color:#9a3412; }
+.status-pill.approved { background:#dcfce7; color:#166534; }
+.status-pill.rejected { background:#fee2e2; color:#991b1b; }
+.request-box { border:1px solid #e5e7eb; border-radius:10px; background:#fff; padding:12px; max-width:640px; }
+.request-box label { font-size:.84rem; font-weight:700; margin-bottom:6px; display:block; }
+.request-box textarea { width:100%; min-height:110px; border:1px solid #cbd5e1; border-radius:8px; padding:8px 10px; font-size:.84rem; }
+.request-box button { margin-top:10px; border:1px solid #1f7aa8; background:#1f7aa8; color:#fff; border-radius:8px; padding:8px 12px; font-weight:700; font-size:.84rem; }
 </style>
 
 <div class="student-sidebar">
@@ -328,16 +235,12 @@ body { background: #f8fafc; }
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
         <li><a href="<?php echo e($linkEnroll); ?>">ENROLLMENT & REGISTRATION</a></li>
         <li><a href="<?php echo e($linkPayments); ?>">PAYMENTS</a></li>
-        <li class="active"><a href="<?php echo e($linkProgramme); ?>">MY PROGRAMME</a></li>
-        <ul class="programme-submenu">
-            <li class="<?php echo $resultView === 'results' ? 'active' : ''; ?>"><a href="my-courses.php?view=results">MY RESULTS</a></li>
-            <li class="<?php echo $resultView === 'provisional' ? 'active' : ''; ?>"><a href="my-courses.php?view=provisional">MY PROVISIONAL RESULTS</a></li>
-        </ul>
-        <li><a href="services.php?tab=apply">SERVICES</a></li>
+        <li><a href="<?php echo e($linkProgramme); ?>">MY PROGRAMME</a></li>
+        <li class="active"><a href="services.php?tab=apply">SERVICES</a></li>
         <ul class="services-submenu">
-            <li><a href="services.php?tab=apply">APPLY FOR SERVICES</a></li>
-            <li><a href="services.php?tab=history">SERVICE HISTORY</a></li>
-            <li><a href="services.php?tab=new_id">NEW ID CARDS</a></li>
+            <li class="<?php echo $tab === 'apply' ? 'active' : ''; ?>"><a href="services.php?tab=apply">APPLY FOR SERVICES</a></li>
+            <li class="<?php echo $tab === 'history' ? 'active' : ''; ?>"><a href="services.php?tab=history">SERVICE HISTORY</a></li>
+            <li class="<?php echo $tab === 'new_id' ? 'active' : ''; ?>"><a href="services.php?tab=new_id">NEW ID CARDS</a></li>
         </ul>
         <li><a href="<?php echo e($linkDashboard); ?>">BIO DATA</a></li>
         <li><a href="<?php echo e($linkMailbox); ?>">MY MAILBOX</a></li>
@@ -384,46 +287,54 @@ body { background: #f8fafc; }
 
     <div class="wrap">
         <div class="cardx">
-            <div class="cardx-head">
-                <h4 class="cardx-title"><?php echo $resultView === 'results' ? 'MY RESULTS (PUBLISHED)' : 'MY PROVISIONAL RESULTS'; ?></h4>
-                <div class="view-switch">
-                    <a class="<?php echo $resultView === 'results' ? 'active' : ''; ?>" href="my-courses.php?view=results">MY RESULTS</a>
-                    <a class="<?php echo $resultView === 'provisional' ? 'active' : ''; ?>" href="my-courses.php?view=provisional">MY PROVISIONAL RESULTS</a>
+            <?php if ($tab === 'apply'): ?>
+                <div class="service-grid">
+                    <a class="service-tile" href="services.php?tab=apply&request=change_programme"><i class="fas fa-user-graduate"></i>CHANGE OF PROGRAMME</a>
+                    <a class="service-tile" href="services.php?tab=apply&request=administrative_registration"><i class="fas fa-user-tie"></i>ADMINISTRATIVE REGISTRATION</a>
+                    <a class="service-tile" href="services.php?tab=apply&request=accommodation"><i class="fas fa-home"></i>APPLY FOR ACCOMMODATION</a>
                 </div>
-            </div>
-            <div style="padding:1rem 1.2rem;">
-                <?php if (empty($organizedResults)): ?>
-                    <div class="alert alert-info mb-0">No <?php echo $resultView === 'results' ? 'published' : 'provisional'; ?> results found.</div>
-                <?php else: ?>
-                    <?php foreach ($organizedResults as $year => $semesters): ?>
-                        <?php foreach ($semesters as $semNum => $data): ?>
-                            <div class="semester-title">YEAR <?php echo (int)$year; ?> - <?php echo e($data['academic_year']); ?> - SEMESTER <?php echo (int)$semNum; ?></div>
-                            <table class="tbl">
-                                <thead>
-                                    <tr>
-                                        <th>CODE</th><th>TITLE</th><th>MARK</th><th>CUs</th><th>GRADE</th><th>GD POINT</th><th>REMARK</th><th>STATUS</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($data['courses'] as $c): ?>
-                                        <?php $status = strtolower((string)($c['result_status'] ?? '')); ?>
-                                        <tr>
-                                            <td><?php echo e($c['course_code'] ?? '-'); ?></td>
-                                            <td><?php echo e($c['course_name'] ?? '-'); ?></td>
-                                            <td><?php echo $c['total_marks'] !== null ? number_format((float)$c['total_marks'], 0) : '-'; ?></td>
-                                            <td><?php echo e($c['credit_hours'] ?? '-'); ?></td>
-                                            <td><?php echo !empty($c['grade']) ? e($c['grade']) : '-'; ?></td>
-                                            <td><?php echo $c['grade_points'] !== null ? number_format((float)$c['grade_points'], 2) : '-'; ?></td>
-                                            <td><?php echo $status === 'published' ? 'FINAL' : 'PROVISIONAL'; ?></td>
-                                            <td><?php echo $status === 'published' ? '<span class="badge-published">Published</span>' : '<span class="badge-provisional">' . e(ucfirst($status !== '' ? $status : 'provisional')) . '</span>'; ?></td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        <?php endforeach; ?>
-                    <?php endforeach; ?>
+                <?php if (!empty($_GET['request'])): ?>
+                    <div style="margin-top:14px;" class="request-box">
+                        <form method="POST" action="submit-request.php">
+                            <?php echo csrfField(); ?>
+                            <input type="hidden" name="request_type" value="<?php echo e((string)$_GET['request']); ?>">
+                            <label>Reason</label>
+                            <textarea name="reason" required></textarea>
+                            <button type="submit">Submit Request</button>
+                        </form>
+                    </div>
                 <?php endif; ?>
-            </div>
+            <?php elseif ($tab === 'history'): ?>
+                <?php if (empty($serviceHistory)): ?>
+                    <div class="alert alert-info mb-0">No service request history found.</div>
+                <?php else: ?>
+                    <table class="tbl">
+                        <thead><tr><th>Date</th><th>Request Type</th><th>Reason</th><th>Status</th><th>Admin Response</th></tr></thead>
+                        <tbody>
+                            <?php foreach ($serviceHistory as $h): ?>
+                                <?php $st = strtolower((string)($h['status'] ?? 'pending')); ?>
+                                <tr>
+                                    <td><?php echo !empty($h['created_at']) ? e(date('d M Y H:i', strtotime($h['created_at']))) : '-'; ?></td>
+                                    <td><?php echo e(ucwords(str_replace('_', ' ', (string)($h['request_type'] ?? '-')))); ?></td>
+                                    <td><?php echo e($h['reason'] ?? '-'); ?></td>
+                                    <td><span class="status-pill <?php echo e($st); ?>"><?php echo e(strtoupper($st)); ?></span></td>
+                                    <td><?php echo e($h['admin_response'] ?? '-'); ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
+            <?php else: ?>
+                <div class="request-box">
+                    <form method="POST" action="submit-request.php">
+                        <?php echo csrfField(); ?>
+                        <input type="hidden" name="request_type" value="new_id_card">
+                        <label>New ID Card Request Reason</label>
+                        <textarea name="reason" placeholder="Explain why you need a new ID card." required></textarea>
+                        <button type="submit">Submit New ID Card Request</button>
+                    </form>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
 </div>
