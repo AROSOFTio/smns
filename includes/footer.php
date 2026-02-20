@@ -131,10 +131,10 @@
         position: fixed;
         right: 22px;
         bottom: 22px;
-        width: 62px;
-        height: 62px;
+        width: 48px;
+        height: 48px;
         border: 1px solid #e5e7eb;
-        border-radius: 14px;
+        border-radius: 12px;
         background: #ffffff;
         color: #222;
         box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
@@ -143,7 +143,7 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 23px;
+        font-size: 18px;
     }
     #themeToggleBtn:hover {
         transform: translateY(-1px);
@@ -153,17 +153,102 @@
         outline-offset: 2px;
     }
 
-    html[data-theme='dark'] {
-        filter: invert(1) hue-rotate(180deg);
-        background: #0f172a;
+    :root {
+        --app-bg: #f4f6f9;
+        --app-text: #1f2937;
+        --app-muted: #6b7280;
+        --app-surface: #ffffff;
+        --app-surface-2: #f8fafc;
+        --app-border: #e5e7eb;
     }
-    html[data-theme='dark'] img,
-    html[data-theme='dark'] video,
-    html[data-theme='dark'] iframe,
-    html[data-theme='dark'] svg,
-    html[data-theme='dark'] canvas,
-    html[data-theme='dark'] [style*='background-image'] {
-        filter: invert(1) hue-rotate(180deg);
+    html[data-theme='dark'] {
+        --app-bg: #0b1220;
+        --app-text: #e5e7eb;
+        --app-muted: #9ca3af;
+        --app-surface: #111827;
+        --app-surface-2: #1f2937;
+        --app-border: #334155;
+    }
+    html[data-theme='dark'] body {
+        background: var(--app-bg) !important;
+        color: var(--app-text) !important;
+    }
+    html[data-theme='dark'] .sidebar,
+    html[data-theme='dark'] .student-sidebar,
+    html[data-theme='dark'] .topbar,
+    html[data-theme='dark'] .student-topbar,
+    html[data-theme='dark'] .card,
+    html[data-theme='dark'] .cardx,
+    html[data-theme='dark'] .cal-card,
+    html[data-theme='dark'] .enroll-shell,
+    html[data-theme='dark'] .history-shell,
+    html[data-theme='dark'] .mail-wrap,
+    html[data-theme='dark'] .main-content {
+        background: var(--app-surface) !important;
+        color: var(--app-text) !important;
+        border-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .table,
+    html[data-theme='dark'] .tbl,
+    html[data-theme='dark'] .cal-table,
+    html[data-theme='dark'] table {
+        background: var(--app-surface) !important;
+        color: var(--app-text) !important;
+    }
+    html[data-theme='dark'] th,
+    html[data-theme='dark'] td,
+    html[data-theme='dark'] .table th,
+    html[data-theme='dark'] .table td,
+    html[data-theme='dark'] .tbl th,
+    html[data-theme='dark'] .tbl td {
+        border-color: var(--app-border) !important;
+        color: var(--app-text) !important;
+    }
+    html[data-theme='dark'] .student-sidebar li,
+    html[data-theme='dark'] .sidebar-menu a,
+    html[data-theme='dark'] .student-sidebar a,
+    html[data-theme='dark'] .topbar a,
+    html[data-theme='dark'] .student-topbar a,
+    html[data-theme='dark'] label,
+    html[data-theme='dark'] small,
+    html[data-theme='dark'] p,
+    html[data-theme='dark'] span,
+    html[data-theme='dark'] h1,
+    html[data-theme='dark'] h2,
+    html[data-theme='dark'] h3,
+    html[data-theme='dark'] h4,
+    html[data-theme='dark'] h5,
+    html[data-theme='dark'] h6 {
+        color: var(--app-text) !important;
+    }
+    html[data-theme='dark'] .text-muted {
+        color: var(--app-muted) !important;
+    }
+    html[data-theme='dark'] input,
+    html[data-theme='dark'] select,
+    html[data-theme='dark'] textarea,
+    html[data-theme='dark'] .form-control {
+        background: var(--app-surface-2) !important;
+        color: var(--app-text) !important;
+        border-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .modal-content,
+    html[data-theme='dark'] .dropdown-menu,
+    html[data-theme='dark'] #profileDropMenu {
+        background: var(--app-surface) !important;
+        color: var(--app-text) !important;
+        border-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .btn-light {
+        background: var(--app-surface-2) !important;
+        border-color: var(--app-border) !important;
+        color: var(--app-text) !important;
+    }
+    html[data-theme='dark'] #themeToggleBtn {
+        background: #111827;
+        color: #f9fafb;
+        border-color: #334155;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
     }
     </style>
 
