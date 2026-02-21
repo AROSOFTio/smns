@@ -105,11 +105,23 @@ foreach ($schedules as $s) {
 
         $recips = array_map('trim', explode(',', $s['recipients']));
         $to = implode(',', $recips);
-        $subject = APP_NAME . ' - Scheduled Report: ' . $s['name'];
-        $body = "The requested scheduled report is ready.\n\nDownload: " . BASE_URL . '/downloads/' . $filename . "\n\nRegards,\n" . APP_NAME;
-        $headers = 'From: ' . SMTP_FROM_NAME . ' <' . SMTP_FROM_EMAIL . '>\r\n';
-        $headers .= 'Content-Type: text/plain; charset=UTF-8' . "\r\n";
-        $sent = mail($to, $subject, $body, $headers);
+        $downloadUrl = BASE_URL . '/downloads/' . $filename;
+        if ($type === 'financial') {
+            $sent = Helper::sendTemplatedEmail('finance_alert', $to, [
+                'recipient_name' => 'Finance Team',
+                'alert_title' => $s['name'],
+                'alert_message' => 'A scheduled financial report is ready for review.',
+                'reference' => 'Schedule #' . $s['id'],
+                'action_url' => $downloadUrl
+            ]);
+        } else {
+            $sent = Helper::sendTemplatedEmail('scheduled_report', $to, [
+                'recipient_name' => 'Team',
+                'report_name' => $s['name'],
+                'report_type' => $type,
+                'download_url' => $downloadUrl
+            ]);
+        }
 
         // update last_sent_at
         $u = $conn->prepare("UPDATE scheduled_reports SET last_sent_at = NOW() WHERE id = :id");

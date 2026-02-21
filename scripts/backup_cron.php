@@ -87,9 +87,8 @@ try {
         $emails = array_filter(array_map('trim', explode(',', $recips)));
         $subject = APP_NAME . ' - Scheduled Backup ' . ($created ? 'Succeeded' : 'FAILED');
         $body = ($created ? "Backup created: " . BASE_URL . '/database%20backup/' . basename($filePath) : "Backup failed on " . date('Y-m-d H:i:s')) . "\n\nRegards,\n" . APP_NAME;
-        $headers = 'From: ' . SMTP_FROM_NAME . ' <' . SMTP_FROM_EMAIL . '>' . "\r\n" . 'Content-Type: text/plain; charset=UTF-8' . "\r\n";
         if (!empty($emails)) {
-            @mail(implode(',', $emails), $subject, $body, $headers);
+            Helper::sendEmail($emails, $subject, $body);
         }
 
         // create notifications for all admin users

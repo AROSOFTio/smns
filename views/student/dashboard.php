@@ -15,9 +15,222 @@ $db = new Database();
 $conn = $db->getConnection();
 $studentDbId = (int)($studentProfile['id'] ?? 0);
 
+/**
+ * Ensure student profile-completion fields exist.
+ * This is safe to run repeatedly.
+ */
+function ensureStudentProfileCompletionColumns(PDO $conn) {
+    $columns = [
+        'religion' => 'VARCHAR(100) NULL',
+        'district' => 'VARCHAR(100) NULL',
+        'nationality' => 'VARCHAR(100) NULL',
+        'national_id' => 'VARCHAR(100) NULL',
+        'passport' => 'VARCHAR(100) NULL',
+        'guardian_name' => 'VARCHAR(200) NULL',
+        'guardian_relation' => 'VARCHAR(100) NULL',
+        'guardian_email' => 'VARCHAR(150) NULL',
+        'guardian_phone' => 'VARCHAR(30) NULL',
+        'profile_locked' => 'TINYINT(1) NOT NULL DEFAULT 0',
+        'profile_completed_at' => 'DATETIME NULL'
+    ];
+
+    foreach ($columns as $column => $definition) {
+        try {
+            $exists = $conn->query("SHOW COLUMNS FROM students LIKE '{$column}'")->fetch();
+            if (!$exists) {
+                $conn->exec("ALTER TABLE students ADD COLUMN {$column} {$definition}");
+            }
+        } catch (Exception $e) {
+            // Non-fatal: continue with available columns.
+        }
+    }
+}
+
+ensureStudentProfileCompletionColumns($conn);
+
+$studentProfileLocked = 0;
+$studentExistingPhoto = '';
+if ($studentDbId > 0) {
+    try {
+        $metaStmt = $conn->prepare("SELECT COALESCE(profile_locked, 0) AS profile_locked, photo FROM students WHERE id = :student_id LIMIT 1");
+        $metaStmt->execute(['student_id' => $studentDbId]);
+        $meta = $metaStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $studentProfileLocked = (int)($meta['profile_locked'] ?? 0);
+        $studentExistingPhoto = (string)($meta['photo'] ?? '');
+    } catch (Exception $e) {
+        $studentProfileLocked = 0;
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'complete_profile_once' && $studentDbId > 0) {
+    if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $session->setFlash('error', 'Invalid request token.');
+        header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+        exit;
+    }
+
+    // Re-check lock state directly from DB to prevent bypass.
+    try {
+        $lockStmt = $conn->prepare("SELECT COALESCE(profile_locked, 0) AS profile_locked, photo FROM students WHERE id = :student_id LIMIT 1");
+        $lockStmt->execute(['student_id' => $studentDbId]);
+        $lockData = $lockStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $lockedNow = (int)($lockData['profile_locked'] ?? 0);
+        $studentExistingPhoto = (string)($lockData['photo'] ?? '');
+    } catch (Exception $e) {
+        $lockedNow = $studentProfileLocked;
+    }
+
+    if ($lockedNow === 1) {
+        $session->setFlash('error', 'Your profile is already completed and locked.');
+        header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+        exit;
+    }
+
+    $phone = trim(Security::sanitize($_POST['phone'] ?? ''));
+    $religion = trim(Security::sanitize($_POST['religion'] ?? ''));
+    $district = trim(Security::sanitize($_POST['district'] ?? ''));
+    $nationality = trim(Security::sanitize($_POST['nationality'] ?? ''));
+    $nationalId = trim(Security::sanitize($_POST['national_id'] ?? ''));
+    $passport = trim(Security::sanitize($_POST['passport'] ?? ''));
+    $guardianName = trim(Security::sanitize($_POST['guardian_name'] ?? ''));
+    $guardianRelation = trim(Security::sanitize($_POST['guardian_relation'] ?? ''));
+    $guardianEmail = trim($_POST['guardian_email'] ?? '');
+    $guardianPhone = trim(Security::sanitize($_POST['guardian_phone'] ?? ''));
+    $nextKinName = trim(Security::sanitize($_POST['next_of_kin_name'] ?? ''));
+    $nextKinPhone = trim(Security::sanitize($_POST['next_of_kin_phone'] ?? ''));
+    $nextKinRelationship = trim(Security::sanitize($_POST['next_of_kin_relationship'] ?? ''));
+
+    $validationErrors = [];
+    if ($phone === '') $validationErrors[] = 'Telephone is required.';
+    if ($religion === '') $validationErrors[] = 'Religion is required.';
+    if ($district === '') $validationErrors[] = 'District is required.';
+    if ($nationality === '') $validationErrors[] = 'Nationality is required.';
+    if ($nationalId === '') $validationErrors[] = 'National ID number is required.';
+    if ($guardianName === '') $validationErrors[] = 'Guardian name is required.';
+    if ($guardianRelation === '') $validationErrors[] = 'Guardian relation is required.';
+    if ($guardianPhone === '') $validationErrors[] = 'Guardian phone is required.';
+    if ($guardianEmail !== '' && !filter_var($guardianEmail, FILTER_VALIDATE_EMAIL)) $validationErrors[] = 'Guardian email must be valid if provided.';
+    if ($nextKinName === '') $validationErrors[] = 'Next of kin name is required.';
+    if ($nextKinPhone === '') $validationErrors[] = 'Next of kin phone is required.';
+    if ($nextKinRelationship === '') $validationErrors[] = 'Next of kin relationship is required.';
+
+    $photoPath = $studentExistingPhoto !== '' ? $studentExistingPhoto : null;
+    $photoFile = $_FILES['profile_photo'] ?? null;
+    $hasUpload = !empty($photoFile['name']) && (int)($photoFile['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
+
+    if (!$hasUpload && empty($photoPath)) {
+        $validationErrors[] = 'Student profile photo is required.';
+    }
+
+    if ($hasUpload) {
+        if (($photoFile['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+            $validationErrors[] = 'Failed to upload profile photo.';
+        } else {
+            $ext = strtolower(pathinfo($photoFile['name'], PATHINFO_EXTENSION));
+            $allowed = ['jpg', 'jpeg', 'png'];
+            if (!in_array($ext, $allowed, true)) {
+                $validationErrors[] = 'Profile photo must be JPG or PNG.';
+            }
+            if (!empty($photoFile['size']) && (int)$photoFile['size'] > MAX_FILE_SIZE) {
+                $validationErrors[] = 'Profile photo exceeds maximum upload size.';
+            }
+        }
+    }
+
+    if (!empty($validationErrors)) {
+        $session->setFlash('error', implode(' ', $validationErrors));
+        header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+        exit;
+    }
+
+    if ($hasUpload) {
+        $uploadDir = UPLOAD_PATH . '/students/';
+        if (!is_dir($uploadDir)) {
+            @mkdir($uploadDir, 0755, true);
+        }
+        $ext = strtolower(pathinfo($photoFile['name'], PATHINFO_EXTENSION));
+        $ref = preg_replace('/[^A-Za-z0-9_-]/', '', (string)($studentProfile['student_id'] ?? $studentDbId));
+        $fileName = 'student_' . ($ref !== '' ? $ref : $studentDbId) . '_' . time() . '.' . $ext;
+        $target = $uploadDir . $fileName;
+
+        if (!@move_uploaded_file($photoFile['tmp_name'], $target)) {
+            $session->setFlash('error', 'Failed to save uploaded profile photo.');
+            header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+            exit;
+        }
+        $photoPath = 'uploads/students/' . $fileName;
+    }
+
+    try {
+        $conn->beginTransaction();
+        $updStmt = $conn->prepare("
+            UPDATE students
+            SET phone = :phone,
+                religion = :religion,
+                district = :district,
+                nationality = :nationality,
+                national_id = :national_id,
+                passport = :passport,
+                guardian_name = :guardian_name,
+                guardian_relation = :guardian_relation,
+                guardian_email = :guardian_email,
+                guardian_phone = :guardian_phone,
+                emergency_contact_name = :next_kin_name,
+                emergency_contact_phone = :next_kin_phone,
+                emergency_contact_relationship = :next_kin_relationship,
+                photo = :photo,
+                profile_locked = 1,
+                profile_completed_at = NOW(),
+                updated_at = NOW()
+            WHERE id = :student_id
+        ");
+        $updStmt->execute([
+            'phone' => $phone,
+            'religion' => $religion,
+            'district' => $district,
+            'nationality' => $nationality,
+            'national_id' => $nationalId,
+            'passport' => $passport !== '' ? $passport : null,
+            'guardian_name' => $guardianName,
+            'guardian_relation' => $guardianRelation,
+            'guardian_email' => $guardianEmail !== '' ? $guardianEmail : null,
+            'guardian_phone' => $guardianPhone,
+            'next_kin_name' => $nextKinName,
+            'next_kin_phone' => $nextKinPhone,
+            'next_kin_relationship' => $nextKinRelationship,
+            'photo' => $photoPath,
+            'student_id' => $studentDbId
+        ]);
+
+        $refreshStmt = $conn->prepare("SELECT * FROM students WHERE id = :student_id LIMIT 1");
+        $refreshStmt->execute(['student_id' => $studentDbId]);
+        $freshProfile = $refreshStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if ($freshProfile) {
+            $_SESSION['student_profile'] = $freshProfile;
+        }
+
+        $conn->commit();
+        $session->setFlash('success', 'Profile completed successfully. Your profile is now locked.');
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        $session->setFlash('error', 'Failed to save profile information.');
+    }
+
+    header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_contacts' && $studentDbId > 0) {
     if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $session->setFlash('error', 'Invalid request token.');
+        header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+        exit;
+    }
+
+    if ($studentProfileLocked === 1) {
+        $session->setFlash('error', 'Profile updates are locked.');
         header('Location: ' . BASE_URL . '/views/student/dashboard.php');
         exit;
     }
@@ -145,6 +358,11 @@ if ($studentDbId > 0) {
     } catch (Exception $e) {
         $studentRow = [];
     }
+}
+
+if (!empty($studentRow)) {
+    $studentProfile = array_merge($studentProfile, $studentRow);
+    $studentProfileLocked = (int)($studentRow['profile_locked'] ?? $studentProfileLocked);
 }
 
 $currentSemester = [
@@ -437,6 +655,50 @@ body { background: #f8fafc; }
         border: 1px solid #ddd !important;
     }
 }
+
+.profile-lock-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(15, 23, 42, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+.profile-lock-modal {
+    width: min(980px, 100%);
+    max-height: 95vh;
+    overflow: auto;
+    background: #fff;
+    border-radius: 10px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 20px 45px rgba(2, 6, 23, 0.35);
+    padding: 1rem 1.1rem 1.15rem;
+}
+.profile-lock-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 0.35rem;
+}
+.profile-lock-subtitle {
+    font-size: 0.84rem;
+    color: #334155;
+    margin-bottom: 0.75rem;
+}
+.profile-lock-section {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 0.7rem;
+    margin-bottom: 0.7rem;
+}
+.profile-lock-section h6 {
+    margin: 0 0 0.55rem;
+    font-size: 0.83rem;
+    font-weight: 700;
+    color: #1e293b;
+}
 </style>
 
 <div class="student-sidebar">
@@ -532,6 +794,108 @@ document.addEventListener('click', function() {
 });
 </script>
 
+    <?php if ($studentProfileLocked !== 1): ?>
+        <div id="profileCompletionOverlay" class="profile-lock-overlay">
+            <div class="profile-lock-modal">
+                <div class="profile-lock-title">Complete Your Profile (One-Time Submission)</div>
+                <div class="profile-lock-subtitle">
+                    Fill all required details below. After submission, profile editing will be locked.
+                </div>
+                <form method="POST" enctype="multipart/form-data">
+                    <?php echo csrfField(); ?>
+                    <input type="hidden" name="action" value="complete_profile_once">
+
+                    <div class="profile-lock-section">
+                        <h6>Personal Details</h6>
+                        <div class="form-row">
+                            <div class="form-group col-md-4">
+                                <label>Tel. Phone <span class="text-danger">*</span></label>
+                                <input type="text" name="phone" class="form-control form-control-sm" required value="<?php echo e($studentRow['phone'] ?? ($studentProfile['phone'] ?? '')); ?>">
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label>Religion <span class="text-danger">*</span></label>
+                                <input type="text" name="religion" class="form-control form-control-sm" required value="<?php echo e($studentRow['religion'] ?? ($studentProfile['religion'] ?? '')); ?>">
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label>District <span class="text-danger">*</span></label>
+                                <input type="text" name="district" class="form-control form-control-sm" required value="<?php echo e($studentRow['district'] ?? ($studentRow['city'] ?? ($studentProfile['district'] ?? ''))); ?>">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group col-md-4">
+                                <label>Nationality <span class="text-danger">*</span></label>
+                                <input type="text" name="nationality" class="form-control form-control-sm" required value="<?php echo e($studentRow['nationality'] ?? ($studentRow['country'] ?? ($studentProfile['nationality'] ?? ''))); ?>">
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label>National ID Number <span class="text-danger">*</span></label>
+                                <input type="text" name="national_id" class="form-control form-control-sm" required value="<?php echo e($studentRow['national_id'] ?? ($studentProfile['national_id'] ?? '')); ?>">
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label>Passport</label>
+                                <input type="text" name="passport" class="form-control form-control-sm" value="<?php echo e($studentRow['passport'] ?? ($studentProfile['passport'] ?? '')); ?>">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group col-md-6">
+                                <label>Profile Photo (JPG/PNG) <?php echo empty($studentRow['photo'] ?? $studentProfile['photo'] ?? '') ? '<span class="text-danger">*</span>' : ''; ?></label>
+                                <input type="file" name="profile_photo" class="form-control-file" accept=".jpg,.jpeg,.png">
+                                <?php if (!empty($studentRow['photo'] ?? $studentProfile['photo'] ?? '')): ?>
+                                    <small class="text-muted">Current photo exists. Upload only if you want to replace it before lock.</small>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-lock-section">
+                        <h6>Guardian Details</h6>
+                        <div class="form-row">
+                            <div class="form-group col-md-6">
+                                <label>Guardian Name <span class="text-danger">*</span></label>
+                                <input type="text" name="guardian_name" class="form-control form-control-sm" required value="<?php echo e($studentRow['guardian_name'] ?? ''); ?>">
+                            </div>
+                            <div class="form-group col-md-6">
+                                <label>Relation <span class="text-danger">*</span></label>
+                                <input type="text" name="guardian_relation" class="form-control form-control-sm" required value="<?php echo e($studentRow['guardian_relation'] ?? ''); ?>">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group col-md-6">
+                                <label>Guardian Email (Optional)</label>
+                                <input type="email" name="guardian_email" class="form-control form-control-sm" value="<?php echo e($studentRow['guardian_email'] ?? ''); ?>">
+                            </div>
+                            <div class="form-group col-md-6">
+                                <label>Guardian Phone <span class="text-danger">*</span></label>
+                                <input type="text" name="guardian_phone" class="form-control form-control-sm" required value="<?php echo e($studentRow['guardian_phone'] ?? ''); ?>">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-lock-section">
+                        <h6>Next of Kin</h6>
+                        <div class="form-row">
+                            <div class="form-group col-md-4">
+                                <label>Name <span class="text-danger">*</span></label>
+                                <input type="text" name="next_of_kin_name" class="form-control form-control-sm" required value="<?php echo e($studentRow['emergency_contact_name'] ?? ''); ?>">
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label>Phone <span class="text-danger">*</span></label>
+                                <input type="text" name="next_of_kin_phone" class="form-control form-control-sm" required value="<?php echo e($studentRow['emergency_contact_phone'] ?? ''); ?>">
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label>Relationship <span class="text-danger">*</span></label>
+                                <input type="text" name="next_of_kin_relationship" class="form-control form-control-sm" required value="<?php echo e($studentRow['emergency_contact_relationship'] ?? ''); ?>">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="text-right">
+                        <button type="submit" class="btn btn-primary btn-sm">Save and Lock Profile</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <div style="padding:2.5rem 3rem 1rem 3rem;">
         <?php if ($session->getFlash('success')): ?>
             <div class="alert alert-success"><?php echo e($session->getFlash('success')); ?></div>
@@ -588,43 +952,14 @@ document.addEventListener('click', function() {
                     <table class="bio-details-table">
                         <tr><td><b>SURNAME</b></td><td>:<?php echo e($studentRow['last_name'] ?? ($studentProfile['last_name'] ?? '-')); ?></td><td><b>RELIGION</b></td><td>:<?php echo e($studentRow['religion'] ?? ($studentProfile['religion'] ?? '-')); ?></td></tr>
                         <tr><td><b>OTHER NAMES</b></td><td>:<?php echo e(trim(($studentRow['first_name'] ?? ($studentProfile['first_name'] ?? '')) . ' ' . ($studentRow['middle_name'] ?? ($studentProfile['middle_name'] ?? ''))) ?: '-'); ?></td><td><b>DISTRICT</b></td><td>:<?php echo e($studentRow['district'] ?? ($studentRow['city'] ?? ($studentProfile['district'] ?? '-'))); ?></td></tr>
-                        <tr><td><b>EMAIL</b></td><td>:<?php echo e($studentRow['email'] ?? ($studentProfile['email'] ?? '-')); ?></td><td><b>NATIONALITY</b></td><td>:<?php echo e($studentRow['country'] ?? ($studentProfile['country'] ?? '-')); ?></td></tr>
+                        <tr><td><b>EMAIL</b></td><td>:<?php echo e($studentRow['email'] ?? ($studentProfile['email'] ?? '-')); ?></td><td><b>NATIONALITY</b></td><td>:<?php echo e($studentRow['nationality'] ?? ($studentRow['country'] ?? ($studentProfile['nationality'] ?? '-'))); ?></td></tr>
                         <tr><td><b>TEL. PHONE</b></td><td>:<?php echo e($studentRow['phone'] ?? ($studentProfile['phone'] ?? '-')); ?></td><td><b>NATIONAL ID NO.</b></td><td>:<?php echo e($studentRow['national_id'] ?? ($studentProfile['national_id'] ?? '-')); ?></td></tr>
                         <tr><td><b>SEX</b></td><td>:<?php echo e($studentRow['gender'] ?? ($studentProfile['gender'] ?? '-')); ?></td><td><b>PASSPORT</b></td><td>:<?php echo e($studentRow['passport'] ?? ($studentProfile['passport'] ?? '-')); ?></td></tr>
                         <tr><td><b>DATE OF BIRTH</b></td><td>:<?php echo !empty($studentRow['date_of_birth'] ?? $studentProfile['date_of_birth']) ? date('d/m/Y', strtotime($studentRow['date_of_birth'] ?? $studentProfile['date_of_birth'])) : '-'; ?></td><td></td><td></td></tr>
                     </table>
-                    <div class="bio-edit-link" id="editContactsBtn">Edit Contacts</div>
-                    <form method="POST" id="editContactsForm" style="display:none; margin-top:1rem;">
-                        <?php echo csrfField(); ?>
-                        <input type="hidden" name="action" value="update_contacts">
-                        <div class="form-row">
-                            <div class="form-group col-md-4">
-                                <label>Phone</label>
-                                <input type="text" name="phone" class="form-control form-control-sm" value="<?php echo e($studentRow['phone'] ?? ($studentProfile['phone'] ?? '')); ?>">
-                            </div>
-                            <div class="form-group col-md-4">
-                                <label>Email</label>
-                                <input type="email" name="email" class="form-control form-control-sm" value="<?php echo e($studentRow['email'] ?? ($studentProfile['email'] ?? '')); ?>">
-                            </div>
-                            <div class="form-group col-md-4">
-                                <label>City</label>
-                                <input type="text" name="city" class="form-control form-control-sm" value="<?php echo e($studentRow['city'] ?? ''); ?>">
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group col-md-6">
-                                <label>Address</label>
-                                <input type="text" name="address" class="form-control form-control-sm" value="<?php echo e($studentRow['address'] ?? ''); ?>">
-                            </div>
-                            <div class="form-group col-md-4">
-                                <label>Country</label>
-                                <input type="text" name="country" class="form-control form-control-sm" value="<?php echo e($studentRow['country'] ?? ''); ?>">
-                            </div>
-                            <div class="form-group col-md-2 d-flex align-items-end">
-                                <button type="submit" class="btn btn-primary btn-sm w-100">Save</button>
-                            </div>
-                        </div>
-                    </form>
+                    <?php if ($studentProfileLocked === 1): ?>
+                        <div class="alert alert-info mt-3 mb-0">Profile is locked after first submission. Contact administration for corrections.</div>
+                    <?php endif; ?>
                 </div>
 
                 <div class="tab-panel" data-panel="academic">

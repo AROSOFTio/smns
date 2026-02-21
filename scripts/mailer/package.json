@@ -1,0 +1,11 @@
+{
+  "name": "smns-mailer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nodemailer bridge for SMNS email delivery",
+  "main": "send-email.js",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "nodemailer": "^6.9.15"
+  }
+}

@@ -15,6 +15,9 @@ if (!$auth->isLoggedIn() || $auth->getRole() !== 'admin') {
     exit;
 }
 
+// Resolve current admin once for reuse in checks/actions
+$currentUser = $auth->getCurrentUser();
+
 // Maintenance actions handler (backup DB, clear cache)
 $actionResult = null;
 $showLogs = isset($_GET['show_logs']) && $_GET['show_logs'] == 1;
@@ -97,9 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                         $emails = array_filter(array_map('trim', explode(',', $recips)));
                         $subject = APP_NAME . ' - Manual Backup Created';
                         $body = 'A manual database backup was created by ' . ($currentUser['username'] ?? 'system') . ".\n\nBackup: " . basename($filePath) . "\n\nRegards,\n" . APP_NAME;
-                        $headers = 'From: ' . SMTP_FROM_NAME . ' <' . SMTP_FROM_EMAIL . '>\r\n';
-                        $headers .= 'Content-Type: text/plain; charset=UTF-8' . "\r\n";
-                        if (!empty($emails)) { @mail(implode(',', $emails), $subject, $body, $headers); }
+                        if (!empty($emails)) { Helper::sendEmail($emails, $subject, $body); }
 
                         // Create notifications for admins
                         $db = new Database(); $conn = $db->getConnection();
@@ -119,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                         $emails = array_filter(array_map('trim', explode(',', $recips)));
                         $subject = APP_NAME . ' - Manual Backup FAILED';
                         $body = 'A manual database backup attempt failed. Please check system logs.\n\nRegards,\n' . APP_NAME;
-                        if (!empty($emails)) { @mail(implode(',', $emails), $subject, $body, $headers ?? ''); }
+                        if (!empty($emails)) { Helper::sendEmail($emails, $subject, $body); }
                         // notify admins (include action to re-run backup)
                         $db = new Database(); $conn = $db->getConnection();
                         $admins = $conn->prepare("SELECT id FROM users WHERE role = 'admin'");
@@ -321,8 +322,12 @@ try {
     // Attempt to get recent activities to verify the table exists and is readable
     $activities = $logger->getRecentActivities(1);
     
-        // Determine a user id to exercise write (prefer current admin)
-        $testUserId = $currentUser['id'] ?? $_SESSION['admin_id'] ?? $_SESSION['user_id'] ?? null;
+        // Determine a user id to exercise write (prefer module-specific admin session key)
+        $testUserId = $currentUser['id']
+            ?? $_SESSION['admin_user_id']
+            ?? $_SESSION['admin_id']
+            ?? $_SESSION['user_id']
+            ?? null;
         if ($testUserId) {
             $logResult = $logger->log($testUserId, 'health_check', 'system', 'System health check performed');
             if ($logResult) {

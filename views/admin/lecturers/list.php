@@ -232,6 +232,13 @@ include dirname(__DIR__, 3) . '/includes/header.php';
         line-height: 1.2;
         margin: 0.1rem;
     }
+
+    .lecturer-success-message code {
+        background: #f8f9fa;
+        color: #212529;
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
     
     /* Actions column responsive */
     @media (max-width: 992px) {
@@ -314,9 +321,14 @@ include dirname(__DIR__, 3) . '/includes/header.php';
         <?php 
         $successMessage = $session->getFlash('success');
         if ($successMessage): 
+            $renderAsHtml = strpos($successMessage, '<strong>Lecturer added successfully!') === 0;
         ?>
-            <div class="alert alert-success">
-                <?php echo e($successMessage); ?>
+            <div class="alert alert-success lecturer-success-message">
+                <?php if ($renderAsHtml): ?>
+                    <?php echo $successMessage; ?>
+                <?php else: ?>
+                    <?php echo e($successMessage); ?>
+                <?php endif; ?>
             </div>
         <?php endif; ?>
         

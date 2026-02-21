@@ -48,7 +48,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
     $semesterFilter = isset($_POST['semester_id']) && (int)$_POST['semester_id'] > 0 ? (int)$_POST['semester_id'] : null;
 
-    $sql = "SELECT * FROM student_requests WHERE request_type = 'semester_registration' AND status = 'pending'";
+    $sql = "SELECT sr.*, s.first_name, s.last_name, u.email AS user_email
+            FROM student_requests sr
+            LEFT JOIN students s ON sr.student_id = s.id
+            LEFT JOIN users u ON sr.user_id = u.id
+            WHERE sr.request_type = 'semester_registration' AND sr.status = 'pending'";
     $params = [];
     if ($semesterFilter) { $sql .= " AND semester_id = :semid"; $params['semid'] = $semesterFilter; }
     $rowsStmt = $conn->prepare($sql);
@@ -123,6 +127,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     'msg' => 'Your semester registration request has been approved by administration.',
                     'type' => 'success',
                     'link' => BASE_URL . '/views/student/course-registration.php?semester_id=' . ($semId ?? '')
+                ]);
+            }
+
+            if (!empty($r['user_email']) && filter_var($r['user_email'], FILTER_VALIDATE_EMAIL)) {
+                Helper::sendTemplatedEmail('request_response', $r['user_email'], [
+                    'recipient_name' => trim(($r['first_name'] ?? '') . ' ' . ($r['last_name'] ?? '')) ?: 'Student',
+                    'request_type' => 'Semester Registration Request',
+                    'status' => 'approved',
+                    'admin_response' => 'Approved by admin (bulk)',
+                    'request_id' => $r['id'] ?? '',
+                    'action_url' => BASE_URL . '/views/student/course-registration.php?semester_id=' . ($semId ?? '')
                 ]);
             }
 
@@ -276,6 +291,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
             } catch (Exception $ex) {
                 // swallow
             }
+        }
+
+        if (!empty($row['user_email']) && filter_var($row['user_email'], FILTER_VALIDATE_EMAIL)) {
+            Helper::sendTemplatedEmail('request_response', $row['user_email'], [
+                'recipient_name' => $studentName,
+                'request_type' => ucfirst(str_replace('_', ' ', (string)$row['request_type'])),
+                'status' => $newStatus,
+                'admin_response' => $response,
+                'request_id' => $reqId,
+                'action_url' => $noteLink
+            ]);
         }
 
         $session->setFlash('success', 'Request ' . $newStatus . ' successfully');

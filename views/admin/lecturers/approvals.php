@@ -88,26 +88,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             // Send approval email with credentials
             $fullName = trim($lecturer['title'] . ' ' . $lecturer['first_name'] . ' ' . $lecturer['last_name']);
-            $subject = APP_NAME . ' - Lecturer Account Approved';
-            $message = "Dear {$fullName},\n\n" .
-                       "Congratulations! Your lecturer application has been approved.\n\n" .
-                       "Your login credentials:\n" .
-                       "Lecturer ID: {$lecturer['lecturer_id']}\n" .
-                       "Username: {$lecturer['username']}\n" .
-                       "Temporary Password: {$tempPassword}\n\n" .
-                       "Portal URL: " . BASE_URL . "/views/lecturer/login.php\n\n" .
-                       "Important:\n" .
-                       "- You will be required to change your password on first login\n" .
-                       "- Keep these credentials secure\n" .
-                       "- Contact administration if you have any issues\n\n" .
-                       "Welcome to " . APP_NAME . "!\n\n" .
-                       "Regards,\n" . APP_NAME . " Administration";
-
-            $headers = 'From: ' . SMTP_FROM_NAME . ' <' . SMTP_FROM_EMAIL . '>';
-
             $mailSent = false;
             try {
-                $mailSent = @mail($lecturer['email'], $subject, $message, $headers);
+                $mailSent = Helper::sendTemplatedEmail('approval_status', $lecturer['email'], [
+                    'recipient_name' => $fullName,
+                    'request_label' => 'Lecturer Application',
+                    'status' => 'approved',
+                    'admin_response' => $adminNotes,
+                    'username' => $lecturer['username'],
+                    'temporary_password' => $tempPassword,
+                    'login_url' => BASE_URL . '/views/lecturer/login.php'
+                ]);
             } catch (Exception $e) {
                 error_log("Failed to send lecturer approval email: " . $e->getMessage());
             }
@@ -138,18 +129,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             // Send rejection email
             $fullName = trim($lecturer['title'] . ' ' . $lecturer['first_name'] . ' ' . $lecturer['last_name']);
-            $subject = APP_NAME . ' - Lecturer Application Status';
-            $message = "Dear {$fullName},\n\n" .
-                       "We regret to inform you that your lecturer application has not been approved at this time.\n\n" .
-                       "Reason: {$adminNotes}\n\n" .
-                       "If you believe this decision was made in error or if you have additional information to provide, please contact the administration.\n\n" .
-                       "Thank you for your interest in " . APP_NAME . ".\n\n" .
-                       "Regards,\n" . APP_NAME . " Administration";
-
-            $headers = 'From: ' . SMTP_FROM_NAME . ' <' . SMTP_FROM_EMAIL . '>';
-
             try {
-                @mail($lecturer['email'], $subject, $message, $headers);
+                Helper::sendTemplatedEmail('approval_status', $lecturer['email'], [
+                    'recipient_name' => $fullName,
+                    'request_label' => 'Lecturer Application',
+                    'status' => 'rejected',
+                    'admin_response' => $adminNotes
+                ]);
             } catch (Exception $e) {
                 error_log("Failed to send lecturer rejection email: " . $e->getMessage());
             }

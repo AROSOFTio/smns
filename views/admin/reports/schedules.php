@@ -105,12 +105,23 @@ function sendScheduledReportNow($conn, $schedule) {
     // send email with link
     $recips = array_map('trim', explode(',', $schedule['recipients']));
     $to = implode(',', $recips);
-    $subject = APP_NAME . ' - Scheduled Report: ' . $schedule['name'];
-    $body = "The requested scheduled report is ready.\n\nDownload: " . BASE_URL . '/downloads/' . $filename . "\n\nRegards,\n" . APP_NAME;
-    $headers = 'From: ' . SMTP_FROM_NAME . ' <' . SMTP_FROM_EMAIL . '>\r\n';
-    $headers .= 'Content-Type: text/plain; charset=UTF-8' . "\r\n";
-
-    $sent = mail($to, $subject, $body, $headers);
+    $downloadUrl = BASE_URL . '/downloads/' . $filename;
+    if ($type === 'financial') {
+        $sent = Helper::sendTemplatedEmail('finance_alert', $to, [
+            'recipient_name' => 'Finance Team',
+            'alert_title' => $schedule['name'],
+            'alert_message' => 'A scheduled financial report is ready for review.',
+            'reference' => 'Schedule #' . $schedule['id'],
+            'action_url' => $downloadUrl
+        ]);
+    } else {
+        $sent = Helper::sendTemplatedEmail('scheduled_report', $to, [
+            'recipient_name' => 'Team',
+            'report_name' => $schedule['name'],
+            'report_type' => $type,
+            'download_url' => $downloadUrl
+        ]);
+    }
 
     // update last_sent_at
     $u = $conn->prepare("UPDATE scheduled_reports SET last_sent_at = NOW() WHERE id = :id");

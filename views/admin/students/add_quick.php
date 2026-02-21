@@ -84,8 +84,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
 
             $conn->commit();
+            try {
+                $mailSent = Helper::sendTemplatedEmail('credentials_issued', $email, [
+                    'recipient_name' => trim($first_name . ' ' . $last_name),
+                    'role_label' => 'Student',
+                    'account_id_label' => 'Student ID',
+                    'account_id_value' => $studentCode,
+                    'username' => $username,
+                    'temporary_password' => $tempPassword,
+                    'login_url' => BASE_URL . '/views/student/login.php'
+                ]);
+            } catch (Exception $mailEx) {
+                $mailSent = false;
+            }
 
             $success = 'Student created. Username: ' . $username . ' Password: ' . $tempPassword;
+            $success .= $mailSent
+                ? ' Credentials were emailed to the student.'
+                : ' Account created, but email delivery failed. Share credentials manually.';
         } catch (Exception $e) {
             if ($conn->inTransaction()) $conn->rollBack();
             $errors[] = 'Failed to create student: ' . $e->getMessage();

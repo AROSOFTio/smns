@@ -30,13 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['test_email'])) {
         $subject = APP_NAME . ' - Email Configuration Test';
         $message = "Hello!\n\nThis is a test email from " . APP_NAME . ".\n\nIf you received this email, your email configuration is working correctly.\n\nTest sent at: " . date('Y-m-d H:i:s') . "\n\nRegards,\n" . APP_NAME . " System";
 
-        $headers = 'From: ' . SMTP_FROM_NAME . ' <' . SMTP_FROM_EMAIL . '>' . "\r\n";
-        $headers .= 'Reply-To: ' . SMTP_FROM_EMAIL . "\r\n";
-        $headers .= 'X-Mailer: PHP/' . phpversion() . "\r\n";
-        $headers .= 'Content-Type: text/plain; charset=UTF-8' . "\r\n";
-
         try {
-            $mailSent = mail($testEmail, $subject, $message, $headers);
+            $mailSent = Helper::sendEmail($testEmail, $subject, $message);
             if ($mailSent) {
                 $testResult = [
                     'success' => true,
@@ -355,7 +350,7 @@ body {
 
                 <div class="warning-box">
                     <h4><i class="fas fa-info-circle"></i> Configuration Note</h4>
-                    <p>For local development, the system is configured to use localhost:1025 (MailHog). For production, update the SMTP settings in <code>config.php</code>.</p>
+                    <p>This system now sends through <code>Nodemailer</code>. Configure SMTP in <code>config.php</code> and install dependencies in <code>scripts/mailer</code>.</p>
                 </div>
             </div>
 
@@ -387,6 +382,15 @@ body {
                 <div class="instruction-step">
                     <div class="step-number">1</div>
                     <div class="step-content">
+                        <strong>Install Nodemailer dependency:</strong><br>
+                        In the project root, run:<br>
+                        <div class="code-snippet">cd scripts/mailer && npm install</div>
+                    </div>
+                </div>
+
+                <div class="instruction-step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
                         <strong>For Local Development (Recommended):</strong><br>
                         Install <a href="https://github.com/mailhog/MailHog" target="_blank">MailHog</a> and run it:<br>
                         <div class="code-snippet">mailhog</div>
@@ -395,7 +399,7 @@ body {
                 </div>
 
                 <div class="instruction-step">
-                    <div class="step-number">2</div>
+                    <div class="step-number">3</div>
                     <div class="step-content">
                         <strong>For Gmail:</strong><br>
                         Update <code>config.php</code> with your Gmail settings:<br>
@@ -404,6 +408,7 @@ define('SMTP_HOST', 'smtp.gmail.com');<br>
 define('SMTP_PORT', 587);<br>
 define('SMTP_USERNAME', 'your-gmail@gmail.com');<br>
 define('SMTP_PASSWORD', 'your-app-password');<br>
+define('SMTP_SECURE', false);<br>
 define('SMTP_FROM_EMAIL', 'your-gmail@gmail.com');
                         </div>
                         <small>Note: Use an App Password, not your regular Gmail password.</small>
@@ -411,7 +416,7 @@ define('SMTP_FROM_EMAIL', 'your-gmail@gmail.com');
                 </div>
 
                 <div class="instruction-step">
-                    <div class="step-number">3</div>
+                    <div class="step-number">4</div>
                     <div class="step-content">
                         <strong>For Other Providers:</strong><br>
                         Update the SMTP settings in <code>config.php</code> according to your email provider's documentation (SendGrid, Mailgun, etc.).
@@ -419,7 +424,7 @@ define('SMTP_FROM_EMAIL', 'your-gmail@gmail.com');
                 </div>
 
                 <div class="instruction-step">
-                    <div class="step-number">4</div>
+                    <div class="step-number">5</div>
                     <div class="step-content">
                         <strong>Test Configuration:</strong><br>
                         Use the form above to send a test email and verify everything works.

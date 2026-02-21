@@ -83,6 +83,7 @@ switch ($action) {
         // Fetch notifications for the current user (honour per-user read markers for broadcasts)
         $limit = intval($_GET['limit'] ?? 10);
         $notifications = fetchUnreadNotificationsForUser($userId, $limit);
+        $totalUnread = getUnreadNotificationCountForUser($userId);
 
         // Format notifications for JSON response
         $formattedNotifications = [];
@@ -107,7 +108,7 @@ switch ($action) {
 
         echo json_encode([
             'success' => true,
-            'count' => count($formattedNotifications),
+            'count' => $totalUnread,
             'notifications' => $formattedNotifications
         ]);
         break;
@@ -178,9 +179,14 @@ switch ($action) {
 
         $op = $_POST['op'] ?? $_GET['op'] ?? '';
         $op = preg_replace('/[^a-z0-9_:\-]/i', '', $op);
+        $opBase = strtolower((string)$op);
+        $opSep = strpos($opBase, ':');
+        if ($opSep !== false) {
+            $opBase = substr($opBase, 0, $opSep);
+        }
         $result = ['success' => false, 'message' => 'Unknown operation'];
 
-        switch ($op) {
+        switch ($opBase) {
             case 'run_backup':
                 $script = BASE_PATH . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'backup_cron.php';
                 if (is_file($script)) {
@@ -258,6 +264,21 @@ switch ($action) {
                 $result = ['success' => true, 'message' => "Cache cleared ({$removed} files removed)"];
                 break;
 
+            case 'resend_email':
+                // op format: resend_email:ID
+                if (preg_match('/^resend_email:(\d+)$/i', $op, $m)) {
+                    $failureId = (int)$m[1];
+                    $retry = Helper::resendFailedEmail($failureId, (int)$userId);
+                    if (!empty($retry['success'])) {
+                        $result = ['success' => true, 'message' => (string)($retry['message'] ?? 'Email resent.')];
+                    } else {
+                        $result = ['success' => false, 'message' => (string)($retry['message'] ?? 'Resend failed.')];
+                    }
+                } else {
+                    $result = ['success' => false, 'message' => 'Invalid resend operation.'];
+                }
+                break;
+
             case 'resend_report':
                 // op format: resend_report:ID
                 if (preg_match('/^resend_report:(\d+)$/i', $op, $m)) {
@@ -315,8 +336,10 @@ switch ($action) {
                             if (!empty($recips)) {
                                 $sub = APP_NAME . ' - Resent Scheduled Report: ' . $sched['name'];
                                 $body = "A scheduled report was re-sent. Download: " . BASE_URL . '/downloads/' . $filename;
-                                $hdr = 'From: ' . SMTP_FROM_NAME . ' <' . SMTP_FROM_EMAIL . '>\r\n' . 'Content-Type: text/plain; charset=UTF-8' . "\r\n";
-                                @mail(implode(',', $recips), $sub, $body, $hdr);
+                                Helper::sendEmail($recips, $sub, $body, [
+                                    'context_label' => 'Scheduled Report Resend',
+                                    'source_page' => '/api/notifications.php?action=execute&op=' . $op
+                                ]);
                             }
 
                             $result = ['success'=>true,'message'=>'Report resent'];
@@ -357,11 +380,19 @@ switch ($action) {
             // Email + notify admins about this execution
             $adminEmails = [];
             $rows = $conn->query("SELECT email, id FROM users WHERE role = 'admin'")->fetchAll(PDO::FETCH_ASSOC);
-            foreach ($rows as $r) { $adminEmails[] = $r['email']; $nidUsers[] = $r['id']; }
+            foreach ($rows as $r) {
+                if (!empty($r['email'])) {
+                    $adminEmails[] = $r['email'];
+                }
+            }
             if (!empty($adminEmails)) {
                 $sub = APP_NAME . ' - Admin action executed: ' . $op;
                 $bdy = 'User ' . ($currentUser['username'] ?? 'admin') . ' executed ' . $op . "\n\nResult: " . ($result['message'] ?? json_encode($result));
-                @mail(implode(',', $adminEmails), $sub, $bdy, 'From: ' . SMTP_FROM_NAME . ' <' . SMTP_FROM_EMAIL . '>\r\n');
+                Helper::sendEmail($adminEmails, $sub, $bdy, [
+                    'context_label' => 'Admin Action Audit',
+                    'source_page' => '/api/notifications.php?action=execute&op=' . $op,
+                    'notify_admin_on_failure' => false
+                ]);
 
                 // insert per-admin notification
                 $insN = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, link, created_at) VALUES (:uid,:title,:msg,:type,:link,NOW())");

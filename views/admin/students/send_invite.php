@@ -1,7 +1,6 @@
 <?php
 /**
- * Admin action: Send invite to student (placeholder)
- * Currently sets a flash message and would normally email an invite link.
+ * Admin action: Send invite to student.
  */
 require_once '../../../config.php';
 
@@ -22,7 +21,7 @@ if (!$id) {
 
 $db = new Database();
 $conn = $db->getConnection();
-$stmt = $conn->prepare('SELECT s.*, u.email FROM students s JOIN users u ON s.user_id = u.id WHERE s.id = :id');
+$stmt = $conn->prepare('SELECT s.*, u.email, u.username FROM students s JOIN users u ON s.user_id = u.id WHERE s.id = :id');
 $stmt->execute(['id' => $id]);
 $student = $stmt->fetch();
 if (!$student) {
@@ -31,7 +30,22 @@ if (!$student) {
     exit;
 }
 
-// Placeholder: in real system send an email with invite link or credentials
-$session->setFlash('success', 'Invite sent to ' . ($student['email'] ?? 'N/A') . ' (placeholder)');
+$studentName = trim(($student['first_name'] ?? '') . ' ' . ($student['last_name'] ?? '')) ?: 'Student';
+$sent = false;
+if (!empty($student['email'])) {
+    $sent = Helper::sendTemplatedEmail('invite_notice', $student['email'], [
+        'recipient_name' => $studentName,
+        'role_label' => 'Student',
+        'username' => $student['username'] ?? '-',
+        'login_url' => BASE_URL . '/views/student/login.php',
+        'custom_note' => 'This is an access reminder. If you forgot your password, request a reset from administration.'
+    ]);
+}
+
+if ($sent) {
+    $session->setFlash('success', 'Invite sent to ' . ($student['email'] ?? 'N/A'));
+} else {
+    $session->setFlash('error', 'Failed to send invite email. Verify SMTP and recipient address.');
+}
 header('Location: list.php');
 exit;

@@ -74,23 +74,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $session->setFlash('error', 'No password has been generated yet. Please generate a new password first.');
         } else {
             // Send email with new password
-            $subject = APP_NAME . ' - Password Reset';
-            $message = "
-Dear {$student['first_name']} {$student['last_name']},
-
-Your password has been reset by an administrator.
-
-Your new login credentials are:
-Username: {$student['username']}
-Password: {$newPassword}
-
-Please log in and change your password immediately for security reasons.
-
-Best regards,
-" . APP_NAME . " Administration
-            ";
-
-            $emailSent = Helper::sendEmail($student['email'], $subject, $message);
+            $emailSent = Helper::sendTemplatedEmail('password_reset', $student['email'], [
+                'recipient_name' => trim(($student['first_name'] ?? '') . ' ' . ($student['last_name'] ?? '')),
+                'username' => $student['username'],
+                'temporary_password' => $newPassword,
+                'login_url' => BASE_URL . '/views/student/login.php'
+            ]);
 
             if ($emailSent) {
                 // Clear the generated password from session

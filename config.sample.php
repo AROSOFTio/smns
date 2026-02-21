@@ -50,9 +50,14 @@ define('PASS_MARK', 50);
 define('SMTP_HOST', 'smtp.gmail.com');
 define('SMTP_PORT', 587);
 define('SMTP_USERNAME', 'your-email@gmail.com');
-define('SMTP_PASSWORD', 'your-password');
-define('SMTP_FROM_EMAIL', 'noreply@seminary.edu');
+define('SMTP_PASSWORD', 'your-gmail-app-password');
+define('SMTP_SECURE', false);
+define('SMTP_FROM_EMAIL', 'your-email@gmail.com');
 define('SMTP_FROM_NAME', APP_NAME);
+define('EMAIL_TRANSPORT', 'nodemailer');
+define('EMAIL_FALLBACK_PHP_MAIL', true);
+define('NODE_BIN', 'node');
+define('NODEMAILER_SCRIPT', BASE_PATH . '/scripts/mailer/send-email.js');
 
 // Institution Information
 define('INSTITUTION_NAME', 'Seminary Institution');

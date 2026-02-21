@@ -21,6 +21,7 @@ $semesters = $semStmt->fetchAll();
 $errors = [];
 $formData = $_POST;
 $success = '';
+$mailStatus = '';
 
 function generateAdmissionNumber($conn) {
     $prefix = 'ADM';
@@ -144,6 +145,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'g' => $gender
             ]);
             $conn->commit();
+            try {
+                $mailSent = Helper::sendTemplatedEmail('credentials_issued', $email, [
+                    'recipient_name' => trim($first_name . ' ' . $last_name),
+                    'role_label' => 'Student',
+                    'account_id_label' => 'Student ID',
+                    'account_id_value' => $student_reg,
+                    'username' => $username,
+                    'temporary_password' => $password,
+                    'login_url' => BASE_URL . '/views/student/login.php'
+                ]);
+                $mailStatus = $mailSent ? 'Credentials were emailed to the student.' : 'Account created, but email delivery failed. Share credentials manually.';
+            } catch (Exception $mailEx) {
+                $mailStatus = 'Account created, but email delivery failed. Share credentials manually.';
+            }
             $success = 'Student added successfully!';
         } catch (Exception $e) {
             if ($conn->inTransaction()) $conn->rollBack();
@@ -166,6 +181,9 @@ include '../../../includes/admin/sidebar.php';
         <?php endif; ?>
         <?php if ($success): ?>
             <div class="alert alert-success"><?php echo $success; ?></div>
+            <?php if (!empty($mailStatus)): ?>
+                <div class="alert alert-info"><?php echo htmlspecialchars($mailStatus); ?></div>
+            <?php endif; ?>
         <?php endif; ?>
         <?php if ($success && isset($username) && isset($password)): ?>
             <div class="alert alert-info">

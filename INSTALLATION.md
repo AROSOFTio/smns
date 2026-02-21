@@ -154,8 +154,26 @@ define('SMTP_HOST', 'smtp.gmail.com');
 define('SMTP_PORT', 587);
 define('SMTP_USERNAME', 'your-email@gmail.com');
 define('SMTP_PASSWORD', 'your-app-password');
-define('SMTP_FROM_EMAIL', 'noreply@seminary.edu');
+define('SMTP_SECURE', false); // false for TLS on 587, true for SSL on 465
+define('SMTP_FROM_EMAIL', 'your-email@gmail.com');
+define('EMAIL_TRANSPORT', 'nodemailer');
+define('NODE_BIN', 'node');
+define('NODEMAILER_SCRIPT', BASE_PATH . '/scripts/mailer/send-email.js');
 ```
+
+Install the Node mailer dependency:
+```bash
+cd scripts/mailer
+npm install
+```
+
+Standardized email templates now available in the system:
+- `credentials_issued` (account credentials)
+- `password_reset` (new temporary password)
+- `approval_status` (approved/rejected outcomes)
+- `request_response` (admin response to student requests)
+- `finance_alert` (financial report/finance communication)
+- `invite_notice` (role-based portal invitation)
 
 ### Step 3: Verify URL Rewriting
 Make sure Apache's `mod_rewrite` is enabled:

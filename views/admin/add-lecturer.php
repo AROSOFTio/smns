@@ -14,8 +14,6 @@ $auth = new Auth('admin');
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true || $_SESSION['admin_role'] !== 'admin') {
     header('Location: ' . BASE_URL . '/views/admin/login.php?error=unauthorized');
     exit;
-}
-
 $db = new Database();
 $conn = $db->getConnection();
 
@@ -202,19 +200,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Attempt to send credentials via email
                 $mailSent = false;
                 $fullName = trim($title . ' ' . $first_name . ' ' . $last_name);
-                $subject = APP_NAME . ' - Lecturer Portal Credentials';
-                $message = "Dear {$fullName},\n\n" .
-                           "Your lecturer portal account has been created.\n\n" .
-                           "Lecturer ID: {$lecturerId}\n" .
-                           "Username: {$username}\n" .
-                           "Temporary Password: {$tempPassword}\n\n" .
-                           "Portal URL: " . BASE_URL . "/views/lecturer/login.php\n\n" .
-                           "You will be required to change your password on first login.\n\n" .
-                           "Regards,\n" . APP_NAME;
-                $headers = 'From: ' . SMTP_FROM_NAME . ' <' . SMTP_FROM_EMAIL . '>';
-                
                 try {
-                    $mailSent = @mail($email, $subject, $message, $headers);
+                    $mailSent = Helper::sendTemplatedEmail('credentials_issued', $email, [
+                        'recipient_name' => $fullName,
+                        'role_label' => 'Lecturer',
+                        'account_id_label' => 'Lecturer ID',
+                        'account_id_value' => $lecturerId,
+                        'username' => $username,
+                        'temporary_password' => $tempPassword,
+                        'login_url' => BASE_URL . '/views/lecturer/login.php'
+                    ]);
                 } catch (Exception $e) {
                     error_log("Failed to send lecturer credentials email: " . $e->getMessage());
                 }
@@ -348,9 +343,9 @@ include '../../../includes/header.php';
                 <div class="card-body">
                     <div class="form-row">
                         <div class="form-group col-md-4">
-                            <label>Institutional Email <span class="text-danger">*</span></label>
-                            <input type="email" name="email" class="form-control" required placeholder="lecturer@institution.edu">
-                            <small class="text-muted">This will be used for login</small>
+                            <label>Login Email (Credentials Delivery) <span class="text-danger">*</span></label>
+                            <input type="email" name="email" class="form-control" required placeholder="lecturer@example.com">
+                            <small class="text-muted">This email is used for lecturer login and receives credentials after account creation.</small>
                         </div>
                         <div class="form-group col-md-4">
                             <label>Phone Number</label>
@@ -435,7 +430,7 @@ include '../../../includes/header.php';
                             <li>A secure <strong>temporary password</strong> will be generated</li>
                             <li>Lecturer will be required to <strong>change password on first login</strong></li>
                             <li>Account will be created with <strong>"Lecturer" role</strong> with appropriate permissions</li>
-                            <li>Credentials will be sent to the institutional email address provided</li>
+                            <li>Credentials will be sent to this login email immediately after account creation</li>
                         </ul>
                     </div>
                 </div>

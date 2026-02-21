@@ -1,9 +1,36 @@
 <!-- Notification Bell -->
+<?php
+$currentBellUserId = 0;
+if (!empty($currentUser['id'])) {
+    $currentBellUserId = (int)$currentUser['id'];
+} else {
+    $sessionUserKeys = ['admin_user_id', 'student_user_id', 'lecturer_user_id', 'finance_user_id', 'user_id'];
+    foreach ($sessionUserKeys as $key) {
+        if (!empty($_SESSION[$key])) {
+            $currentBellUserId = (int)$_SESSION[$key];
+            break;
+        }
+    }
+}
+
+$initialUnreadCount = 0;
+if ($currentBellUserId > 0 && function_exists('getUnreadNotificationCountForUser')) {
+    try {
+        $initialUnreadCount = (int)getUnreadNotificationCountForUser($currentBellUserId);
+    } catch (Exception $e) {
+        $initialUnreadCount = 0;
+    }
+}
+
+if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unreadNotifications)) {
+    $initialUnreadCount = count($unreadNotifications);
+}
+?>
 <div class="notification-wrapper">
     <button class="notification-bell" id="notificationBell" title="Notifications">
         <i class="fas fa-bell"></i>
-        <?php if (!empty($unreadNotifications)): ?>
-            <span class="notification-badge"><?php echo count($unreadNotifications); ?></span>
+        <?php if ($initialUnreadCount > 0): ?>
+            <span class="notification-badge"><?php echo (int)$initialUnreadCount; ?></span>
         <?php endif; ?>
     </button>
     <?php
@@ -240,6 +267,22 @@
                     console.log('Error refreshing notifications:', error);
                 });
         }
+
+        function resolveActionLabel(actionCode) {
+            if (!actionCode) return 'Run';
+            const map = {
+                'run_backup': 'Run backup',
+                'purge_backups': 'Purge backups',
+                'purge_logs': 'Purge logs',
+                'clear_cache': 'Clear cache',
+                'approve_pending_registrations': 'Approve registrations'
+            };
+            if (map[actionCode]) return map[actionCode];
+            if (actionCode.indexOf('resend_email:') === 0) return 'Resend email';
+            if (actionCode.indexOf('resend_report:') === 0) return 'Resend report';
+            if (actionCode.indexOf('run_cron:') === 0) return 'Run task';
+            return 'Run';
+        }
         
         function updateNotificationBell(count, notifications) {
             const badge = bell.querySelector('.notification-badge');
@@ -261,10 +304,9 @@
                     notifications.forEach(notif => {
                         const iconMap = { 'info': 'info-circle', 'success': 'check-circle', 'warning': 'exclamation-triangle', 'error': 'times-circle' };
                         const icon = iconMap[notif.type] || 'info-circle';
-                        const actionLabelMap = { 'run_backup': 'Run backup', 'purge_backups': 'Purge backups', 'purge_logs': 'Purge logs', 'clear_cache': 'Clear cache' };
 
                         if (notif.action) {
-                            const aLabel = actionLabelMap[notif.action] || notif.action;
+                            const aLabel = resolveActionLabel(notif.action);
                             html += `
                                 <div class="notification-item unread d-flex" data-id="${notif.id}" data-action="${notif.action}">
                                     <div class="notif-icon notif-${notif.type}">
@@ -298,7 +340,6 @@
                                 </div>
                             `;
                         }
-                    });
                     });
                     list.innerHTML = html;
                     
@@ -359,8 +400,8 @@
         // Auto-refresh every 30 seconds
         notificationRefreshInterval = setInterval(refreshNotifications, 30000);
         
-        // Initial refresh after 10 seconds (to avoid immediate load)
-        setTimeout(refreshNotifications, 10000);
+        // Initial refresh shortly after page load to correct any stale badge count.
+        setTimeout(refreshNotifications, 1500);
         
         // Clear interval when page unloads
         window.addEventListener('beforeunload', function() {
@@ -371,10 +412,15 @@
         
         // Function to mark individual notification as read
         window.markNotificationRead = function(notifId) {
-            fetch('<?php echo BASE_URL; ?>/api/notifications.php?action=mark_read&id=' + notifId, {
+            if (!notifId) {
+                return Promise.resolve(false);
+            }
+
+            return fetch('<?php echo BASE_URL; ?>/api/notifications.php?action=mark_read&id=' + encodeURIComponent(notifId), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin'
+                credentials: 'same-origin',
+                keepalive: true
             })
             .then(r => r.json())
             .then(data => {
@@ -400,7 +446,9 @@
                             saveBtn.textContent = 'Saved';
                         }
                     }
+                    return true;
                 }
+                return false;
             });
         };
         
@@ -436,7 +484,12 @@
                         btn.classList.remove('btn-outline-primary');
                         btn.classList.add('btn-danger');
                         btn.textContent = 'Failed';
-                        setTimeout(function(){ btn.disabled = false; btn.classList.remove('btn-danger'); btn.classList.add('btn-outline-primary'); btn.textContent = (op === 'run_backup' ? 'Run backup' : 'Run'); }, 3000);
+                        setTimeout(function(){
+                            btn.disabled = false;
+                            btn.classList.remove('btn-danger');
+                            btn.classList.add('btn-outline-primary');
+                            btn.textContent = resolveActionLabel(op);
+                        }, 3000);
                     }
                 })
                 .catch(err => {
@@ -491,9 +544,20 @@
 
             const item = e.target.closest('.notification-item');
             if (item && item.classList.contains('unread')) {
+                const link = e.target.closest('a[href]');
                 const notifId = item.getAttribute('data-id');
                 if (notifId) {
-                    markNotificationRead(notifId);
+                    if (link && link.getAttribute('href') && link.getAttribute('href') !== '#') {
+                        e.preventDefault();
+                        const targetUrl = link.getAttribute('href');
+                        markNotificationRead(notifId)
+                            .catch(function(){})
+                            .finally(function() {
+                                window.location.href = targetUrl;
+                            });
+                    } else {
+                        markNotificationRead(notifId);
+                    }
                 }
             }
         });
@@ -502,7 +566,7 @@
     <div class="notification-dropdown" id="notificationDropdown">
         <div class="notification-header">
             <h6>Notifications</h6>
-            <?php if (!empty($unreadNotifications)): ?>
+            <?php if ($initialUnreadCount > 0): ?>
                 <a href="#" id="markAllRead">Mark all read</a>
             <?php endif; ?>
         </div>
@@ -511,9 +575,22 @@
                 <?php foreach ($unreadNotifications as $notif): ?>
                     <?php if (!empty($notif['link']) && strpos($notif['link'], 'action:') === 0):
                             $actionCode = substr($notif['link'], strlen('action:'));
-                            // simple label map for common ops
-                            $labelMap = ['run_backup'=>'Run backup','purge_backups'=>'Purge backups','purge_logs'=>'Purge logs','clear_cache'=>'Clear cache'];
-                            $actionLabel = $labelMap[$actionCode] ?? 'Run';
+                            $actionLabel = 'Run';
+                            if ($actionCode === 'run_backup') {
+                                $actionLabel = 'Run backup';
+                            } elseif ($actionCode === 'purge_backups') {
+                                $actionLabel = 'Purge backups';
+                            } elseif ($actionCode === 'purge_logs') {
+                                $actionLabel = 'Purge logs';
+                            } elseif ($actionCode === 'clear_cache') {
+                                $actionLabel = 'Clear cache';
+                            } elseif (strpos($actionCode, 'resend_email:') === 0) {
+                                $actionLabel = 'Resend email';
+                            } elseif (strpos($actionCode, 'resend_report:') === 0) {
+                                $actionLabel = 'Resend report';
+                            } elseif (strpos($actionCode, 'run_cron:') === 0) {
+                                $actionLabel = 'Run task';
+                            }
                         ?>
                         <div class="notification-item unread d-flex" data-id="<?php echo $notif['id']; ?>">
                             <div class="notif-icon notif-<?php echo e($notif['type']); ?>">

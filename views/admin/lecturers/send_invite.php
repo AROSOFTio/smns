@@ -47,84 +47,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $inviteType = $_POST['invite_type'] ?? 'welcome';
     $customMessage = Security::sanitize($_POST['custom_message'] ?? '');
 
-    // Prepare email content based on type
-    switch ($inviteType) {
-        case 'welcome':
-            $subject = 'Welcome to ' . APP_NAME . ' - Your Account is Ready';
-            $message = "
-Dear {$lecturer['first_name']} {$lecturer['last_name']},
-
-Welcome to " . APP_NAME . "! Your lecturer account has been created and is ready for use.
-
-Your login credentials are:
-Username: {$lecturer['username']}
-Email: {$lecturer['email']}
-
-To get started, please visit: " . BASE_URL . "/views/auth/login.php
-
-If you have any questions, please contact the administration.
-
-Best regards,
-" . APP_NAME . " Administration
-            ";
-            break;
-
-        case 'activation':
-            $subject = APP_NAME . ' - Your Account is Now Active';
-            $message = "
-Dear {$lecturer['first_name']} {$lecturer['last_name']},
-
-Your lecturer account has been activated and you can now access the system.
-
-Login Details:
-Username: {$lecturer['username']}
-Email: {$lecturer['email']}
-
-Please visit: " . BASE_URL . "/views/auth/login.php
-
-Best regards,
-" . APP_NAME . " Administration
-            ";
-            break;
-
-        case 'custom':
-            $subject = APP_NAME . ' - Important Message';
-            $message = "
-Dear {$lecturer['first_name']} {$lecturer['last_name']},
-
-{$customMessage}
-
-Login Details:
-Username: {$lecturer['username']}
-Email: {$lecturer['email']}
-
-Please visit: " . BASE_URL . "/views/auth/login.php
-
-Best regards,
-" . APP_NAME . " Administration
-            ";
-            break;
-
-        default:
-            $subject = APP_NAME . ' - System Notification';
-            $message = "
-Dear {$lecturer['first_name']} {$lecturer['last_name']},
-
-This is a notification from " . APP_NAME . ".
-
-Your account details:
-Username: {$lecturer['username']}
-Email: {$lecturer['email']}
-
-Please visit: " . BASE_URL . "/views/auth/login.php
-
-Best regards,
-" . APP_NAME . " Administration
-            ";
+    $subject = APP_NAME . ' - Lecturer Invitation';
+    $customNote = '';
+    if ($inviteType === 'welcome') {
+        $subject = 'Welcome to ' . APP_NAME . ' - Your Account is Ready';
+        $customNote = 'Welcome to the platform. Contact administration if you need onboarding support.';
+    } elseif ($inviteType === 'activation') {
+        $subject = APP_NAME . ' - Your Account is Now Active';
+        $customNote = 'Your account is now active. Please log in to begin using the lecturer portal.';
+    } elseif ($inviteType === 'custom' && $customMessage !== '') {
+        $subject = APP_NAME . ' - Important Message';
+        $customNote = $customMessage;
     }
 
-    // Send email
-    $emailSent = Helper::sendEmail($lecturer['email'], $subject, $message);
+    $emailSent = Helper::sendTemplatedEmail(
+        'invite_notice',
+        $lecturer['email'],
+        [
+            'recipient_name' => trim(($lecturer['first_name'] ?? '') . ' ' . ($lecturer['last_name'] ?? '')),
+            'role_label' => 'Lecturer',
+            'username' => $lecturer['username'] ?? '',
+            'login_url' => BASE_URL . '/views/auth/login.php',
+            'custom_note' => $customNote
+        ],
+        [
+            'subject' => $subject
+        ]
+    );
 
     if ($emailSent) {
         $session->setFlash('success', 'Invitation email sent successfully to ' . $lecturer['email']);
