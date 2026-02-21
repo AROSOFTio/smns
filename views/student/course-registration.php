@@ -1562,9 +1562,20 @@ include '../../includes/header.php';
         color: #f87171 !important;
     }
     html[data-theme='dark'] .enroll-field select {
-        background: var(--app-surface-1) !important;
-        color: #e5e7eb !important;
+        background: var(--app-surface-2) !important;
+        color: var(--app-text) !important;
         border-color: var(--app-border) !important;
+        color-scheme: dark;
+    }
+    html[data-theme='dark'] .enroll-field select option,
+    html[data-theme='dark'] .enroll-field select optgroup {
+        background: var(--app-surface) !important;
+        color: var(--app-text) !important;
+    }
+    html[data-theme='dark'] .enroll-field select:disabled {
+        background: var(--app-surface-2) !important;
+        color: var(--app-muted) !important;
+        opacity: 1;
     }
     html[data-theme='dark'] .enroll-reload {
         background: var(--app-surface-1) !important;

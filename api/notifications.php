@@ -202,7 +202,8 @@ switch ($action) {
             case 'run_backup':
                 $script = BASE_PATH . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'backup_cron.php';
                 if (is_file($script)) {
-                    @exec(PHP_BINARY . ' ' . escapeshellarg($script) . ' 2>&1', $out, $code);
+                    $phpExec = escapeshellarg(resolvePhpExecBinary(true));
+                    @exec($phpExec . ' ' . escapeshellarg($script) . ' 2>&1', $out, $code);
                     if ($code === 0) {
                         $result = ['success' => true, 'message' => 'Backup executed'];
                     } else {
@@ -370,7 +371,8 @@ switch ($action) {
                     if (in_array($scriptName, $allowed)) {
                         $script = BASE_PATH . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . $scriptName . '.php';
                         if (is_file($script)) {
-                            @exec(PHP_BINARY . ' ' . escapeshellarg($script) . ' 2>&1', $out2, $code2);
+                            $phpExec = escapeshellarg(resolvePhpExecBinary(true));
+                            @exec($phpExec . ' ' . escapeshellarg($script) . ' 2>&1', $out2, $code2);
                             if ($code2 === 0) { $result = ['success'=>true,'message'=>'Script executed']; }
                             else { $result = ['success'=>false,'message'=>'Script returned error']; }
                         } else { $result = ['success'=>false,'message'=>'Script not found']; }

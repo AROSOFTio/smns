@@ -145,7 +145,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 $cronScript = BASE_PATH . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'backup_cron.php';
                 $ran = false;
                 if (is_file($cronScript) && is_executable($cronScript)) {
-                    @exec(PHP_BINARY . ' ' . escapeshellarg($cronScript), $out, $retCode);
+                    $phpExec = escapeshellarg(resolvePhpExecBinary(true));
+                    @exec($phpExec . ' ' . escapeshellarg($cronScript), $out, $retCode);
                     if ($retCode === 0) { $actionResult = ['status' => 'success', 'message' => 'Scheduled backup script executed']; $ran = true; }
                 }
                 if (!$ran) {

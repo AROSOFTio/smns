@@ -182,6 +182,28 @@ function getSetting($key, $default = null) {
 }
 
 /**
+ * Resolve PHP executable for background process calls.
+ * On Windows, prefer php-win.exe to avoid opening a console window.
+ */
+function resolvePhpExecBinary($preferWindowless = true) {
+    $binary = (defined('PHP_BINARY') && PHP_BINARY) ? PHP_BINARY : 'php';
+
+    if ($preferWindowless && DIRECTORY_SEPARATOR === '\\') {
+        $binaryName = strtolower((string)basename($binary));
+        if ($binaryName === 'php-win.exe') {
+            return $binary;
+        }
+
+        $candidate = dirname($binary) . DIRECTORY_SEPARATOR . 'php-win.exe';
+        if (is_file($candidate)) {
+            return $candidate;
+        }
+    }
+
+    return $binary;
+}
+
+/**
  * Fetch unread notifications for a given user (handles personal + broadcast + per-user read state)
  */
 function fetchUnreadNotificationsForUser($userId, $limit = 50) {
