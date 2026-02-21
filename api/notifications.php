@@ -133,11 +133,22 @@ switch ($action) {
     case 'mark_read':
         $id = intval($_GET['id'] ?? 0);
         if ($id > 0) {
-            // Check if notification is personal or broadcast
-            $nstmt = $conn->prepare("SELECT user_id FROM notifications WHERE id = :id");
+            // Load target notification and enforce visibility (own or broadcast only)
+            $nstmt = $conn->prepare("SELECT id, user_id, title, message, link FROM notifications WHERE id = :id");
             $nstmt->execute(['id' => $id]);
             $row = $nstmt->fetch(PDO::FETCH_ASSOC);
-            $isBroadcast = !$row || is_null($row['user_id']) || $row['user_id'] == 0;
+            if (!$row) {
+                echo json_encode(['success' => false, 'error' => 'Notification not found']);
+                break;
+            }
+
+            $isBroadcast = is_null($row['user_id']) || (int)$row['user_id'] === 0;
+            $isOwner = !$isBroadcast && (int)$row['user_id'] === (int)$userId;
+
+            if (!$isBroadcast && !$isOwner) {
+                echo json_encode(['success' => false, 'error' => 'Access denied']);
+                break;
+            }
 
             if ($isBroadcast) {
                 // insert per-user read marker
@@ -151,16 +162,17 @@ switch ($action) {
 
             // Auto-save (archive) this notification for the current user when it's marked read
             try {
-                $n = $conn->prepare('SELECT id, title, message, link FROM notifications WHERE id = :id');
-                $n->execute(['id' => $id]);
-                $nrow = $n->fetch(PDO::FETCH_ASSOC);
-                if ($nrow) {
-                    $chk = $conn->prepare('SELECT id FROM notification_archive WHERE notification_id = :nid AND user_id = :uid LIMIT 1');
-                    $chk->execute(['nid' => $nrow['id'], 'uid' => $userId]);
-                    if (!$chk->fetch()) {
-                        $a = $conn->prepare('INSERT INTO notification_archive (notification_id, user_id, title, message, link) VALUES (:nid, :uid, :title, :msg, :link)');
-                        $a->execute(['nid' => $nrow['id'], 'uid' => $userId, 'title' => $nrow['title'], 'msg' => $nrow['message'], 'link' => $nrow['link']]);
-                    }
+                $chk = $conn->prepare('SELECT id FROM notification_archive WHERE notification_id = :nid AND user_id = :uid LIMIT 1');
+                $chk->execute(['nid' => $row['id'], 'uid' => $userId]);
+                if (!$chk->fetch()) {
+                    $a = $conn->prepare('INSERT INTO notification_archive (notification_id, user_id, title, message, link) VALUES (:nid, :uid, :title, :msg, :link)');
+                    $a->execute([
+                        'nid' => $row['id'],
+                        'uid' => $userId,
+                        'title' => $row['title'],
+                        'msg' => $row['message'],
+                        'link' => $row['link']
+                    ]);
                 }
             } catch (Exception $e) { /* ignore archive errors */ }
 
@@ -416,6 +428,14 @@ switch ($action) {
                 $notification = $stmt->fetch();
 
                 if ($notification) {
+                    $isBroadcast = is_null($notification['user_id']) || (int)$notification['user_id'] === 0;
+                    $isOwner = !$isBroadcast && (int)$notification['user_id'] === (int)$userId;
+                    if (!$isBroadcast && !$isOwner) {
+                        $conn->rollBack();
+                        echo json_encode(['success' => false, 'error' => 'Access denied']);
+                        break;
+                    }
+
                     // 2. Check if already archived for this user
                     $chk = $conn->prepare("SELECT id FROM notification_archive WHERE notification_id = :nid AND user_id = :uid LIMIT 1");
                     $chk->execute(['nid' => $notificationId, 'uid' => $userId]);
@@ -438,8 +458,7 @@ switch ($action) {
                     $stmt->execute(['nid' => $notificationId, 'uid' => $userId]);
                     
                     // For personal notifications, also update the read_status column
-                    $isBroadcast = is_null($notification['user_id']) || $notification['user_id'] == 0;
-                    if (!$isBroadcast && $notification['user_id'] == $userId) {
+                    if (!$isBroadcast && (int)$notification['user_id'] === (int)$userId) {
                         $stmt = $conn->prepare("UPDATE notifications SET read_status = 'read', read_at = NOW() WHERE id = :id");
                         $stmt->execute(['id' => $notificationId]);
                     }
@@ -466,6 +485,8 @@ switch ($action) {
             $stmt = $conn->prepare("DELETE FROM notification_archive WHERE id = :id AND user_id = :uid");
             $stmt->execute(['id' => $archiveId, 'uid' => $userId]);
             echo json_encode(['success' => true]);
+        } else {
+            echo json_encode(['success' => false, 'error' => 'Invalid archive ID']);
         }
         break;
 

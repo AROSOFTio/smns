@@ -47,7 +47,26 @@ class Auth {
         $database = new Database();
         $this->db = $database->getConnection();
         $this->session = new Session($role);
-        $this->module = $role; // Store the module context
+        $this->module = $role ?: $this->detectModuleFromActiveSession();
+    }
+
+    /**
+     * Detect active module from the current session cookie name.
+     */
+    private function detectModuleFromActiveSession() {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            return null;
+        }
+
+        $map = [
+            'SMNS_ADMIN_SESSION' => 'admin',
+            'SMNS_STUDENT_SESSION' => 'student',
+            'SMNS_LECTURER_SESSION' => 'lecturer',
+            'SMNS_FINANCE_SESSION' => 'finance',
+        ];
+
+        $activeName = session_name();
+        return $map[$activeName] ?? null;
     }
     
     /**
@@ -213,7 +232,7 @@ class Auth {
      */
     public function logout() {
         // Get user ID from module-specific session
-        $modulePrefix = $this->module;
+        $modulePrefix = $this->module ?: $this->detectModuleFromActiveSession();
         $userId = null;
         
         if ($modulePrefix && isset($_SESSION[$modulePrefix . '_user_id'])) {

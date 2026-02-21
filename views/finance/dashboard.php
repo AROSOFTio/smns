@@ -23,6 +23,12 @@ $conn = $db->getConnection();
 
 // Current semester
 $currentSemester = Helper::getCurrentSemester();
+$currentAcademicYearLabel = 'N/A';
+if (!empty($currentSemester['academic_year_id'])) {
+    $ayStmt = $conn->prepare("SELECT year_name FROM academic_years WHERE id = :id LIMIT 1");
+    $ayStmt->execute(['id' => (int)$currentSemester['academic_year_id']]);
+    $currentAcademicYearLabel = $ayStmt->fetchColumn() ?: 'N/A';
+}
 
 // Total collections this semester
 $stmt = $conn->prepare("SELECT COALESCE(SUM(amount), 0) as total FROM payments 
@@ -43,7 +49,7 @@ $stmt->execute();
 $paymentsToday = $stmt->fetch()['total'];
 
 // Recent payments
-$stmt = $conn->prepare("SELECT p.*, s.student_id, s.first_name, s.last_name
+$stmt = $conn->prepare("SELECT p.*, s.id AS student_db_id, s.student_id, s.first_name, s.last_name, s.academic_status
                         FROM payments p
                         INNER JOIN students s ON p.student_id = s.id
                         ORDER BY p.created_at DESC LIMIT 10");
@@ -130,6 +136,10 @@ include '../../includes/header.php';
             <p class="text-muted mb-0" style="font-size:13px;">
                 <strong>Semester:</strong> <?php echo e($currentSemester['semester_name'] ?? 'N/A'); ?> &nbsp;|&nbsp; <?php echo date('l, M d, Y'); ?>
             </p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap;">CURRENT YR. <span style="color:#2563eb;"><?php echo e($currentAcademicYearLabel); ?></span></span>
+                <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap;">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name'] ?? 'N/A'); ?></span></span>
+            </div>
         </div>
         
         <!-- Finance Stats Cards -->
@@ -147,6 +157,7 @@ include '../../includes/header.php';
                 <div class="stat-details">
                     <h3><?php echo Helper::formatCurrency($totalCollections); ?></h3>
                     <p>Semester Collections</p>
+                    <small style="color:#6b7280;font-weight:600;">CURRENT YR. <?php echo e($currentAcademicYearLabel); ?></small>
                 </div>
             </div>
             
@@ -217,6 +228,7 @@ include '../../includes/header.php';
                             <tr>
                                 <th>Payment ID</th>
                                 <th>Student</th>
+                                <th>Academic Status</th>
                                 <th>Amount</th>
                                 <th>Method</th>
                                 <th>Date</th>
@@ -225,9 +237,24 @@ include '../../includes/header.php';
                         </thead>
                         <tbody>
                             <?php foreach($recentPayments as $payment): ?>
+                                <?php
+                                    $academicStatusMeta = getStudentAcademicStatusMeta(
+                                        $conn,
+                                        (int)($payment['student_db_id'] ?? 0),
+                                        (int)($currentSemester['id'] ?? 0),
+                                        (string)($payment['academic_status'] ?? '')
+                                    );
+                                    $academicStatusLabel = (string)($academicStatusMeta['label'] ?? 'Status Pending');
+                                    $academicStatusStyle = (string)($academicStatusMeta['style'] ?? getAcademicStatusChipStyle('neutral'));
+                                ?>
                                 <tr>
                                     <td><?php echo e($payment['payment_id']); ?></td>
                                     <td><?php echo e($payment['first_name'] . ' ' . $payment['last_name']); ?><br><small><?php echo e($payment['student_id']); ?></small></td>
+                                    <td>
+                                        <span style="<?php echo e($academicStatusStyle); ?> border-radius:6px; padding:4px 10px; font-weight:600; font-size:12px; line-height:1; white-space:nowrap;">
+                                            <?php echo e($academicStatusLabel); ?>
+                                        </span>
+                                    </td>
                                     <td><strong><?php echo Helper::formatCurrency($payment['amount']); ?></strong></td>
                                     <td><?php echo ucfirst(str_replace('_', ' ', $payment['payment_method'])); ?></td>
                                     <td><?php echo Helper::formatDate($payment['payment_date']); ?></td>

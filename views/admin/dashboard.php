@@ -53,7 +53,6 @@ $stmt = $conn->prepare("
     INNER JOIN programs p ON c.program_id = p.id
     WHERE ca.status = 'active' AND c.status = 'active' AND l.status = 'active'
     ORDER BY ca.assigned_date DESC
-    LIMIT 4
 ");
 $stmt->execute();
 $assignedCourses = $stmt->fetchAll();
@@ -108,9 +107,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['undo_semester_id'])) 
             header('Location: dashboard.php'); exit;
         }
 
-        // perform revert: deactivate others, activate requested semester, update academic year
+        // perform revert: deactivate only currently-active rows, then activate requested semester/year
         $conn->beginTransaction();
-        $conn->exec("UPDATE semesters SET status = 'inactive'");
+        $deactivateSemesterStmt = $conn->prepare("UPDATE semesters SET status = 'inactive' WHERE status = 'active' AND id <> :id");
+        $deactivateSemesterStmt->execute(['id' => $undoId]);
         $ust = $conn->prepare("UPDATE semesters SET status = 'active' WHERE id = :id");
         $ust->execute(['id' => $undoId]);
 
@@ -118,7 +118,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['undo_semester_id'])) 
         $ayStmt->execute(['id' => $undoId]);
         $ayRow = $ayStmt->fetch(PDO::FETCH_ASSOC);
         if ($ayRow && !empty($ayRow['academic_year_id'])) {
-            $conn->exec("UPDATE academic_years SET status = 'inactive'");
+            $deactivateYearStmt = $conn->prepare("UPDATE academic_years SET status = 'inactive' WHERE status = 'active' AND id <> :id");
+            $deactivateYearStmt->execute(['id' => $ayRow['academic_year_id']]);
             $uay = $conn->prepare("UPDATE academic_years SET status = 'active' WHERE id = :id");
             $uay->execute(['id' => $ayRow['academic_year_id']]);
         }
@@ -162,9 +163,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['activate_semester_id'
         $prevStmt->execute();
         $previousSem = $prevStmt->fetch(PDO::FETCH_ASSOC) ?: null;
 
+        // ensure target semester exists before status updates
+        $targetStmt = $conn->prepare('SELECT s.*, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id WHERE s.id = :id LIMIT 1');
+        $targetStmt->execute(['id' => $activateId]);
+        $targetSem = $targetStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!$targetSem) {
+            if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+                header('Content-Type: application/json'); echo json_encode(['success' => false, 'error' => 'Semester not found']); exit;
+            }
+            $session->setFlash('error', 'Semester not found');
+            header('Location: dashboard.php'); exit;
+        }
+
         $conn->beginTransaction();
-        // Deactivate other semesters (limit to same academic year? currently global)
-        $conn->exec("UPDATE semesters SET status = 'inactive'");
+        // Deactivate only currently-active semester(s), keep historical completed rows untouched
+        $deactivateSemesterStmt = $conn->prepare("UPDATE semesters SET status = 'inactive' WHERE status = 'active' AND id <> :id");
+        $deactivateSemesterStmt->execute(['id' => $activateId]);
         // Activate selected semester
         $ust = $conn->prepare("UPDATE semesters SET status = 'active' WHERE id = :id");
         $ust->execute(['id' => $activateId]);
@@ -174,7 +188,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['activate_semester_id'
         $ayStmt->execute(['id' => $activateId]);
         $ayRow = $ayStmt->fetch(PDO::FETCH_ASSOC);
         if ($ayRow && !empty($ayRow['academic_year_id'])) {
-            $conn->exec("UPDATE academic_years SET status = 'inactive'");
+            $deactivateYearStmt = $conn->prepare("UPDATE academic_years SET status = 'inactive' WHERE status = 'active' AND id <> :id");
+            $deactivateYearStmt->execute(['id' => $ayRow['academic_year_id']]);
             $uay = $conn->prepare("UPDATE academic_years SET status = 'active' WHERE id = :id");
             $uay->execute(['id' => $ayRow['academic_year_id']]);
         }
@@ -249,7 +264,7 @@ try {
     $savedStmt->execute(['uid' => $currentUser['id']]);
     $savedNotifications = $savedStmt->fetchAll();
 } catch (Exception $e) {
-    // Table might not exist or other DB issue — degrade gracefully
+    // Table might not exist or other DB issue - degrade gracefully
     $savedNotifications = [];
 }
 
@@ -285,7 +300,7 @@ include '../../includes/header.php';
                             <strong><?php echo e($currentUser['profile']['first_name'] ?? ''); ?> <?php echo e($currentUser['profile']['last_name'] ?? ''); ?></strong>
                             <br><small>Admin</small>
                         </div>
-                        <i class="dropdown-arrow">▼</i>
+                        <i class="dropdown-arrow">&#9662;</i>
                     </button>
                     <div class="user-dropdown-menu" id="userDropdownMenu">
                         <div class="user-profile-meta">
@@ -404,7 +419,7 @@ include '../../includes/header.php';
                 <h3><i class="fas fa-graduation-cap"></i> Recent Courses</h3>
                 <a href="courses/list.php" class="btn btn-sm btn-outline-primary">View All Courses</a>
             </div>
-            <div class="assigned-courses-grid">
+            <div class="assigned-courses-grid" data-rotate-courses="1" data-rotate-size="2" data-rotate-interval-ms="30000">
                 <?php if (!empty($assignedCourses)): ?>
                     <?php foreach ($assignedCourses as $assignment): ?>
                         <div class="assignment-card">
@@ -457,46 +472,51 @@ include '../../includes/header.php';
                         <i class="fas fa-chevron-up fold-arrow"></i>
                     </h3>
                     <div class="foldable-body" id="activityBody">
-                    <?php if (!empty($recentActivities)): ?>
-                        <?php foreach ($recentActivities as $activity): ?>
-                            <div class="activity-item">
-                                <div class="activity-icon">
-                                    <?php 
-                                    switch($activity['action']) {
-                                        case 'login': echo '<i class="fas fa-sign-in-alt"></i>'; break;
-                                        case 'logout': echo '<i class="fas fa-sign-out-alt"></i>'; break;
-                                        case 'create': echo '<i class="fas fa-plus"></i>'; break;
-                                        case 'update': echo '<i class="fas fa-edit"></i>'; break;
-                                        case 'delete': echo '<i class="fas fa-trash"></i>'; break;
-                                        case 'approve': echo '<i class="fas fa-check"></i>'; break;
-                                        case 'submit': echo '<i class="fas fa-paper-plane"></i>'; break;
-                                        default: echo '<i class="fas fa-circle"></i>';
-                                    }
-                                    ?>
-                                </div>
-                                <div class="activity-details">
-                                    <h5><?php echo e($activity['description']); ?></h5>
-                                    <p>
-                                        <i class="fas fa-clock"></i> 
-                                        <span class="activity-time" title="<?php echo Helper::formatDateTime($activity['created_at'], 'M d, Y g:i:s A'); ?>">
-                                            <?php echo Helper::formatDateTime($activity['created_at'], 'g:i:s A'); ?>
-                                        </span>
-                                        <span class="activity-date"><?php echo Helper::formatDate($activity['created_at'], 'M d, Y'); ?></span>
-                                        <span class="activity-module"><?php echo e($activity['module']); ?></span>
-                                        <?php if (isset($activity['username'])): ?>
-                                            <span class="activity-user"><i class="fas fa-user"></i> <?php echo e($activity['username']); ?></span>
-                                        <?php endif; ?>
-                                    </p>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    <?php else: ?>
-                        <div class="empty-state">
-                            <i class="fas fa-inbox"></i>
-                            <h4>No Recent Activity</h4>
-                            <p>System activities will appear here as they occur.</p>
+                        <div class="card-last-updated">
+                            Last updated at <span id="activityLastUpdated"><?php echo date('H:i:s'); ?></span>
                         </div>
-                    <?php endif; ?>
+                        <div id="activityList">
+                            <?php if (!empty($recentActivities)): ?>
+                                <?php foreach ($recentActivities as $activity): ?>
+                                    <div class="activity-item">
+                                        <div class="activity-icon">
+                                            <?php 
+                                            switch($activity['action']) {
+                                                case 'login': echo '<i class="fas fa-sign-in-alt"></i>'; break;
+                                                case 'logout': echo '<i class="fas fa-sign-out-alt"></i>'; break;
+                                                case 'create': echo '<i class="fas fa-plus"></i>'; break;
+                                                case 'update': echo '<i class="fas fa-edit"></i>'; break;
+                                                case 'delete': echo '<i class="fas fa-trash"></i>'; break;
+                                                case 'approve': echo '<i class="fas fa-check"></i>'; break;
+                                                case 'submit': echo '<i class="fas fa-paper-plane"></i>'; break;
+                                                default: echo '<i class="fas fa-circle"></i>';
+                                            }
+                                            ?>
+                                        </div>
+                                        <div class="activity-details">
+                                            <h5><?php echo e($activity['description']); ?></h5>
+                                            <p>
+                                                <i class="fas fa-clock"></i> 
+                                                <span class="activity-time" title="<?php echo Helper::formatDateTime($activity['created_at'], 'M d, Y g:i:s A'); ?>">
+                                                    <?php echo Helper::formatDateTime($activity['created_at'], 'g:i:s A'); ?>
+                                                </span>
+                                                <span class="activity-date"><?php echo Helper::formatDate($activity['created_at'], 'M d, Y'); ?></span>
+                                                <span class="activity-module"><?php echo e($activity['module']); ?></span>
+                                                <?php if (isset($activity['username'])): ?>
+                                                    <span class="activity-user"><i class="fas fa-user"></i> <?php echo e($activity['username']); ?></span>
+                                                <?php endif; ?>
+                                            </p>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <div class="empty-state">
+                                    <i class="fas fa-inbox"></i>
+                                    <h4>No Recent Activity</h4>
+                                    <p>System activities will appear here as they occur.</p>
+                                </div>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -509,6 +529,9 @@ include '../../includes/header.php';
                         <i class="fas fa-chevron-up fold-arrow"></i>
                     </h3>
                     <div class="foldable-body" id="sessionsBody">
+                    <div class="card-last-updated">
+                        Last updated at <span id="sessionsLastUpdated"><?php echo date('H:i:s'); ?></span>
+                    </div>
                     <div class="table-responsive">
                         <table class="sessions-table">
                             <thead>
@@ -519,7 +542,7 @@ include '../../includes/header.php';
                                     <th>Duration</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="sessionsTableBody">
                                 <?php if (!empty($loginSessions)): ?>
                                     <?php foreach ($loginSessions as $session): ?>
                                         <tr>
@@ -535,11 +558,19 @@ include '../../includes/header.php';
                                                 </span>
                                             </td>
                                             <td>
-                                                <?php if ($session['logout_time']): ?>
-                                                    <span class="session-time logout">
-                                                        <i class="fas fa-sign-out-alt"></i>
-                                                        <?php echo Helper::formatDateTime($session['logout_time'], 'M d, g:i:s A'); ?>
-                                                    </span>
+                                                <?php if (!empty($session['session_end_time'])): ?>
+                                                    <?php if (($session['end_type'] ?? '') === 'superseded'): ?>
+                                                        <span class="session-time auto-closed">
+                                                            <i class="fas fa-exchange-alt"></i>
+                                                            <?php echo Helper::formatDateTime($session['session_end_time'], 'M d, g:i:s A'); ?>
+                                                            <small style="display:block; color:#856404;">Ended by next login</small>
+                                                        </span>
+                                                    <?php else: ?>
+                                                        <span class="session-time logout">
+                                                            <i class="fas fa-sign-out-alt"></i>
+                                                            <?php echo Helper::formatDateTime($session['session_end_time'], 'M d, g:i:s A'); ?>
+                                                        </span>
+                                                    <?php endif; ?>
                                                 <?php else: ?>
                                                     <span class="session-active">
                                                         <i class="fas fa-circle"></i> Active
@@ -635,7 +666,7 @@ include '../../includes/header.php';
             <div class="col-md-4">
                 <!-- Current Semester -->
                 <?php if ($currentSemester): ?>
-                <div class="semester-card" tabindex="0" role="button" aria-label="Current Semester — click to open semester selector">
+                <div class="semester-card" tabindex="0" role="button" aria-label="Current Semester - click to open semester selector">
                     <h3><i class="fas fa-calendar-alt"></i> Current Semester</h3>
                     <div class="activate-controls">
                         <form method="POST" style="display:flex;gap:8px;align-items:center;">
@@ -647,7 +678,8 @@ include '../../includes/header.php';
                                     foreach ($allSems as $s) {
                                         $label = $s['year_name'] . ' - ' . $s['semester_name'] . ' (' . date('M d, Y', strtotime($s['start_date'])) . ' - ' . date('M d, Y', strtotime($s['end_date'])) . ')';
                                         $sel = ($currentSemester && $currentSemester['id'] == $s['id']) ? 'selected' : '';
-                                        echo "<option value=\"{$s['id']}\" {$sel}>" . e($label) . " - " . e(ucfirst($s['status'])) . "</option>";
+                                        $status = strtolower((string)($s['status'] ?? 'inactive'));
+                                        echo "<option value=\"{$s['id']}\" data-base-label=\"" . e($label) . "\" data-status=\"" . e($status) . "\" {$sel}>" . e($label) . " - " . e(ucfirst($status)) . "</option>";
                                     }
                                 ?>
                             </select>
@@ -711,6 +743,52 @@ include '../../includes/header.php';
     var form = card.querySelector('form');
     var btn = form ? form.querySelector('button[type="submit"]') : null;
 
+    function normalizeStatus(status) {
+        var s = (status || '').toString().trim().toLowerCase();
+        return s || 'inactive';
+    }
+
+    function statusLabel(status) {
+        var s = normalizeStatus(status);
+        return s.charAt(0).toUpperCase() + s.slice(1);
+    }
+
+    function optionBaseLabel(opt) {
+        return opt.getAttribute('data-base-label') || opt.textContent.replace(/\s-\s(Active|Inactive|Completed|Pending|active|inactive|completed|pending)$/i, '').trim();
+    }
+
+    function optionStatus(opt) {
+        var fromAttr = normalizeStatus(opt.getAttribute('data-status'));
+        if (fromAttr) return fromAttr;
+        var m = opt.textContent.match(/\s-\s(Active|Inactive|Completed|Pending)$/i);
+        return m ? normalizeStatus(m[1]) : 'inactive';
+    }
+
+    function setOptionStatus(opt, status) {
+        var normalized = normalizeStatus(status);
+        opt.setAttribute('data-status', normalized);
+        opt.textContent = optionBaseLabel(opt) + ' - ' + statusLabel(normalized);
+    }
+
+    function refreshSemesterOptions(sel, activeId) {
+        if (!sel) return;
+        var active = parseInt(activeId, 10);
+        Array.from(sel.options).forEach(function(opt) {
+            var id = parseInt(opt.value, 10);
+            var current = optionStatus(opt);
+            if (id === active) {
+                setOptionStatus(opt, 'active');
+                opt.selected = true;
+                return;
+            }
+            if (current === 'active') {
+                setOptionStatus(opt, 'inactive');
+                return;
+            }
+            setOptionStatus(opt, current);
+        });
+    }
+
     function openSelector() {
         if (!select) return; try { select.focus(); select.click(); } catch(e){}
     }
@@ -722,7 +800,7 @@ include '../../includes/header.php';
         e.preventDefault(); if (!btn) return; btn.disabled = true;
         var fd = new FormData(form);
         fetch(window.location.pathname, { method:'POST', credentials:'same-origin', headers:{'X-Requested-With':'XMLHttpRequest'}, body:fd })
-        .then(r=>r.json()).then(function(data){ btn.disabled=false; if (data && data.success){ var sem = data.semester||null; if (sem){ var nameEl=document.querySelector('.semester-name'); if (nameEl) nameEl.textContent = sem.semester_name||nameEl.textContent; var spans=document.querySelectorAll('.semester-dates span'); function fmt(d){ try{ return new Date(d).toLocaleDateString('en-US',{month:'short',day:'2-digit',year:'numeric'}); }catch(e){return d;} } if (spans[0]) spans[0].innerHTML = '<i class="fas fa-play"></i> ' + fmt(sem.start_date); if (spans[1]) spans[1].innerHTML = '<i class="fas fa-stop"></i> ' + fmt(sem.end_date); var badge=document.querySelector('.semester-status .badge'); if (badge){ var st=(sem.status||'').toLowerCase(); badge.textContent = (st.charAt(0).toUpperCase()+st.slice(1))||badge.textContent; badge.className = 'badge ' + (st==='active' ? 'badge-success' : 'badge-secondary'); } var sel = form.querySelector('select[name="activate_semester_id"]'); if (sel){ Array.from(sel.options).forEach(function(opt){ var base = opt.textContent.replace(/\s-\s(Active|Inactive|Completed|Pending|active|inactive|completed|pending)$/i,'').trim(); if (parseInt(opt.value)===parseInt(sem.id)){ opt.textContent = base + ' - Active'; opt.selected = true; } else { opt.textContent = base + ' - Inactive'; } }); } }
+        .then(r=>r.json()).then(function(data){ btn.disabled=false; if (data && data.success){ var sem = data.semester||null; if (sem){ var nameEl=document.querySelector('.semester-name'); if (nameEl) nameEl.textContent = sem.semester_name||nameEl.textContent; var spans=document.querySelectorAll('.semester-dates span'); function fmt(d){ try{ return new Date(d).toLocaleDateString('en-US',{month:'short',day:'2-digit',year:'numeric'}); }catch(e){return d;} } if (spans[0]) spans[0].innerHTML = '<i class="fas fa-play"></i> ' + fmt(sem.start_date); if (spans[1]) spans[1].innerHTML = '<i class="fas fa-stop"></i> ' + fmt(sem.end_date); var badge=document.querySelector('.semester-status .badge'); if (badge){ var st=(sem.status||'').toLowerCase(); badge.textContent = (st.charAt(0).toUpperCase()+st.slice(1))||badge.textContent; badge.className = 'badge ' + (st==='active' ? 'badge-success' : 'badge-secondary'); } var sel = form.querySelector('select[name="activate_semester_id"]'); refreshSemesterOptions(sel, sem.id); }
             var existing = document.querySelector('.content-area .alert[data-auto-dismiss="false"]'); if (existing) existing.remove();
 
 // Build distinct alert for activation/no-change
@@ -781,7 +859,7 @@ if (data && data.action === 'no_change') {
                         if (spans[0]) spans[0].innerHTML = '<i class="fas fa-play"></i> ' + fmt(sem.start_date);
                         if (spans[1]) spans[1].innerHTML = '<i class="fas fa-stop"></i> ' + fmt(sem.end_date);
                         var badge = document.querySelector('.semester-status .badge'); if (badge){ var st=(sem.status||'').toLowerCase(); badge.textContent = (st.charAt(0).toUpperCase()+st.slice(1))||badge.textContent; badge.className = 'badge ' + (st==='active' ? 'badge-success' : 'badge-secondary'); }
-                        var sel = form.querySelector('select[name="activate_semester_id"]'); if (sel){ Array.from(sel.options).forEach(function(opt){ var base = opt.textContent.replace(/\s-\s(Active|Inactive|Completed|Pending|active|inactive|completed|pending)$/i,'').trim(); if (parseInt(opt.value)===parseInt(sem.id)){ opt.textContent = base + ' - Active'; opt.selected = true; } else { opt.textContent = base + ' - Inactive'; } }); }
+                        var sel = form.querySelector('select[name="activate_semester_id"]'); refreshSemesterOptions(sel, sem.id);
                     }
 
                     // replace alert content to show reverted state
@@ -886,7 +964,7 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
     font-weight: 500;
 }
 
-/* Semester card — ensure dates are visible and wrap on small screens */
+/* Semester card - ensure dates are visible and wrap on small screens */
 .semester-card { position: relative; overflow: visible; padding-top: 20px; }
 .activate-controls { position: absolute; top: 12px; right: 16px; display:flex; gap:8px; align-items:center; z-index:2; }
 @media (max-width:768px) {
@@ -1070,6 +1148,7 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
 .sessions-table {
     width: 100%;
     border-collapse: collapse;
+    table-layout: fixed;
 }
 
 .sessions-table th,
@@ -1078,6 +1157,10 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
     text-align: left;
     border-bottom: 1px solid #f0f0f0;
     font-size: 13px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    vertical-align: top;
 }
 
 .sessions-table th {
@@ -1088,9 +1171,22 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
     text-transform: uppercase;
 }
 
+.sessions-table th:nth-child(1),
+.sessions-table td:nth-child(1) { width: 20%; }
+
+.sessions-table th:nth-child(2),
+.sessions-table td:nth-child(2) { width: 30%; }
+
+.sessions-table th:nth-child(3),
+.sessions-table td:nth-child(3) { width: 30%; }
+
+.sessions-table th:nth-child(4),
+.sessions-table td:nth-child(4) { width: 20%; }
+
 .session-user {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
     color: #1a1a2e;
     font-weight: 500;
@@ -1098,10 +1194,16 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
 
 .session-time {
     display: inline-flex;
-    align-items: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    white-space: normal;
     gap: 6px;
     font-family: 'Consolas', 'Monaco', monospace;
     font-size: 12px;
+}
+
+.session-time i {
+    margin-top: 2px;
 }
 
 .session-time.login {
@@ -1112,9 +1214,22 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
     color: #dc3545;
 }
 
+.session-time.auto-closed {
+    color: #856404;
+}
+
+.card-last-updated {
+    text-align: right;
+    font-size: 11px;
+    color: #6c757d;
+    margin-bottom: 10px;
+    font-weight: 500;
+}
+
 .session-active {
     display: inline-flex;
-    align-items: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
     gap: 5px;
     color: #28a745;
     font-weight: 600;
@@ -1329,6 +1444,10 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
     overflow-x: hidden;
 }
 
+.user-sessions-card .table-responsive {
+    overflow-x: hidden !important;
+}
+
 .user-sessions-card .foldable-body::-webkit-scrollbar {
     width: 6px;
 }
@@ -1491,10 +1610,75 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
         align-items: flex-start;
         gap: 8px;
     }
+
+    .sessions-table th,
+    .sessions-table td {
+        padding: 8px 6px;
+        font-size: 11px;
+    }
+
+    .sessions-table th:nth-child(1),
+    .sessions-table td:nth-child(1) { width: 22%; }
+
+    .sessions-table th:nth-child(2),
+    .sessions-table td:nth-child(2) { width: 31%; }
+
+    .sessions-table th:nth-child(3),
+    .sessions-table td:nth-child(3) { width: 31%; }
+
+    .sessions-table th:nth-child(4),
+    .sessions-table td:nth-child(4) { width: 16%; }
 }
 </style>
 
 <script>
+// Rotate Recent Courses: show 2 cards every 30 seconds, loop endlessly
+(function() {
+    var grid = document.querySelector('.assigned-courses-grid[data-rotate-courses="1"]');
+    if (!grid) return;
+
+    var cards = Array.prototype.slice.call(grid.querySelectorAll('.assignment-card'));
+    if (!cards.length) return;
+
+    var pageSize = parseInt(grid.getAttribute('data-rotate-size') || '2', 10);
+    if (!pageSize || pageSize < 1) pageSize = 2;
+
+    var intervalMs = parseInt(grid.getAttribute('data-rotate-interval-ms') || '30000', 10);
+    if (!intervalMs || intervalMs < 1000) intervalMs = 30000;
+
+    var pages = [];
+    for (var i = 0; i < cards.length; i += pageSize) {
+        pages.push(cards.slice(i, i + pageSize));
+    }
+
+    function showPage(pageIndex) {
+        for (var x = 0; x < cards.length; x++) {
+            cards[x].style.display = 'none';
+        }
+
+        var page = pages[pageIndex] || [];
+        for (var y = 0; y < page.length; y++) {
+            page[y].style.display = '';
+        }
+    }
+
+    var currentPage = 0;
+    showPage(currentPage);
+
+    if (pages.length <= 1) {
+        return;
+    }
+
+    var rotationTimer = setInterval(function() {
+        currentPage = (currentPage + 1) % pages.length;
+        showPage(currentPage);
+    }, intervalMs);
+
+    window.addEventListener('beforeunload', function() {
+        if (rotationTimer) clearInterval(rotationTimer);
+    });
+})();
+
 // Foldable card toggle
 document.querySelectorAll('.foldable-header').forEach(function(header) {
     var targetId = header.getAttribute('data-target');
@@ -2032,16 +2216,32 @@ function renderAdminNotificationBell() {
         });
     }
 
-    // Auto-refresh recent activities
+    // Auto-refresh recent activities and login sessions
     let activityRefreshInterval;
+    let sessionsRefreshInterval;
+
+    function getCurrentTimeLabel() {
+        const now = new Date();
+        const hh = String(now.getHours()).padStart(2, '0');
+        const mm = String(now.getMinutes()).padStart(2, '0');
+        const ss = String(now.getSeconds()).padStart(2, '0');
+        return hh + ':' + mm + ':' + ss;
+    }
+
+    function setLastUpdated(labelId) {
+        const el = document.getElementById(labelId);
+        if (el) {
+            el.textContent = getCurrentTimeLabel();
+        }
+    }
 
     function refreshRecentActivities() {
-        const activityBody = document.getElementById('activityBody');
-        if (!activityBody) return;
+        const activityList = document.getElementById('activityList');
+        if (!activityList) return;
 
         // Show loading indicator
-        const originalContent = activityBody.innerHTML;
-        activityBody.innerHTML = '<div class="text-center" style="padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Refreshing...</div>';
+        const originalContent = activityList.innerHTML;
+        activityList.innerHTML = '<div class="text-center" style="padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Refreshing...</div>';
 
         fetch('<?php echo BASE_URL; ?>/api/activities.php?limit=10')
             .then(response => {
@@ -2092,29 +2292,103 @@ function renderAdminNotificationBell() {
                             </div>
                         `;
                     });
-                    activityBody.innerHTML = html;
+                    activityList.innerHTML = html;
+                    setLastUpdated('activityLastUpdated');
                 } else {
                     // Restore original content if no activities or error
-                    activityBody.innerHTML = originalContent;
+                    activityList.innerHTML = originalContent;
+                    setLastUpdated('activityLastUpdated');
                 }
             })
             .catch(error => {
                 console.log('Error refreshing activities:', error);
                 // Restore original content on error
-                activityBody.innerHTML = originalContent;
+                activityList.innerHTML = originalContent;
+            });
+    }
+
+    function refreshLoginSessions() {
+        const sessionsBody = document.getElementById('sessionsTableBody');
+        if (!sessionsBody) return;
+
+        fetch('<?php echo BASE_URL; ?>/api/login-sessions.php?limit=15')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (!data.success) {
+                    return;
+                }
+
+                const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+                if (sessions.length === 0) {
+                    sessionsBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No login sessions found</td></tr>';
+                    return;
+                }
+
+                let html = '';
+                sessions.forEach(row => {
+                    const username = (row.username || 'Unknown').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const loginTime = (row.formatted_login_time || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const endTime = (row.formatted_end_time || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const endType = row.end_type || 'active';
+                    const mins = row.session_duration_minutes;
+
+                    let endCell = '<span class="session-active"><i class="fas fa-circle"></i> Active</span>';
+                    if (endTime) {
+                        if (endType === 'superseded') {
+                            endCell = '<span class="session-time auto-closed"><i class="fas fa-exchange-alt"></i> ' + endTime + '<small style="display:block; color:#856404;">Ended by next login</small></span>';
+                        } else {
+                            endCell = '<span class="session-time logout"><i class="fas fa-sign-out-alt"></i> ' + endTime + '</span>';
+                        }
+                    }
+
+                    let durationCell = '<span class="session-duration active">--</span>';
+                    if (mins !== null && mins !== undefined && !isNaN(mins)) {
+                        const total = parseInt(mins, 10);
+                        if (total < 60) {
+                            durationCell = '<span class="session-duration">' + total + ' min</span>';
+                        } else {
+                            const hours = Math.floor(total / 60);
+                            const remain = total % 60;
+                            durationCell = '<span class="session-duration">' + hours + 'h ' + remain + 'm</span>';
+                        }
+                    }
+
+                    html += '<tr>' +
+                        '<td><span class="session-user"><i class="fas fa-user"></i> ' + username + '</span></td>' +
+                        '<td><span class="session-time login"><i class="fas fa-sign-in-alt"></i> ' + loginTime + '</span></td>' +
+                        '<td>' + endCell + '</td>' +
+                        '<td>' + durationCell + '</td>' +
+                    '</tr>';
+                });
+
+                sessionsBody.innerHTML = html;
+                setLastUpdated('sessionsLastUpdated');
+            })
+            .catch(error => {
+                console.log('Error refreshing login sessions:', error);
             });
     }
 
     // Auto-refresh every 30 seconds
     activityRefreshInterval = setInterval(refreshRecentActivities, 30000);
+    sessionsRefreshInterval = setInterval(refreshLoginSessions, 30000);
 
     // Initial refresh after 5 seconds
     setTimeout(refreshRecentActivities, 5000);
+    setTimeout(refreshLoginSessions, 5000);
 
     // Clear interval when page unloads
     window.addEventListener('beforeunload', function() {
         if (activityRefreshInterval) {
             clearInterval(activityRefreshInterval);
+        }
+        if (sessionsRefreshInterval) {
+            clearInterval(sessionsRefreshInterval);
         }
     });
     </script>

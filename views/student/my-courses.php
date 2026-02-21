@@ -29,18 +29,11 @@ $currentSemester = [
     'semester_name' => '-',
     'id' => 0
 ];
-$activeSemester = Helper::getCurrentSemester();
-if (!empty($activeSemester)) {
-    $currentSemester['semester_name'] = $activeSemester['semester_name'] ?? '-';
-    $currentSemester['id'] = (int)($activeSemester['id'] ?? 0);
-    if (!empty($activeSemester['academic_year_id'])) {
-        $ayStmt = $conn->prepare("SELECT year_name FROM academic_years WHERE id = :id LIMIT 1");
-        $ayStmt->execute(['id' => (int)$activeSemester['academic_year_id']]);
-        $yearName = $ayStmt->fetchColumn();
-        if ($yearName) {
-            $currentSemester['academic_year'] = $yearName;
-        }
-    }
+$studentSemesterContext = getStudentCurrentSemesterContext($conn, $studentId);
+if (!empty($studentSemesterContext['id'])) {
+    $currentSemester['semester_name'] = $studentSemesterContext['semester_name'] ?? '-';
+    $currentSemester['id'] = (int)($studentSemesterContext['id'] ?? 0);
+    $currentSemester['academic_year'] = $studentSemesterContext['academic_year'] ?? '-';
 }
 
 $outstandingBalance = (float)($studentProfile['account_balance'] ?? 0);
@@ -60,37 +53,14 @@ if ($studentId > 0 && $currentSemester['id'] > 0) {
     }
 }
 
-$academicStatus = 'Normal Progress';
-if ($studentId > 0) {
-    try {
-        $standingStmt = $conn->prepare("
-            SELECT sg.academic_standing
-            FROM student_gpas sg
-            WHERE sg.student_id = :student_id
-            ORDER BY
-                CASE WHEN :semester_id > 0 AND sg.semester_id = :semester_id THEN 0 ELSE 1 END,
-                sg.semester_id DESC,
-                sg.id DESC
-            LIMIT 1
-        ");
-        $standingStmt->execute([
-            'student_id' => $studentId,
-            'semester_id' => (int)$currentSemester['id']
-        ]);
-        $standing = trim((string)$standingStmt->fetchColumn());
-        if ($standing !== '') {
-            $standingLower = strtolower($standing);
-            if ($standingLower === 'good standing') {
-                $academicStatus = 'Normal Progress';
-            } elseif ($standingLower === 'suspension') {
-                $academicStatus = 'Suspended';
-            } else {
-                $academicStatus = $standing;
-            }
-        }
-    } catch (Exception $e) {
-    }
-}
+$academicStatusMeta = getStudentAcademicStatusMeta(
+    $conn,
+    (int)$studentId,
+    (int)($currentSemester['id'] ?? 0),
+    (string)($studentProfile['academic_status'] ?? '')
+);
+$academicStatus = (string)($academicStatusMeta['label'] ?? 'Status Pending');
+$academicStatusStyle = (string)($academicStatusMeta['style'] ?? getAcademicStatusChipStyle('neutral'));
 
 $registeredProgramName = '-';
 if ($studentId > 0) {
@@ -371,13 +341,13 @@ body { background: #f8fafc; }
         <span style="font-size:1rem;"><?php echo e($registeredProgramName); ?></span>
         <span class="chip" style="background:#16a34a; color:#fff;">ACTIVE</span>
         <span style="margin-left:auto; font-size:1rem; color:#1f7aa8;">ACADEMIC STATUS:</span>
-        <span class="chip red" style="color:#c2410c; background:#ffedd5; border:1px solid #fdba74;"><?php echo e($academicStatus); ?></span>
+        <span class="chip red" style="<?php echo e($academicStatusStyle); ?>"><?php echo e($academicStatus); ?></span>
     </div>
     <div class="chip-row">
         <span class="chip gray">CURRENT YR. <span style="color:#2563eb;"><?php echo e($currentSemester['academic_year']); ?></span></span>
         <span class="chip gray">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span>
-        <span class="chip red"><?php echo (isset($studentProfile['enrollment_status']) && strtolower($studentProfile['enrollment_status']) === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span>
-        <span class="chip red"><?php echo (isset($studentProfile['registration_status']) && strtolower($studentProfile['registration_status']) === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span>
+        <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span>
+        <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span>
         <span class="chip gray">TOTAL FEES BAL DUE: <?php echo number_format($outstandingBalance); ?>/=</span>
         <span class="chip blue">BALANCE ON ACCOUNT: <?php echo number_format((float)($studentProfile['account_balance'] ?? 0)); ?>/=</span>
     </div>
@@ -438,4 +408,5 @@ document.getElementById('menuBtn').addEventListener('click', function() {
 </script>
 
 <?php include '../../includes/footer.php'; ?>
+
 

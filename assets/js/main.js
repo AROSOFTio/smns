@@ -200,10 +200,7 @@ $(document).ready(function() {
         $('[data-toggle="tooltip"]').tooltip();
     }
     
-    // Auto-hide alerts after 5 seconds
-    setTimeout(function() {
-        $('.alert').fadeOut('slow');
-    }, 5000);
+    // Global alert auto-dismiss is handled in navigation.js with a longer timeout.
     
     // Confirm delete actions
     $('.delete-btn, .btn-danger[data-confirm]').click(function(e) {
@@ -332,5 +329,5 @@ function showError(message) {
         alert.fadeOut('slow', function() {
             $(this).remove();
         });
-    }, 5000);
+    }, 20000);
 }

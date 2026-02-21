@@ -95,7 +95,23 @@ function isLoggedIn() {
     if (isset($auth) && is_object($auth)) {
         return $auth->isLoggedIn();
     }
-    // Try to detect from any active session
+
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        return false;
+    }
+
+    $roleMap = [
+        'SMNS_ADMIN_SESSION' => 'admin',
+        'SMNS_STUDENT_SESSION' => 'student',
+        'SMNS_LECTURER_SESSION' => 'lecturer',
+        'SMNS_FINANCE_SESSION' => 'finance',
+    ];
+    $role = $roleMap[session_name()] ?? null;
+    if ($role) {
+        return !empty($_SESSION[$role . '_logged_in']) && !empty($_SESSION[$role . '_role']) && $_SESSION[$role . '_role'] === $role;
+    }
+
+    // Legacy fallback
     return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
 }
 
@@ -120,6 +136,14 @@ function hasRole($role) {
     if (isset($auth) && is_object($auth)) {
         return $auth->hasRole($role);
     }
+
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        $key = $role . '_role';
+        if (isset($_SESSION[$key])) {
+            return $_SESSION[$key] === $role;
+        }
+    }
+
     return isset($_SESSION['role']) && $_SESSION['role'] === $role;
 }
 
@@ -280,27 +304,365 @@ function getUnreadNotificationCountForUser($userId) {
 }
 
 /**
+ * Resolve live student enrollment/registration status from DB for a target semester.
+ * Falls back to latest known approved records when semester is not provided.
+ */
+function getStudentLifecycleStatus($conn, $studentId, $semesterId = 0) {
+    static $memo = [];
+
+    $studentId = (int)$studentId;
+    $semesterId = (int)$semesterId;
+    $memoKey = $studentId . ':' . $semesterId;
+    if (isset($memo[$memoKey])) {
+        return $memo[$memoKey];
+    }
+
+    $default = [
+        'enrollment_status' => 'not_enrolled',
+        'registration_status' => 'not_registered',
+        'has_enrollment' => false,
+        'has_registration' => false,
+    ];
+    if ($studentId <= 0 || !($conn instanceof PDO)) {
+        return $memo[$memoKey] = $default;
+    }
+
+    try {
+        $resolvedSemesterId = $semesterId;
+        if ($resolvedSemesterId <= 0) {
+            $sstmt = $conn->prepare("SELECT id FROM semesters WHERE status = 'active' ORDER BY start_date DESC LIMIT 1");
+            $sstmt->execute();
+            $resolvedSemesterId = (int)$sstmt->fetchColumn();
+        }
+
+        $hasEnrollment = false;
+        if ($resolvedSemesterId > 0) {
+            $estmt = $conn->prepare("SELECT COUNT(*) FROM semester_registrations WHERE student_id = :student_id AND semester_id = :semester_id AND status = 'approved'");
+            $estmt->execute(['student_id' => $studentId, 'semester_id' => $resolvedSemesterId]);
+            $hasEnrollment = ((int)$estmt->fetchColumn()) > 0;
+        }
+        if (!$hasEnrollment) {
+            $estmt = $conn->prepare("SELECT COUNT(*) FROM semester_registrations WHERE student_id = :student_id AND status = 'approved'");
+            $estmt->execute(['student_id' => $studentId]);
+            $hasEnrollment = ((int)$estmt->fetchColumn()) > 0;
+        }
+
+        $hasRegistration = false;
+        if ($resolvedSemesterId > 0) {
+            $rstmt = $conn->prepare("
+                SELECT COUNT(*)
+                FROM course_registrations
+                WHERE student_id = :student_id
+                  AND semester_id = :semester_id
+                  AND status IN ('approved', 'registered', 'pending', 'submitted')
+            ");
+            $rstmt->execute(['student_id' => $studentId, 'semester_id' => $resolvedSemesterId]);
+            $hasRegistration = ((int)$rstmt->fetchColumn()) > 0;
+        }
+        if (!$hasRegistration) {
+            $rstmt = $conn->prepare("
+                SELECT COUNT(*)
+                FROM course_registrations
+                WHERE student_id = :student_id
+                  AND status IN ('approved', 'registered', 'pending', 'submitted')
+            ");
+            $rstmt->execute(['student_id' => $studentId]);
+            $hasRegistration = ((int)$rstmt->fetchColumn()) > 0;
+        }
+
+        return $memo[$memoKey] = [
+            'enrollment_status' => $hasEnrollment ? 'enrolled' : 'not_enrolled',
+            'registration_status' => $hasRegistration ? 'registered' : 'not_registered',
+            'has_enrollment' => $hasEnrollment,
+            'has_registration' => $hasRegistration,
+        ];
+    } catch (Exception $e) {
+        return $memo[$memoKey] = $default;
+    }
+}
+
+/**
+ * Return a consistent chip style for academic status labels.
+ */
+function getAcademicStatusChipStyle($tone = 'neutral') {
+    $tone = strtolower(trim((string)$tone));
+    switch ($tone) {
+        case 'success':
+            return 'background:#dcfce7;color:#166534;border:1px solid #86efac;';
+        case 'warning':
+            return 'background:#ffedd5;color:#9a3412;border:1px solid #fdba74;';
+        case 'danger':
+            return 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;';
+        case 'info':
+            return 'background:#eff6ff;color:#1d4ed8;border:1px solid #93c5fd;';
+        default:
+            return 'background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;';
+    }
+}
+
+/**
+ * Resolve student academic status label + visual tone.
+ * Uses latest student_gpas (preferred), then student.academic_status fallback,
+ * and finally enrollment/registration lifecycle signals.
+ */
+function getStudentAcademicStatusMeta($conn, $studentId, $semesterId = 0, $fallbackAcademicStatus = '') {
+    static $memo = [];
+
+    $studentId = (int)$studentId;
+    $semesterId = (int)$semesterId;
+    $fallbackAcademicStatus = trim((string)$fallbackAcademicStatus);
+    $memoKey = $studentId . ':' . $semesterId . ':' . strtolower($fallbackAcademicStatus);
+    if (isset($memo[$memoKey])) {
+        return $memo[$memoKey];
+    }
+
+    $buildMeta = function ($label, $tone, $source = 'computed', $sgpa = null) {
+        $label = trim((string)$label);
+        if ($label === '') {
+            $label = 'Status Pending';
+        }
+        return [
+            'label' => $label,
+            'tone' => $tone,
+            'style' => getAcademicStatusChipStyle($tone),
+            'source' => $source,
+            'sgpa' => $sgpa,
+        ];
+    };
+
+    $normalize = function ($rawLabel, $sgpa = null) use ($buildMeta) {
+        $raw = trim((string)$rawLabel);
+        $rawLower = strtolower($raw);
+
+        // Promotion rule: SGPA below 2.00 should indicate repeat status.
+        if ($sgpa !== null && $sgpa < 2.0) {
+            if (in_array($rawLower, ['suspension', 'suspended', 'dead semester', 'dismissed', 'discontinued', 'withdrawn'], true)) {
+                $label = ($raw === '') ? 'Suspended' : ucwords($rawLower);
+                return $buildMeta($label, 'danger', 'gpa');
+            }
+            return $buildMeta('Repeat Semester (SGPA ' . number_format($sgpa, 2) . ')', 'warning', 'gpa', $sgpa);
+        }
+
+        if ($rawLower === '' || in_array($rawLower, ['good standing', 'active', 'normal progress'], true)) {
+            return $buildMeta('Normal Progress', 'success', 'standing', $sgpa);
+        }
+
+        if (in_array($rawLower, ['probation', 'on probation'], true)) {
+            return $buildMeta('On Probation', 'warning', 'standing', $sgpa);
+        }
+
+        if (in_array($rawLower, ['repeat', 'repeat semester'], true)) {
+            return $buildMeta('Repeat Semester', 'warning', 'standing', $sgpa);
+        }
+
+        if (in_array($rawLower, ['suspension', 'suspended', 'dead semester', 'dismissed', 'discontinued', 'withdrawn'], true)) {
+            $label = ($rawLower === 'dead semester') ? 'Dead Semester' : ucwords($rawLower);
+            return $buildMeta($label, 'danger', 'standing', $sgpa);
+        }
+
+        if (in_array($rawLower, ['deferred', 'on leave'], true)) {
+            return $buildMeta(ucwords($rawLower), 'info', 'standing', $sgpa);
+        }
+
+        if (in_array($rawLower, ['graduated', 'completed', 'complete'], true)) {
+            $label = ($rawLower === 'complete') ? 'Completed' : ucwords($rawLower);
+            return $buildMeta($label, 'success', 'standing', $sgpa);
+        }
+
+        return $buildMeta(ucwords($rawLower), 'warning', 'standing', $sgpa);
+    };
+
+    if ($studentId <= 0 || !($conn instanceof PDO)) {
+        return $memo[$memoKey] = $buildMeta('Status Pending', 'neutral', 'none');
+    }
+
+    try {
+        $stmt = $conn->prepare("
+            SELECT sg.academic_standing, sg.semester_gpa
+            FROM student_gpas sg
+            WHERE sg.student_id = :student_id
+            ORDER BY
+                CASE WHEN :semester_id > 0 AND sg.semester_id = :semester_id THEN 0 ELSE 1 END,
+                sg.semester_id DESC,
+                sg.id DESC
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'student_id' => $studentId,
+            'semester_id' => $semesterId
+        ]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        if (!empty($row)) {
+            $standing = trim((string)($row['academic_standing'] ?? ''));
+            $sgpa = (isset($row['semester_gpa']) && $row['semester_gpa'] !== '' && is_numeric($row['semester_gpa']))
+                ? (float)$row['semester_gpa']
+                : null;
+            return $memo[$memoKey] = $normalize($standing, $sgpa);
+        }
+    } catch (Exception $e) {
+        // Continue to fallbacks.
+    }
+
+    if ($fallbackAcademicStatus !== '') {
+        return $memo[$memoKey] = $normalize($fallbackAcademicStatus, null);
+    }
+
+    $lifecycle = getStudentLifecycleStatus($conn, $studentId, $semesterId);
+    if (($lifecycle['has_enrollment'] ?? false) === false) {
+        return $memo[$memoKey] = $buildMeta('Enrollment Pending', 'info', 'lifecycle');
+    }
+    if (($lifecycle['has_registration'] ?? false) === false) {
+        return $memo[$memoKey] = $buildMeta('Registration Pending', 'info', 'lifecycle');
+    }
+
+    return $memo[$memoKey] = $buildMeta('Normal Progress', 'success', 'default');
+}
+
+/**
+ * Resolve the semester context to display for a student.
+ * Prefers latest approved semester registration, then latest course registration, then active semester.
+ */
+function getStudentCurrentSemesterContext($conn, $studentId) {
+    $studentId = (int)$studentId;
+    $fallback = [
+        'id' => 0,
+        'semester_name' => '-',
+        'semester_number' => 0,
+        'academic_year_id' => 0,
+        'academic_year' => '-',
+    ];
+
+    if (!($conn instanceof PDO)) {
+        return $fallback;
+    }
+
+    try {
+        // 1) Latest approved semester enrollment for this student
+        if ($studentId > 0) {
+            $stmt = $conn->prepare("
+                SELECT s.id, s.semester_name, s.semester_number, s.academic_year_id, ay.year_name AS academic_year
+                FROM semester_registrations sr
+                INNER JOIN semesters s ON s.id = sr.semester_id
+                INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+                WHERE sr.student_id = :student_id AND sr.status = 'approved'
+                ORDER BY COALESCE(sr.updated_at, sr.request_date, sr.created_at) DESC, sr.id DESC
+                LIMIT 1
+            ");
+            $stmt->execute(['student_id' => $studentId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row) {
+                return [
+                    'id' => (int)($row['id'] ?? 0),
+                    'semester_name' => (string)($row['semester_name'] ?? '-'),
+                    'semester_number' => (int)($row['semester_number'] ?? 0),
+                    'academic_year_id' => (int)($row['academic_year_id'] ?? 0),
+                    'academic_year' => (string)($row['academic_year'] ?? '-'),
+                ];
+            }
+        }
+
+        // 2) Latest semester where student has course registrations
+        if ($studentId > 0) {
+            $stmt = $conn->prepare("
+                SELECT s.id, s.semester_name, s.semester_number, s.academic_year_id, ay.year_name AS academic_year
+                FROM course_registrations cr
+                INNER JOIN semesters s ON s.id = cr.semester_id
+                INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+                WHERE cr.student_id = :student_id
+                ORDER BY COALESCE(cr.updated_at, cr.registration_date, cr.created_at) DESC, cr.id DESC
+                LIMIT 1
+            ");
+            $stmt->execute(['student_id' => $studentId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row) {
+                return [
+                    'id' => (int)($row['id'] ?? 0),
+                    'semester_name' => (string)($row['semester_name'] ?? '-'),
+                    'semester_number' => (int)($row['semester_number'] ?? 0),
+                    'academic_year_id' => (int)($row['academic_year_id'] ?? 0),
+                    'academic_year' => (string)($row['academic_year'] ?? '-'),
+                ];
+            }
+        }
+
+        // 3) Active semester fallback
+        $active = Helper::getCurrentSemester();
+        if (!empty($active)) {
+            $yearName = '-';
+            if (!empty($active['academic_year_id'])) {
+                $ayStmt = $conn->prepare("SELECT year_name FROM academic_years WHERE id = :id LIMIT 1");
+                $ayStmt->execute(['id' => (int)$active['academic_year_id']]);
+                $yearName = (string)($ayStmt->fetchColumn() ?: '-');
+            }
+            return [
+                'id' => (int)($active['id'] ?? 0),
+                'semester_name' => (string)($active['semester_name'] ?? '-'),
+                'semester_number' => (int)($active['semester_number'] ?? 0),
+                'academic_year_id' => (int)($active['academic_year_id'] ?? 0),
+                'academic_year' => $yearName,
+            ];
+        }
+    } catch (Exception $e) {
+        // Fall through to default.
+    }
+
+    return $fallback;
+}
+
+/**
  * Auto-assign courses to a student for a given semester.
  * Prefers explicit `course_assignments` for the semester, then falls back to courses by program/level.
  * Safe to call multiple times; avoids creating duplicates.
  */
 function auto_assign_courses(PDO $conn, int $studentId, int $semesterId, $adminId = null, $programId = null, $levelYear = null) {
     try {
-        // Insert from course_assignments for the exact semester (includes academic year via semester)
-        $insAssign = $conn->prepare("INSERT INTO course_registrations (student_id, course_id, semester_id, registration_date, status, approved_by, approved_date, created_at, updated_at)
-            SELECT :student_id, c.id, :semester_id, CURDATE(), 'approved', :approved_by, NOW(), NOW(), NOW()
-            FROM course_assignments ca
-            JOIN courses c ON ca.course_id = c.id
-            WHERE ca.semester_id = :semester_id AND ca.status = 'active' AND c.status = 'active'
-            AND NOT EXISTS (SELECT 1 FROM course_registrations cr WHERE cr.student_id = :student_id AND cr.course_id = c.id AND cr.semester_id = :semester_id)");
-        $insAssign->execute(['student_id' => $studentId, 'semester_id' => $semesterId, 'approved_by' => $adminId]);
+        // Resolve available columns to support mixed schema versions safely.
+        $availableCols = [];
+        $colStmt = $conn->query("SHOW COLUMNS FROM course_registrations");
+        while ($col = $colStmt->fetch(PDO::FETCH_ASSOC)) {
+            $availableCols[] = strtolower((string)($col['Field'] ?? ''));
+        }
+        $has = function ($name) use ($availableCols) {
+            return in_array(strtolower($name), $availableCols, true);
+        };
 
-        // Fallback: insert from courses table filtered by program/level and semester offered
-        $insFallback = "INSERT INTO course_registrations (student_id, course_id, semester_id, registration_date, status, approved_by, approved_date, created_at, updated_at)
-            SELECT :student_id, c.id, :semester_id, CURDATE(), 'approved', :approved_by, NOW(), NOW(), NOW()
-            FROM courses c
-            WHERE c.status = 'active' AND (c.semester_offered = :sem_num OR c.semester_offered = 3)
-            AND NOT EXISTS (SELECT 1 FROM course_registrations cr WHERE cr.student_id = :student_id AND cr.course_id = c.id AND cr.semester_id = :semester_id)";
+        $insertCols = ['student_id', 'course_id', 'semester_id'];
+        $selectCols = [':student_id', 'c.id', ':semester_id'];
+        if ($has('registration_date')) { $insertCols[] = 'registration_date'; $selectCols[] = 'CURDATE()'; }
+        if ($has('status')) { $insertCols[] = 'status'; $selectCols[] = "'approved'"; }
+        if ($has('approved_by')) { $insertCols[] = 'approved_by'; $selectCols[] = ':approved_by'; }
+        if ($has('approved_date')) { $insertCols[] = 'approved_date'; $selectCols[] = 'NOW()'; }
+        if ($has('created_at')) { $insertCols[] = 'created_at'; $selectCols[] = 'NOW()'; }
+        if ($has('updated_at')) { $insertCols[] = 'updated_at'; $selectCols[] = 'NOW()'; }
+
+        $insertColSql = implode(', ', $insertCols);
+        $selectColSql = implode(', ', $selectCols);
+        $baseParams = ['student_id' => $studentId, 'semester_id' => $semesterId, 'approved_by' => $adminId];
+
+        // Insert from course_assignments (if table exists) for the exact semester.
+        $hasCourseAssignments = false;
+        try {
+            $tableCheck = $conn->prepare("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'course_assignments'");
+            $tableCheck->execute();
+            $hasCourseAssignments = ((int)$tableCheck->fetchColumn()) > 0;
+        } catch (Exception $e) {
+            $hasCourseAssignments = false;
+        }
+
+        if ($hasCourseAssignments) {
+            $assignSql = "INSERT INTO course_registrations ($insertColSql)
+                SELECT $selectColSql
+                FROM course_assignments ca
+                JOIN courses c ON ca.course_id = c.id
+                WHERE ca.semester_id = :semester_id AND ca.status = 'active' AND c.status = 'active'
+                AND NOT EXISTS (
+                    SELECT 1 FROM course_registrations cr
+                    WHERE cr.student_id = :student_id AND cr.course_id = c.id AND cr.semester_id = :semester_id
+                )";
+            $insAssign = $conn->prepare($assignSql);
+            $insAssign->execute($baseParams);
+        }
 
         // Resolve semester number for sem_num parameter
         $semNum = null;
@@ -308,15 +670,54 @@ function auto_assign_courses(PDO $conn, int $studentId, int $semesterId, $adminI
         $sstmt->execute(['id' => $semesterId]);
         $semNum = $sstmt->fetchColumn();
 
+        // Fallback chain from strict to broad so courses still assign from Admin->Courses
+        // even when program/year mappings are incomplete.
+        $fallbackWhereClauses = [];
         if ($programId && $levelYear) {
-            $insFallback = str_replace("WHERE c.status = 'active'", "WHERE c.program_id = :program_id AND c.level_year = :level_year AND c.status = 'active'", $insFallback);
+            $fallbackWhereClauses[] = "c.status = 'active' AND c.program_id = :program_id AND c.level_year = :level_year AND (c.semester_offered = :sem_num OR c.semester_offered = 3)";
+        }
+        if ($levelYear) {
+            $fallbackWhereClauses[] = "c.status = 'active' AND c.level_year = :level_year AND (c.semester_offered = :sem_num OR c.semester_offered = 3)";
+        }
+        $fallbackWhereClauses[] = "c.status = 'active' AND (c.semester_offered = :sem_num OR c.semester_offered = 3)";
+
+        foreach ($fallbackWhereClauses as $whereSql) {
+            $insFallback = "INSERT INTO course_registrations ($insertColSql)
+                SELECT $selectColSql
+                FROM courses c
+                WHERE $whereSql
+                AND NOT EXISTS (
+                    SELECT 1 FROM course_registrations cr
+                    WHERE cr.student_id = :student_id AND cr.course_id = c.id AND cr.semester_id = :semester_id
+                )";
+            $params = ['student_id' => $studentId, 'semester_id' => $semesterId, 'approved_by' => $adminId, 'sem_num' => $semNum];
+            if (strpos($whereSql, ':program_id') !== false) {
+                $params['program_id'] = $programId;
+            }
+            if (strpos($whereSql, ':level_year') !== false) {
+                $params['level_year'] = $levelYear;
+            }
+            $insStmt = $conn->prepare($insFallback);
+            $insStmt->execute($params);
         }
 
-        $params = ['student_id' => $studentId, 'semester_id' => $semesterId, 'approved_by' => $adminId, 'sem_num' => $semNum];
-        if ($programId && $levelYear) { $params['program_id'] = $programId; $params['level_year'] = $levelYear; }
-
-        $insStmt = $conn->prepare($insFallback);
-        $insStmt->execute($params);
+        // Final safety net: if still none assigned for this semester, assign all active courses.
+        $countStmt = $conn->prepare("SELECT COUNT(*) FROM course_registrations WHERE student_id = :student_id AND semester_id = :semester_id");
+        $countStmt->execute(['student_id' => $studentId, 'semester_id' => $semesterId]);
+        $assignedCount = (int)$countStmt->fetchColumn();
+        if ($assignedCount === 0) {
+            $insAny = "INSERT INTO course_registrations ($insertColSql)
+                SELECT $selectColSql
+                FROM courses c
+                WHERE c.status = 'active'
+                AND NOT EXISTS (
+                    SELECT 1 FROM course_registrations cr
+                    WHERE cr.student_id = :student_id AND cr.course_id = c.id AND cr.semester_id = :semester_id
+                )";
+            $paramsAny = ['student_id' => $studentId, 'semester_id' => $semesterId, 'approved_by' => $adminId];
+            $insAnyStmt = $conn->prepare($insAny);
+            $insAnyStmt->execute($paramsAny);
+        }
 
         return true;
     } catch (Exception $e) {

@@ -371,19 +371,11 @@ $currentSemester = [
     'id' => 0
 ];
 
-$activeSemester = Helper::getCurrentSemester();
-if (!empty($activeSemester)) {
-    $currentSemester['semester_name'] = $activeSemester['semester_name'] ?? '-';
-    $currentSemester['id'] = (int)($activeSemester['id'] ?? 0);
-
-    if (!empty($activeSemester['academic_year_id'])) {
-        $ayStmt = $conn->prepare("SELECT year_name FROM academic_years WHERE id = :id LIMIT 1");
-        $ayStmt->execute(['id' => (int)$activeSemester['academic_year_id']]);
-        $yearName = $ayStmt->fetchColumn();
-        if ($yearName) {
-            $currentSemester['academic_year'] = $yearName;
-        }
-    }
+$studentSemesterContext = getStudentCurrentSemesterContext($conn, (int)($studentProfile['id'] ?? 0));
+if (!empty($studentSemesterContext['id'])) {
+    $currentSemester['semester_name'] = $studentSemesterContext['semester_name'] ?? '-';
+    $currentSemester['id'] = (int)($studentSemesterContext['id'] ?? 0);
+    $currentSemester['academic_year'] = $studentSemesterContext['academic_year'] ?? '-';
 }
 
 $outstandingBalance = (float)($studentProfile['account_balance'] ?? 0);
@@ -404,51 +396,14 @@ if (!empty($studentProfile['id']) && $currentSemester['id'] > 0) {
     }
 }
 
-$academicStatus = 'Normal Progress';
-if (!empty($studentProfile['id'])) {
-    try {
-        $standingStmt = $conn->prepare("
-            SELECT sg.academic_standing
-            FROM student_gpas sg
-            WHERE sg.student_id = :student_id
-            ORDER BY
-                CASE WHEN :semester_id > 0 AND sg.semester_id = :semester_id THEN 0 ELSE 1 END,
-                sg.semester_id DESC,
-                sg.id DESC
-            LIMIT 1
-        ");
-        $standingStmt->execute([
-            'student_id' => (int)$studentProfile['id'],
-            'semester_id' => (int)$currentSemester['id']
-        ]);
-        $standing = trim((string)$standingStmt->fetchColumn());
-
-        if ($standing !== '') {
-            $standingLower = strtolower($standing);
-            if ($standingLower === 'good standing') {
-                $academicStatus = 'Normal Progress';
-            } elseif ($standingLower === 'suspension') {
-                $academicStatus = 'Suspended';
-            } else {
-                $academicStatus = $standing;
-            }
-        } elseif (!empty($studentProfile['academic_status'])) {
-            $rawAcademic = trim((string)$studentProfile['academic_status']);
-            $rawLower = strtolower($rawAcademic);
-            $academicStatus = ($rawLower === 'active' || $rawLower === 'good standing')
-                ? 'Normal Progress'
-                : $rawAcademic;
-        }
-    } catch (Exception $e) {
-        if (!empty($studentProfile['academic_status'])) {
-            $rawAcademic = trim((string)$studentProfile['academic_status']);
-            $rawLower = strtolower($rawAcademic);
-            $academicStatus = ($rawLower === 'active' || $rawLower === 'good standing')
-                ? 'Normal Progress'
-                : $rawAcademic;
-        }
-    }
-}
+$academicStatusMeta = getStudentAcademicStatusMeta(
+    $conn,
+    (int)($studentProfile['id'] ?? 0),
+    (int)($currentSemester['id'] ?? 0),
+    (string)($studentProfile['academic_status'] ?? '')
+);
+$academicStatus = (string)($academicStatusMeta['label'] ?? 'Status Pending');
+$academicStatusStyle = (string)($academicStatusMeta['style'] ?? getAcademicStatusChipStyle('neutral'));
 
 // Always resolve programme from admin-assigned student record.
 $registeredProgramName = '-';
@@ -770,7 +725,7 @@ body { background: #f8fafc; }
     <div style="padding:0.7rem 1.2rem 0.2rem 1.2rem; font-size:0.98rem; font-weight:600; display:flex; align-items:center; gap:0.7rem; flex-wrap:wrap;">
         <span>PROGRAMME: <?php echo e($registeredProgramName); ?></span>
         <span class="status-badge status-active" style="font-size:0.85rem; padding:3px 10px;"><?php echo !empty($studentProfile['status']) ? strtoupper(e($studentProfile['status'])) : 'ACTIVE'; ?></span>
-        <span style="margin-left:auto; font-size:1.05rem; color:#222;">ACADEMIC STATUS: <span style="background:#fee2e2; color:#991b1b; border-radius:6px; padding:4px 12px; font-weight:600;">
+        <span style="margin-left:auto; font-size:1.05rem; color:#222;">ACADEMIC STATUS: <span style="<?php echo e($academicStatusStyle); ?> border-radius:6px; padding:4px 12px; font-weight:600;">
             <?php echo !empty($academicStatus) ? e($academicStatus) : '-'; ?>
         </span></span>
     </div>
@@ -907,11 +862,11 @@ document.addEventListener('click', function() {
         <div style="display:flex; align-items:center; gap:0.35rem; margin-bottom:1.2rem; flex-wrap:nowrap; white-space:nowrap;">
             <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">CURRENT YR. <span style="color:#2563eb;"><?php echo !empty($currentSemester['academic_year']) ? e($currentSemester['academic_year']) : '-'; ?></span></span>
             <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">CURRENT SEM. <span style="color:#2563eb;"><?php echo !empty($currentSemester['semester_name']) ? e($currentSemester['semester_name']) : '-'; ?></span></span>
-            <span style="background:#fee2e2; color:#991b1b; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">
-                <?php echo (isset($studentProfile['enrollment_status']) && strtolower($studentProfile['enrollment_status']) === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?>
+            <span style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7; color:#166534; border:1px solid #86efac; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;' : 'background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;'; ?>">
+                <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?>
             </span>
-            <span style="background:#fee2e2; color:#991b1b; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">
-                <?php echo (isset($studentProfile['registration_status']) && strtolower($studentProfile['registration_status']) === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?>
+            <span style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7; color:#166534; border:1px solid #86efac; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;' : 'background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;'; ?>">
+                <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?>
             </span>
             <span style="background:#f1f5f9; color:#991b1b; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">TOTAL FEES BAL DUE: <?php echo isset($outstandingBalance) ? number_format($outstandingBalance) : '0'; ?>/=</span>
             <span style="background:#2563eb; color:#fff; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">BALANCE ON ACCOUNT: <?php echo isset($studentProfile['account_balance']) ? number_format($studentProfile['account_balance']) : '0'; ?>/=</span>
@@ -929,8 +884,8 @@ document.addEventListener('click', function() {
                         <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?>
                     </div>
                     <div style="font-size:1.05rem; color:#222;">STUDENT NO.: <?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
-                    <span class="status-badge status-notreg" style="margin-top:0.5rem;">
-                        <?php echo ($studentProfile['registration_status'] ?? '') === 'registered' ? 'REGISTERED' : 'NOT REGISTERED'; ?>
+                    <span class="status-badge <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'status-active' : 'status-notreg'; ?>" style="margin-top:0.5rem;">
+                        <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?>
                     </span>
                 </div>
                 <div class="bio-action-group">
@@ -1044,4 +999,5 @@ if (reloadBtn) {
 </script>
 
 <?php include '../../includes/footer.php'; ?>
+
 

@@ -29,9 +29,141 @@ $conn = $db->getConnection();
 $pageTitle = 'Draft Results';
 
 // Optional filters
-$filterAcademicYear = isset($_GET['academic_year']) ? (int)$_GET['academic_year'] : 0;
-$filterSemester = isset($_GET['semester']) ? (int)$_GET['semester'] : 0;
-$filterCourse = isset($_GET['course']) ? (int)$_GET['course'] : 0;
+$filterAcademicYear = isset($_REQUEST['academic_year']) ? (int)$_REQUEST['academic_year'] : 0;
+$filterSemester = isset($_REQUEST['semester']) ? (int)$_REQUEST['semester'] : 0;
+$filterCourse = isset($_REQUEST['course']) ? (int)$_REQUEST['course'] : 0;
+
+$draftRedirectUrl = function($ay, $sem, $course) {
+    $params = [];
+    if ((int)$ay > 0) { $params['academic_year'] = (int)$ay; }
+    if ((int)$sem > 0) { $params['semester'] = (int)$sem; }
+    if ((int)$course > 0) { $params['course'] = (int)$course; }
+    $qs = http_build_query($params);
+    return 'draft-results.php' . ($qs ? ('?' . $qs) : '');
+};
+
+// Bulk submit drafts for this lecturer (filtered scope).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_submit_drafts'])) {
+    if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $session->setFlash('error', 'Invalid CSRF token.');
+        header('Location: ' . $draftRedirectUrl($filterAcademicYear, $filterSemester, $filterCourse));
+        exit;
+    }
+
+    $conn->exec("CREATE TABLE IF NOT EXISTS `results_audit` (
+      `id` int(11) NOT NULL AUTO_INCREMENT,
+      `result_id` int(11) NOT NULL,
+      `student_id` int(11) NOT NULL,
+      `course_id` int(11) NOT NULL,
+      `changed_by_user_id` int(11) NOT NULL,
+      `change_type` enum('publish','edit') NOT NULL,
+      `old_marks` longtext DEFAULT NULL,
+      `new_marks` longtext NOT NULL,
+      `reason` text DEFAULT NULL,
+      `changed_at` timestamp NOT NULL DEFAULT current_timestamp(),
+      PRIMARY KEY (`id`),
+      KEY `result_id` (`result_id`),
+      KEY `student_id` (`student_id`),
+      KEY `course_id` (`course_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+    try {
+        $whereSql = "WHERE r.entered_by = :lecturer_id AND r.status = 'draft'";
+        $params = ['lecturer_id' => (int)$lecturerProfile['id']];
+        if ($filterAcademicYear > 0) {
+            $whereSql .= " AND sem.academic_year_id = :ay";
+            $params['ay'] = (int)$filterAcademicYear;
+        }
+        if ($filterSemester > 0) {
+            $whereSql .= " AND r.semester_id = :sem";
+            $params['sem'] = (int)$filterSemester;
+        }
+        if ($filterCourse > 0) {
+            $whereSql .= " AND r.course_id = :course";
+            $params['course'] = (int)$filterCourse;
+        }
+
+        $fetchSql = "SELECT r.id, r.student_id, r.course_id, r.assignment_marks, r.final_exam_marks, r.total_marks, r.grade, r.status
+                     FROM results r
+                     INNER JOIN semesters sem ON sem.id = r.semester_id
+                     {$whereSql}";
+        $fetchStmt = $conn->prepare($fetchSql);
+        $fetchStmt->execute($params);
+        $rows = $fetchStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($rows)) {
+            $session->setFlash('info', 'No draft rows found for bulk submission.');
+            header('Location: ' . $draftRedirectUrl($filterAcademicYear, $filterSemester, $filterCourse));
+            exit;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $changedByUserId = (int)($currentUser['id'] ?? 0);
+
+        $conn->beginTransaction();
+        $updStmt = $conn->prepare("UPDATE results SET status = 'submitted', submitted_date = :submitted_date, updated_at = :updated_at WHERE id = :id AND status = 'draft'");
+        $newStmt = $conn->prepare("SELECT assignment_marks, final_exam_marks, total_marks, grade, status FROM results WHERE id = :id");
+        $auditStmt = $conn->prepare("INSERT INTO results_audit (result_id, student_id, course_id, changed_by_user_id, change_type, old_marks, new_marks, reason) VALUES (:result_id, :student_id, :course_id, :user_id, 'edit', :old_marks, :new_marks, :reason)");
+
+        $submittedCount = 0;
+        foreach ($rows as $row) {
+            $updStmt->execute([
+                'submitted_date' => $now,
+                'updated_at' => $now,
+                'id' => (int)$row['id']
+            ]);
+            if ($updStmt->rowCount() < 1) {
+                continue;
+            }
+
+            $newStmt->execute(['id' => (int)$row['id']]);
+            $newRow = $newStmt->fetch(PDO::FETCH_ASSOC);
+            $auditStmt->execute([
+                'result_id' => (int)$row['id'],
+                'student_id' => (int)$row['student_id'],
+                'course_id' => (int)$row['course_id'],
+                'user_id' => $changedByUserId,
+                'old_marks' => json_encode($row),
+                'new_marks' => json_encode($newRow ?: $row),
+                'reason' => 'Lecturer bulk submitted draft coursework for approval'
+            ]);
+            $submittedCount++;
+        }
+        $conn->commit();
+
+        // Notify admins once for the batch submit.
+        if ($submittedCount > 0) {
+            $lecturerName = trim(($lecturerProfile['first_name'] ?? '') . ' ' . ($lecturerProfile['last_name'] ?? ''));
+            $adminStmt = $conn->query("SELECT id FROM users WHERE role = 'admin' AND status = 'active'");
+            $admins = $adminStmt->fetchAll(PDO::FETCH_ASSOC);
+            if (!empty($admins)) {
+                $notifTitle = 'Bulk Results Submitted for Review';
+                $notifMsg = $lecturerName . ' has bulk-submitted ' . $submittedCount . ' coursework result row(s) for review.';
+                $notifLink = BASE_URL . '/views/admin/results/submitted.php';
+                $notifStmt = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, link, created_at) VALUES (:uid, :title, :msg, 'info', :link, NOW())");
+                foreach ($admins as $admin) {
+                    $notifStmt->execute([
+                        'uid' => (int)$admin['id'],
+                        'title' => $notifTitle,
+                        'msg' => $notifMsg,
+                        'link' => $notifLink
+                    ]);
+                }
+            }
+        }
+
+        $session->setFlash('success', 'Bulk submit completed. ' . $submittedCount . ' draft result row(s) submitted for approval.');
+        header('Location: ' . $draftRedirectUrl($filterAcademicYear, $filterSemester, $filterCourse));
+        exit;
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        $session->setFlash('error', 'Bulk submit failed: ' . $e->getMessage());
+        header('Location: ' . $draftRedirectUrl($filterAcademicYear, $filterSemester, $filterCourse));
+        exit;
+    }
+}
 
 // Fetch academic years for filter
 $academicYears = $conn->query("SELECT id, year_name FROM academic_years ORDER BY start_date DESC")->fetchAll();
@@ -49,7 +181,7 @@ $coursesStmt = $conn->prepare("
     SELECT DISTINCT c.id, c.course_code, c.course_name
     FROM course_assignments ca
     JOIN courses c ON ca.course_id = c.id
-    WHERE ca.lecturer_id = :lid AND ca.status = 'active'
+    WHERE ca.lecturer_id = :lid AND ca.status IN ('active','completed')
     ORDER BY c.course_code
 ");
 $coursesStmt->execute(['lid' => $lecturerProfile['id']]);
@@ -108,6 +240,15 @@ $sql .= " ORDER BY ay.start_date DESC, sem.semester_number DESC, c.course_code, 
 $stmt = $conn->prepare($sql);
 $stmt->execute($params);
 $draftResults = $stmt->fetchAll();
+$draftOnlyCount = 0;
+$submittedOnlyCount = 0;
+foreach ($draftResults as $row) {
+    if (($row['result_status'] ?? '') === 'draft') {
+        $draftOnlyCount++;
+    } elseif (($row['result_status'] ?? '') === 'submitted') {
+        $submittedOnlyCount++;
+    }
+}
 
 // Group by course and semester for better organization
 $groupedDrafts = [];
@@ -124,8 +265,15 @@ foreach ($draftResults as $result) {
             'course_name' => $result['course_name'],
             'course_id' => $result['course_id'],
             'status' => $result['result_status'],
-            'students' => []
+            'students' => [],
+            'count_draft' => 0,
+            'count_submitted' => 0
         ];
+    }
+    if (($result['result_status'] ?? '') === 'draft') {
+        $groupedDrafts[$key]['count_draft']++;
+    } elseif (($result['result_status'] ?? '') === 'submitted') {
+        $groupedDrafts[$key]['count_submitted']++;
     }
     $groupedDrafts[$key]['students'][] = $result;
 }
@@ -135,6 +283,10 @@ $unreadNotifications = [];
 if (!empty($currentUser['id'])) {
     $unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
 }
+
+$flashSuccess = trim((string)$session->getFlash('success'));
+$flashError = trim((string)$session->getFlash('error'));
+$flashInfo = trim((string)$session->getFlash('info'));
 
 $pageTitle = 'Draft Results - ' . APP_NAME;
 include '../../includes/header.php';
@@ -187,22 +339,28 @@ include '../../includes/header.php';
     </div>
 
     <div class="content-area">
-            <?php if ($session->hasFlash('success')): ?>
+            <?php if ($flashSuccess !== ''): ?>
                 <div class="alert alert-success alert-dismissible fade show" role="alert">
-                    <i class="fas fa-check-circle"></i> <?php echo $session->getFlash('success'); ?>
+                    <i class="fas fa-check-circle"></i> <?php echo e($flashSuccess); ?>
                     <button type="button" class="close" data-dismiss="alert">&times;</button>
                 </div>
             <?php endif; ?>
 
-            <?php if ($session->hasFlash('error')): ?>
+            <?php if ($flashError !== ''): ?>
                 <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    <i class="fas fa-exclamation-circle"></i> <?php echo $session->getFlash('error'); ?>
+                    <i class="fas fa-exclamation-circle"></i> <?php echo e($flashError); ?>
+                    <button type="button" class="close" data-dismiss="alert">&times;</button>
+                </div>
+            <?php endif; ?>
+            <?php if ($flashInfo !== ''): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="fas fa-info-circle"></i> <?php echo e($flashInfo); ?>
                     <button type="button" class="close" data-dismiss="alert">&times;</button>
                 </div>
             <?php endif; ?>
 
             <div class="card">
-                <div class="card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-bottom: none;">
+                <div class="card-header" style="background: linear-gradient(135deg, #0f4c81 0%, #1a7f64 100%); color: white; border-bottom: none;">
                     <h5 class="mb-0" style="font-weight: 500;">
                         <i class="fas fa-filter mr-2"></i> Filter Draft Results
                     </h5>
@@ -258,6 +416,28 @@ include '../../includes/header.php';
                         </div>
                         <?php endif; ?>
                     </form>
+
+                    <div class="d-flex flex-wrap mb-2" style="gap:8px;">
+                        <span class="badge badge-warning" style="font-size:12px;">Draft Rows: <?php echo (int)$draftOnlyCount; ?></span>
+                        <span class="badge badge-info" style="font-size:12px;">Submitted Rows: <?php echo (int)$submittedOnlyCount; ?></span>
+                        <span class="badge badge-light border" style="font-size:12px;">Total Rows: <?php echo (int)count($draftResults); ?></span>
+                    </div>
+                    <small class="text-muted d-block mb-2">
+                        Workflow: Save partial marks in Enter Results, review here anytime, then submit single-course or bulk when ready.
+                    </small>
+
+                    <?php if ($draftOnlyCount > 0): ?>
+                        <form method="POST" class="mt-2">
+                            <?php echo csrfField(); ?>
+                            <input type="hidden" name="academic_year" value="<?php echo (int)$filterAcademicYear; ?>">
+                            <input type="hidden" name="semester" value="<?php echo (int)$filterSemester; ?>">
+                            <input type="hidden" name="course" value="<?php echo (int)$filterCourse; ?>">
+                            <button type="submit" name="bulk_submit_drafts" value="1" class="btn btn-success btn-sm" onclick="return confirm('Submit all currently filtered draft rows for admin approval?');">
+                                <i class="fas fa-paper-plane mr-1"></i> Bulk Submit Drafts (<?php echo (int)$draftOnlyCount; ?>)
+                            </button>
+                            <small class="text-muted ml-2">Submits all filtered draft coursework rows at once.</small>
+                        </form>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -280,7 +460,7 @@ include '../../includes/header.php';
                 <?php foreach ($groupedDrafts as $key => $group): ?>
                     <div class="card mt-3">
                         <?php 
-                            $isSubmitted = ($group['status'] === 'submitted');
+                            $isSubmitted = ($group['count_submitted'] > 0 && $group['count_draft'] === 0);
                             $headerBg = $isSubmitted 
                                 ? 'background: linear-gradient(90deg, #28a745 0%, #218838 100%); color: white;' 
                                 : 'background: linear-gradient(90deg, #ffc107 0%, #e0a800 100%); color: #212529;';
@@ -294,7 +474,7 @@ include '../../includes/header.php';
                                     </h6>
                                     <small class="text-muted" style="font-size: 13px;">
                                         <i class="fas fa-calendar-alt mr-1"></i>
-                                        <?php echo e($group['academic_year']); ?> • <?php echo e($group['semester']); ?>
+                                        <?php echo e($group['academic_year']); ?> | <?php echo e($group['semester']); ?>
                                     </small>
                                 </div>
                                 <div class="col-md-4 text-right">
@@ -304,9 +484,15 @@ include '../../includes/header.php';
                                         </span>
                                     <?php else: ?>
                                         <span class="badge badge-dark" style="font-size: 12px; padding: 6px 12px;">
-                                            <i class="fas fa-pencil-alt mr-1"></i> Draft
+                                            <i class="fas fa-pencil-alt mr-1"></i> Draft In Progress
                                         </span>
                                     <?php endif; ?>
+                                    <span class="badge badge-warning" style="font-size: 12px; padding: 6px 12px;">
+                                        Draft: <?php echo (int)$group['count_draft']; ?>
+                                    </span>
+                                    <span class="badge badge-info" style="font-size: 12px; padding: 6px 12px;">
+                                        Submitted: <?php echo (int)$group['count_submitted']; ?>
+                                    </span>
                                     <span class="badge badge-dark" style="font-size: 12px; padding: 6px 12px;">
                                         <i class="fas fa-users mr-1"></i>
                                         <?php echo count($group['students']); ?> Student<?php echo count($group['students']) != 1 ? 's' : ''; ?>
@@ -467,13 +653,7 @@ include '../../includes/header.php';
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Auto-hide alerts after 5 seconds
-    setTimeout(function() {
-        const alerts = document.querySelectorAll('.alert');
-        alerts.forEach(alert => {
-            $(alert).fadeOut();
-        });
-    }, 5000);
+    // Alert timing is handled globally in assets/js/navigation.js
 });
 </script>
 

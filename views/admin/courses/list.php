@@ -74,9 +74,10 @@ $stmt = $conn->prepare($sql);
 $stmt->execute($params);
 $allCourses = $stmt->fetchAll();
 
-// Organize courses under academic label '2025/2026' and ensure levels 1..4 each have semesters 1 & 2
+// Organize courses under the active academic year label and ensure levels 1..4 each have semesters 1 & 2
 $organizedCourses = [];
-$labelYear = '2025/2026';
+$activeAcademicYear = Helper::getCurrentAcademicYear();
+$labelYear = $activeAcademicYear['year_name'] ?? 'Current Academic Year';
 $organizedCourses[$labelYear] = [];
 // initialize levels 1..4, each with semesters 1 & 2
 for ($lvl = 1; $lvl <= 4; $lvl++) {
@@ -561,9 +562,9 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // Group by level_year (1..4) and semester_offered under label 2025/2026
+        // Group by level_year (1..4) and semester_offered under active academic year label
         var grouped = {};
-        var labelYear = '2025/2026';
+        var labelYear = <?php echo json_encode($labelYear); ?>;
         grouped[labelYear] = {};
         // initialize levels 1..4 with semesters 1..2
         for (var lv = 1; lv <= 4; lv++) grouped[labelYear][lv] = {1: [], 2: []};

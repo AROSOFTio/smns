@@ -13,10 +13,18 @@ class Session {
     public function __construct($role = null) {
         $this->role = $role;
         
-        // Determine the correct session name for this role
-        $desiredName = $this->role 
-            ? 'SMNS_' . strtoupper($this->role) . '_SESSION' 
-            : 'SMNS_SESSION';
+        $hasActiveSession = (session_status() === PHP_SESSION_ACTIVE);
+
+        // Determine the correct session name for this context.
+        // If no role is supplied and a session is already active, keep that active session name
+        // to avoid switching away from module sessions mid-request.
+        if ($this->role) {
+            $desiredName = 'SMNS_' . strtoupper($this->role) . '_SESSION';
+        } elseif ($hasActiveSession) {
+            $desiredName = session_name();
+        } else {
+            $desiredName = 'SMNS_PUBLIC_SESSION';
+        }
         
         // If headers have already been sent, we cannot change ini settings or start a new session.
         // In that case, we simply rely on whatever session is already active (if any).
@@ -24,9 +32,9 @@ class Session {
             return;
         }
         
-        if (session_status() === PHP_SESSION_ACTIVE) {
+        if ($hasActiveSession) {
             // A session is already active - check if it's the correct one
-            if (session_name() !== $desiredName) {
+            if ($desiredName && session_name() !== $desiredName) {
                 // Wrong session is active (e.g. a page called session_start() before us)
                 // Close it and start the correct one
                 session_write_close();
@@ -37,6 +45,7 @@ class Session {
                 ini_set('session.cookie_secure', 0);
                 ini_set('session.cookie_samesite', 'Strict');
                 ini_set('session.gc_maxlifetime', defined('SESSION_TIMEOUT') ? SESSION_TIMEOUT : 3600);
+                ini_set('session.use_strict_mode', 1);
                 
                 session_name($desiredName);
                 session_start();
@@ -49,8 +58,11 @@ class Session {
             ini_set('session.cookie_secure', 0);
             ini_set('session.cookie_samesite', 'Strict');
             ini_set('session.gc_maxlifetime', defined('SESSION_TIMEOUT') ? SESSION_TIMEOUT : 3600);
+            ini_set('session.use_strict_mode', 1);
             
-            session_name($desiredName);
+            if (!empty($desiredName)) {
+                session_name($desiredName);
+            }
             session_start();
         }
         

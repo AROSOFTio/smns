@@ -4,14 +4,50 @@
  * Provides security functions for input validation, XSS prevention, CSRF protection
  */
 class Security {
+
+    /**
+     * Detect module role from current request path.
+     */
+    private static function detectRoleFromRequestPath() {
+        $path = strtolower($_SERVER['PHP_SELF'] ?? $_SERVER['REQUEST_URI'] ?? '');
+        if (strpos($path, '/views/admin/') !== false || strpos($path, '\\views\\admin\\') !== false) {
+            return 'admin';
+        }
+        if (strpos($path, '/views/student/') !== false || strpos($path, '\\views\\student\\') !== false) {
+            return 'student';
+        }
+        if (strpos($path, '/views/lecturer/') !== false || strpos($path, '\\views\\lecturer\\') !== false) {
+            return 'lecturer';
+        }
+        if (strpos($path, '/views/finance/') !== false || strpos($path, '\\views\\finance\\') !== false) {
+            return 'finance';
+        }
+        return null;
+    }
+
+    /**
+     * Ensure a session is started using role-aware session isolation.
+     */
+    private static function ensureRoleAwareSession() {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            return;
+        }
+
+        $role = self::detectRoleFromRequestPath();
+        if (class_exists('Session')) {
+            new Session($role);
+            return;
+        }
+
+        // Fallback if Session class is unavailable for any reason.
+        session_start();
+    }
     
     /**
      * Generate CSRF token
      */
     public static function generateCSRFToken() {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
+        self::ensureRoleAwareSession();
         
         if (!isset($_SESSION['csrf_token'])) {
             $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -24,9 +60,7 @@ class Security {
      * Verify CSRF token
      */
     public static function verifyCSRFToken($token) {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
+        self::ensureRoleAwareSession();
         
         return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
     }
@@ -149,28 +183,33 @@ class Security {
         require_once __DIR__ . '/Session.php';
         
         // Detect role from URL path or session
-        $detectedRole = null;
-        if (isset($_SESSION['role'])) {
+        $detectedRole = self::detectRoleFromRequestPath();
+        if (!$detectedRole && session_status() === PHP_SESSION_ACTIVE) {
+            $sessionRoleMap = [
+                'SMNS_ADMIN_SESSION' => 'admin',
+                'SMNS_STUDENT_SESSION' => 'student',
+                'SMNS_LECTURER_SESSION' => 'lecturer',
+                'SMNS_FINANCE_SESSION' => 'finance',
+            ];
+            $detectedRole = $sessionRoleMap[session_name()] ?? null;
+        }
+        if (!$detectedRole && isset($_SESSION['role'])) {
             $detectedRole = $_SESSION['role'];
-        } elseif (strpos($_SERVER['PHP_SELF'], '/admin/') !== false) {
-            $detectedRole = 'admin';
-        } elseif (strpos($_SERVER['PHP_SELF'], '/student/') !== false) {
-            $detectedRole = 'student';
-        } elseif (strpos($_SERVER['PHP_SELF'], '/lecturer/') !== false) {
-            $detectedRole = 'lecturer';
-        } elseif (strpos($_SERVER['PHP_SELF'], '/finance/') !== false) {
-            $detectedRole = 'finance';
         }
         
         // Use role-specific session
         $session = new Session($detectedRole);
         $auth = new Auth($detectedRole);
+
+        $loginTarget = $detectedRole
+            ? (BASE_URL . '/views/' . $detectedRole . '/login.php')
+            : (BASE_URL . '/views/auth/login.php');
         
         // Check if user is logged in
         if (!$auth->isLoggedIn()) {
             // Store the intended destination
             $_SESSION['intended_url'] = $_SERVER['REQUEST_URI'];
-            header('Location: ' . BASE_URL . '/views/auth/login.php');
+            header('Location: ' . $loginTarget);
             exit;
         }
         
@@ -183,7 +222,7 @@ class Security {
         }
         if (!$hasToken) {
             $auth->logout();
-            header('Location: ' . BASE_URL . '/views/auth/login.php?error=invalid_session');
+            header('Location: ' . $loginTarget . '?error=invalid_session');
             exit;
         }
         
@@ -195,7 +234,7 @@ class Security {
             // Role mismatch - possible session tampering
             error_log("Session role mismatch detected for user {$currentUser['username']}");
             $auth->logout();
-            header('Location: ' . BASE_URL . '/views/auth/login.php?error=invalid_session');
+            header('Location: ' . $loginTarget . '?error=invalid_session');
             exit;
         }
         
@@ -234,21 +273,27 @@ class Security {
     public static function requireAuth() {
         require_once __DIR__ . '/Auth.php';
         require_once __DIR__ . '/Session.php';
-        
-        $session = new Session();
-        $auth = new Auth();
+
+        $detectedRole = self::detectRoleFromRequestPath();
+        $session = new Session($detectedRole);
+        $auth = new Auth($detectedRole);
+
+        $loginTarget = $detectedRole
+            ? (BASE_URL . '/views/' . $detectedRole . '/login.php')
+            : (BASE_URL . '/views/auth/login.php');
         
         if (!$auth->isLoggedIn()) {
             // Store the intended destination
             $_SESSION['intended_url'] = $_SERVER['REQUEST_URI'];
-            header('Location: ' . BASE_URL . '/views/auth/login.php');
+            header('Location: ' . $loginTarget);
             exit;
         }
         
-        // Validate session token
-        if (!$session->has('session_token')) {
+        // Validate session token (module-specific if role-aware)
+        $hasToken = $detectedRole ? $session->hasModule('session_token') : $session->has('session_token');
+        if (!$hasToken) {
             $auth->logout();
-            header('Location: ' . BASE_URL . '/views/auth/login.php?error=invalid_session');
+            header('Location: ' . $loginTarget . '?error=invalid_session');
             exit;
         }
         
@@ -263,15 +308,20 @@ class Security {
         if (session_status() === PHP_SESSION_NONE) {
             return false;
         }
-        
-        // Check if session has required security markers
-        if (!isset($_SESSION['fingerprint']) || !isset($_SESSION['ip_address'])) {
-            return false;
-        }
-        
-        // Check if session has user data
-        if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
-            return false;
+
+        $role = self::detectRoleFromRequestPath();
+        if ($role) {
+            if (!isset($_SESSION[$role . '_user_id']) || !isset($_SESSION[$role . '_role'])) {
+                return false;
+            }
+            if ($_SESSION[$role . '_role'] !== $role) {
+                return false;
+            }
+        } else {
+            // Legacy/global fallback
+            if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
+                return false;
+            }
         }
         
         // Check session timeout

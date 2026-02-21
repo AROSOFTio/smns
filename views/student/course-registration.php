@@ -33,10 +33,13 @@ $semesters = $sstmt->fetchAll();
 // Academic years for dropdown
 $academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_years ORDER BY start_date DESC")->fetchAll();
 
-// Default semester & academic year (current)
-$currentSemester = Helper::getCurrentSemester();
+// Default semester & academic year (student context)
+$currentSemester = getStudentCurrentSemesterContext($conn, (int)($studentProfile['id'] ?? 0));
 $defaultSemesterId = $currentSemester['id'] ?? 0;
-$defaultAcademicYearId = Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0);
+$defaultAcademicYearId = (int)($currentSemester['academic_year_id'] ?? 0);
+if ($defaultAcademicYearId <= 0) {
+    $defaultAcademicYearId = Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0);
+}
 
 // Determine selected academic year & semester number from GET (or fallbacks)
 $selectedAcademicYearId = isset($_GET['academic_year_id']) ? (int)$_GET['academic_year_id'] : $defaultAcademicYearId;
@@ -121,6 +124,297 @@ if (!isset($_GET['year_of_study']) && !empty($studentProfile['entry_year']) && $
     }
 }
 
+function getRepeatSemesterDecision(PDO $conn, int $studentId, int $targetAcademicYearId = 0, int $targetSemesterNumber = 0) {
+    if ($studentId <= 0) {
+        return null;
+    }
+    try {
+        $stmt = $conn->prepare("
+            SELECT sg.semester_id, sg.semester_gpa, s.academic_year_id, s.semester_number, s.semester_name, ay.year_name
+            FROM student_gpas sg
+            INNER JOIN semesters s ON s.id = sg.semester_id
+            INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+            WHERE sg.student_id = :student_id
+            ORDER BY sg.calculated_at DESC, sg.id DESC
+            LIMIT 1
+        ");
+        $stmt->execute(['student_id' => $studentId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return null;
+        }
+
+        $gpa = (float)($row['semester_gpa'] ?? 0);
+        if ($gpa >= 2.0) {
+            return null;
+        }
+
+        $yosStmt = $conn->prepare("
+            SELECT year_of_study
+            FROM semester_registrations
+            WHERE student_id = :student_id AND semester_id = :semester_id
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+        $yosStmt->execute([
+            'student_id' => $studentId,
+            'semester_id' => (int)$row['semester_id']
+        ]);
+        $repeatYear = (int)$yosStmt->fetchColumn();
+        if ($repeatYear <= 0) {
+            $cyStmt = $conn->prepare("
+                SELECT MAX(c.level_year)
+                FROM course_registrations cr
+                INNER JOIN courses c ON c.id = cr.course_id
+                WHERE cr.student_id = :student_id
+                  AND cr.semester_id = :semester_id
+            ");
+            $cyStmt->execute([
+                'student_id' => $studentId,
+                'semester_id' => (int)$row['semester_id']
+            ]);
+            $repeatYear = (int)$cyStmt->fetchColumn();
+        }
+
+        $repeatSemesterId = (int)$row['semester_id'];
+        $repeatAcademicYearId = (int)$row['academic_year_id'];
+        $repeatSemesterNumber = (int)$row['semester_number'];
+        $repeatSemesterName = (string)($row['semester_name'] ?? '');
+        $repeatYearName = (string)($row['year_name'] ?? '');
+
+        // Force repeat to the immediate previous semester of the attempted semester.
+        // Example: if attempting Semester 2, repeat Semester 1 of the same academic year.
+        if ($targetAcademicYearId > 0 && $targetSemesterNumber >= 1 && $targetSemesterNumber <= 2) {
+            if ($targetSemesterNumber === 2) {
+                $prevStmt = $conn->prepare("
+                    SELECT s.id, s.academic_year_id, s.semester_number, s.semester_name, ay.year_name
+                    FROM semesters s
+                    INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+                    WHERE s.academic_year_id = :ay_id AND s.semester_number = 1
+                    LIMIT 1
+                ");
+                $prevStmt->execute(['ay_id' => $targetAcademicYearId]);
+                $prev = $prevStmt->fetch(PDO::FETCH_ASSOC);
+                if ($prev) {
+                    $repeatSemesterId = (int)$prev['id'];
+                    $repeatAcademicYearId = (int)$prev['academic_year_id'];
+                    $repeatSemesterNumber = (int)$prev['semester_number'];
+                    $repeatSemesterName = (string)($prev['semester_name'] ?? $repeatSemesterName);
+                    $repeatYearName = (string)($prev['year_name'] ?? $repeatYearName);
+                }
+            } else {
+                $prevStmt = $conn->prepare("
+                    SELECT s.id, s.academic_year_id, s.semester_number, s.semester_name, ay.year_name
+                    FROM academic_years cay
+                    INNER JOIN academic_years pay ON pay.start_date < cay.start_date
+                    INNER JOIN semesters s ON s.academic_year_id = pay.id AND s.semester_number = 2
+                    INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+                    WHERE cay.id = :ay_id
+                    ORDER BY pay.start_date DESC
+                    LIMIT 1
+                ");
+                $prevStmt->execute(['ay_id' => $targetAcademicYearId]);
+                $prev = $prevStmt->fetch(PDO::FETCH_ASSOC);
+                if ($prev) {
+                    $repeatSemesterId = (int)$prev['id'];
+                    $repeatAcademicYearId = (int)$prev['academic_year_id'];
+                    $repeatSemesterNumber = (int)$prev['semester_number'];
+                    $repeatSemesterName = (string)($prev['semester_name'] ?? $repeatSemesterName);
+                    $repeatYearName = (string)($prev['year_name'] ?? $repeatYearName);
+                }
+            }
+
+            if ($repeatYear <= 0) {
+                $prevYosStmt = $conn->prepare("
+                    SELECT year_of_study
+                    FROM semester_registrations
+                    WHERE student_id = :student_id AND semester_id = :semester_id
+                    ORDER BY id DESC
+                    LIMIT 1
+                ");
+                $prevYosStmt->execute([
+                    'student_id' => $studentId,
+                    'semester_id' => $repeatSemesterId
+                ]);
+                $repeatYear = (int)$prevYosStmt->fetchColumn();
+            }
+        }
+
+        return [
+            'semester_id' => $repeatSemesterId,
+            'academic_year_id' => $repeatAcademicYearId,
+            'semester_number' => $repeatSemesterNumber,
+            'semester_name' => $repeatSemesterName,
+            'year_name' => $repeatYearName,
+            'semester_gpa' => $gpa,
+            'year_of_study' => $repeatYear > 0 ? $repeatYear : null,
+        ];
+    } catch (Exception $e) {
+        return null;
+    }
+}
+
+$forcedRepeatDecision = getRepeatSemesterDecision(
+    $conn,
+    (int)$studentProfile['id'],
+    (int)$selectedAcademicYearId,
+    (int)$selectedSemesterNumber
+);
+$isRepeatLocked = false;
+$repeatEnforcedNotice = '';
+if ($forcedRepeatDecision) {
+    $isRepeatLocked = true;
+    $semesterId = (int)$forcedRepeatDecision['semester_id'];
+    $selectedAcademicYearId = (int)$forcedRepeatDecision['academic_year_id'];
+    $selectedSemesterNumber = (int)$forcedRepeatDecision['semester_number'];
+    if (!empty($forcedRepeatDecision['year_of_study'])) {
+        $yearOfStudy = (int)$forcedRepeatDecision['year_of_study'];
+    }
+
+    foreach ($academicYears as $ay) {
+        if ((int)$ay['id'] === (int)$selectedAcademicYearId) {
+            $selectedAcademicYearName = $ay['year_name'];
+            break;
+        }
+    }
+
+    $repeatEnforcedNotice =
+        'Promotion requires SGPA 2.00. You are locked to repeat ' .
+        (($forcedRepeatDecision['year_name'] ?? '') ?: 'the previous academic year') . ' - ' .
+        (($forcedRepeatDecision['semester_name'] ?? '') ?: 'the previous semester') . '. ' .
+        'Your last SGPA is ' . number_format((float)($forcedRepeatDecision['semester_gpa'] ?? 0), 2) . '.';
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'enroll_now')) {
+    if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $session->setFlash('error', 'Invalid CSRF token.');
+        header('Location: course-registration.php');
+        exit;
+    }
+
+    $selectedAcademicYearId = isset($_POST['academic_year_id']) ? (int)$_POST['academic_year_id'] : $selectedAcademicYearId;
+    $selectedSemesterNumber = isset($_POST['semester_number']) ? (int)$_POST['semester_number'] : $selectedSemesterNumber;
+    if ($selectedSemesterNumber < 1 || $selectedSemesterNumber > 2) {
+        $selectedSemesterNumber = 1;
+    }
+    $yearOfStudy = isset($_POST['year_of_study']) ? (int)$_POST['year_of_study'] : $yearOfStudy;
+    $yearOfStudy = max(1, min(10, $yearOfStudy));
+
+    $mapStmt = $conn->prepare("SELECT id FROM semesters WHERE academic_year_id = :ay AND semester_number = :sn LIMIT 1");
+    $mapStmt->execute(['ay' => $selectedAcademicYearId, 'sn' => $selectedSemesterNumber]);
+    $semesterId = (int)$mapStmt->fetchColumn();
+    if ($semesterId <= 0) {
+        $session->setFlash('error', 'Selected semester was not found. Please contact administration.');
+        header('Location: course-registration.php');
+        exit;
+    }
+
+    $repeatDecision = getRepeatSemesterDecision(
+        $conn,
+        (int)$studentProfile['id'],
+        (int)$selectedAcademicYearId,
+        (int)$selectedSemesterNumber
+    );
+    if ($repeatDecision && (int)$repeatDecision['semester_id'] !== $semesterId) {
+        $selectedAcademicYearId = (int)$repeatDecision['academic_year_id'];
+        $selectedSemesterNumber = (int)$repeatDecision['semester_number'];
+        $semesterId = (int)$repeatDecision['semester_id'];
+        if (!empty($repeatDecision['year_of_study'])) {
+            $yearOfStudy = (int)$repeatDecision['year_of_study'];
+        }
+        $session->setFlash(
+            'warning',
+            'Promotion requires SGPA 2.00. Repeat semester enforced for ' .
+            ($repeatDecision['year_name'] ?: 'selected year') . ' - ' . ($repeatDecision['semester_name'] ?: 'semester') .
+            ' (SGPA: ' . number_format((float)$repeatDecision['semester_gpa'], 2) . ').'
+        );
+    }
+
+    try {
+        $conn->beginTransaction();
+
+        $upsertReg = $conn->prepare("
+            INSERT INTO semester_registrations (student_id, semester_id, year_of_study, status, request_date, created_at, updated_at)
+            VALUES (:student_id, :semester_id, :year_of_study, 'approved', NOW(), NOW(), NOW())
+            ON DUPLICATE KEY UPDATE
+                year_of_study = VALUES(year_of_study),
+                status = 'approved',
+                updated_at = NOW()
+        ");
+        $upsertReg->execute([
+            'student_id' => (int)$studentProfile['id'],
+            'semester_id' => $semesterId,
+            'year_of_study' => $yearOfStudy
+        ]);
+
+        $assignedOk = auto_assign_courses(
+            $conn,
+            (int)$studentProfile['id'],
+            $semesterId,
+            null,
+            (int)($studentProfile['program_id'] ?? 0),
+            $yearOfStudy
+        );
+        if (!$assignedOk) {
+            // Silent retry: do not show warning for eligible students.
+            auto_assign_courses(
+                $conn,
+                (int)$studentProfile['id'],
+                $semesterId,
+                null,
+                (int)($studentProfile['program_id'] ?? 0),
+                null
+            );
+        }
+
+        // Status columns can differ across deployments; do not fail enrollment if absent.
+        try {
+            $statusSnapshot = getStudentLifecycleStatus($conn, (int)$studentProfile['id'], $semesterId);
+            $studentCols = [];
+            $scStmt = $conn->query("SHOW COLUMNS FROM students");
+            while ($sc = $scStmt->fetch(PDO::FETCH_ASSOC)) {
+                $studentCols[] = strtolower((string)($sc['Field'] ?? ''));
+            }
+            $setParts = [];
+            $params = ['student_id' => (int)$studentProfile['id']];
+            if (in_array('enrollment_status', $studentCols, true)) {
+                $setParts[] = "enrollment_status = :enrollment_status";
+                $params['enrollment_status'] = $statusSnapshot['enrollment_status'] === 'enrolled' ? 'enrolled' : 'not_enrolled';
+            }
+            if (in_array('registration_status', $studentCols, true)) {
+                $setParts[] = "registration_status = :registration_status";
+                $params['registration_status'] = $statusSnapshot['registration_status'] === 'registered' ? 'registered' : 'not_registered';
+            }
+            if (in_array('updated_at', $studentCols, true)) {
+                $setParts[] = "updated_at = NOW()";
+            }
+            if (!empty($setParts)) {
+                $updateStudentStatus = $conn->prepare("UPDATE students SET " . implode(', ', $setParts) . " WHERE id = :student_id");
+                $updateStudentStatus->execute($params);
+            }
+        } catch (Exception $e) {
+            error_log('Enrollment status-sync warning: ' . $e->getMessage());
+        }
+
+        $conn->commit();
+        if (!$session->hasFlash('warning')) {
+            $session->setFlash('success', 'Enrollment completed successfully. Your semester courses are now available.');
+        }
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        if ($session->hasFlash('warning')) {
+            $session->setFlash('warning', null);
+        }
+        error_log('Enrollment action error: ' . $e->getMessage());
+        $session->setFlash('error', 'Enrollment failed. Please try again or contact administration.');
+    }
+
+    header('Location: course-registration.php?semester_id=' . $semesterId . '&academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber . '&year_of_study=' . $yearOfStudy);
+    exit;
+}
+
 // Check if student has an APPROVED semester registration for the selected semester
 $approvalCheckStmt = $conn->prepare("
     SELECT sr.*, ay.year_name 
@@ -163,63 +457,27 @@ if ($semesterApproval && isset($semesterApproval['year_of_study']) && $semesterA
             'semester_id' => $semesterId
         ]);
         
-        // Re-assign courses for new year/semester
-        $coursesStmt = $conn->prepare("
-            SELECT id FROM courses 
-            WHERE semester_offered = :semester_offered
-            AND level_year = :level_year
-            AND status = 'active' 
-            AND (program_id = :program_id OR program_id IS NULL OR program_id = 0)
-            ORDER BY course_code ASC
+        // Re-assign courses for new year/semester using resilient fallback chain.
+        auto_assign_courses(
+            $conn,
+            (int)$studentProfile['id'],
+            (int)$semesterId,
+            null,
+            (int)($studentProfile['program_id'] ?? 0),
+            (int)$yearOfStudy
+        );
+        $assignedCountStmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM course_registrations
+            WHERE student_id = :student_id AND semester_id = :semester_id AND status = 'approved'
         ");
-        $coursesStmt->execute([
-            'semester_offered' => $selectedSemesterNumber, 
-            'program_id' => $studentProfile['program_id'] ?? 0, 
-            'level_year' => $yearOfStudy
+        $assignedCountStmt->execute([
+            'student_id' => (int)$studentProfile['id'],
+            'semester_id' => (int)$semesterId
         ]);
-        $courseIds = $coursesStmt->fetchAll(PDO::FETCH_COLUMN);
-        
-        // Fallback: relaxed search without program filter
-        if (empty($courseIds)) {
-            $relaxedStmt = $conn->prepare("
-                SELECT id FROM courses 
-                WHERE semester_offered = :semester_offered
-                AND level_year = :level_year
-                AND status = 'active'
-                ORDER BY course_code ASC
-            ");
-            $relaxedStmt->execute([
-                'semester_offered' => $selectedSemesterNumber,
-                'level_year' => $yearOfStudy
-            ]);
-            $courseIds = $relaxedStmt->fetchAll(PDO::FETCH_COLUMN);
-        }
-        
-        // Assign new courses
-        if (!empty($courseIds)) {
-            $insCourseStmt = $conn->prepare("
-                INSERT INTO course_registrations (student_id, course_id, semester_id, registration_date, status, approved_date, created_at) 
-                VALUES (:student_id, :course_id, :semester_id, NOW(), 'approved', NOW(), NOW())
-            ");
-            $assignedCount = 0;
-            foreach ($courseIds as $cid) {
-                try {
-                    $insCourseStmt->execute([
-                        'student_id' => $studentProfile['id'], 
-                        'course_id' => $cid, 
-                        'semester_id' => $semesterId
-                    ]);
-                    $assignedCount++;
-                } catch (Exception $courseEx) {
-                    error_log("Failed to assign course $cid: " . $courseEx->getMessage());
-                }
-            }
-            
-            if ($assignedCount > 0) {
-                $session->setFlash('success', "Courses updated! $assignedCount course(s) assigned for Year $yearOfStudy, Semester $selectedSemesterNumber.");
-            }
-        } else {
-            $session->setFlash('warning', "No courses available for Year $yearOfStudy, Semester $selectedSemesterNumber in the database.");
+        $assignedCount = (int)$assignedCountStmt->fetchColumn();
+        if ($assignedCount > 0) {
+            $session->setFlash('success', "Courses updated! $assignedCount course(s) assigned for Year $yearOfStudy, Semester $selectedSemesterNumber.");
         }
         
         // Update $semesterApproval with new year_of_study
@@ -231,8 +489,141 @@ if ($semesterApproval && isset($semesterApproval['year_of_study']) && $semesterA
     }
 }
 
+// Self-heal: if selected semester has no approved courses, fall back to previous/latest semester
+// and auto-assign courses so students are not blocked on an empty page.
+try {
+    $approvedCountStmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM course_registrations
+        WHERE student_id = :student_id
+          AND semester_id = :semester_id
+          AND status = 'approved'
+    ");
+    $approvedCountStmt->execute([
+        'student_id' => (int)$studentProfile['id'],
+        'semester_id' => (int)$semesterId
+    ]);
+    $currentApprovedCount = (int)$approvedCountStmt->fetchColumn();
+
+    if ($currentApprovedCount === 0) {
+        $fallbackSemester = null;
+
+        // Priority 1: when user is on Semester 2 and no courses exist, drop back to Semester 1 of same academic year.
+        if ((int)$selectedSemesterNumber === 2 && (int)$selectedAcademicYearId > 0) {
+            $prevSemStmt = $conn->prepare("
+                SELECT s.id, s.semester_number, s.semester_name, s.academic_year_id, ay.year_name
+                FROM semesters s
+                INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+                WHERE s.academic_year_id = :academic_year_id
+                  AND s.semester_number = 1
+                LIMIT 1
+            ");
+            $prevSemStmt->execute(['academic_year_id' => (int)$selectedAcademicYearId]);
+            $fallbackSemester = $prevSemStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+
+        // Priority 2: latest semester where this student already has course registrations.
+        if (!$fallbackSemester) {
+            $latestSemStmt = $conn->prepare("
+                SELECT DISTINCT s.id, s.semester_number, s.semester_name, s.academic_year_id, ay.year_name
+                FROM course_registrations cr
+                INNER JOIN semesters s ON s.id = cr.semester_id
+                INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+                WHERE cr.student_id = :student_id
+                  AND cr.status IN ('approved', 'registered', 'pending', 'submitted')
+                ORDER BY ay.start_date DESC, s.semester_number DESC
+                LIMIT 1
+            ");
+            $latestSemStmt->execute(['student_id' => (int)$studentProfile['id']]);
+            $fallbackSemester = $latestSemStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+
+        if (!empty($fallbackSemester['id']) && (int)$fallbackSemester['id'] !== (int)$semesterId) {
+            $semesterId = (int)$fallbackSemester['id'];
+            $selectedAcademicYearId = (int)$fallbackSemester['academic_year_id'];
+            $selectedSemesterNumber = (int)$fallbackSemester['semester_number'];
+            $selectedAcademicYearName = (string)($fallbackSemester['year_name'] ?? $selectedAcademicYearName);
+
+            $yosStmt = $conn->prepare("
+                SELECT year_of_study
+                FROM semester_registrations
+                WHERE student_id = :student_id AND semester_id = :semester_id
+                ORDER BY id DESC
+                LIMIT 1
+            ");
+            $yosStmt->execute([
+                'student_id' => (int)$studentProfile['id'],
+                'semester_id' => (int)$semesterId
+            ]);
+            $fallbackYos = (int)$yosStmt->fetchColumn();
+            if ($fallbackYos > 0) {
+                $yearOfStudy = $fallbackYos;
+            }
+
+            // Ensure enrollment row exists and is approved for fallback semester.
+            $existingRegStmt = $conn->prepare("
+                SELECT id
+                FROM semester_registrations
+                WHERE student_id = :student_id AND semester_id = :semester_id
+                ORDER BY id DESC
+                LIMIT 1
+            ");
+            $existingRegStmt->execute([
+                'student_id' => (int)$studentProfile['id'],
+                'semester_id' => (int)$semesterId
+            ]);
+            $existingRegId = (int)$existingRegStmt->fetchColumn();
+
+            if ($existingRegId > 0) {
+                $updateRegStmt = $conn->prepare("
+                    UPDATE semester_registrations
+                    SET status = 'approved', year_of_study = :year_of_study, updated_at = NOW()
+                    WHERE id = :id
+                ");
+                $updateRegStmt->execute([
+                    'year_of_study' => (int)$yearOfStudy,
+                    'id' => $existingRegId
+                ]);
+            } else {
+                $insertRegStmt = $conn->prepare("
+                    INSERT INTO semester_registrations
+                        (student_id, semester_id, year_of_study, status, request_date, created_at, updated_at)
+                    VALUES
+                        (:student_id, :semester_id, :year_of_study, 'approved', NOW(), NOW(), NOW())
+                ");
+                $insertRegStmt->execute([
+                    'student_id' => (int)$studentProfile['id'],
+                    'semester_id' => (int)$semesterId,
+                    'year_of_study' => (int)$yearOfStudy
+                ]);
+            }
+
+            auto_assign_courses(
+                $conn,
+                (int)$studentProfile['id'],
+                (int)$semesterId,
+                null,
+                (int)($studentProfile['program_id'] ?? 0),
+                (int)$yearOfStudy
+            );
+
+            $approvalCheckStmt->execute([
+                'student_id' => (int)$studentProfile['id'],
+                'semester_id' => (int)$semesterId
+            ]);
+            $semesterApproval = $approvalCheckStmt->fetch();
+
+            if (empty($repeatEnforcedNotice)) {
+                $repeatEnforcedNotice = 'You were moved to the previous semester to continue with eligible courses.';
+            }
+        }
+    }
+} catch (Exception $e) {
+    error_log('Course-registration fallback warning: ' . $e->getMessage());
+}
+
 // AUTO-REGISTER: If no approval exists, automatically create one and assign courses
-if (!$semesterApproval && $semesterId > 0) {
+if (false && !$semesterApproval && $semesterId > 0) {
     try {
         // First check if there's ANY registration (pending, approved, rejected) for this semester
         $existingRegStmt = $conn->prepare("
@@ -410,6 +801,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     try {
         // Get the year_of_study from POST or use selected value
         $registrationYearOfStudy = isset($_POST['year_of_study']) ? (int)$_POST['year_of_study'] : $yearOfStudy;
+        if ($isRepeatLocked && !empty($forcedRepeatDecision['year_of_study'])) {
+            $registrationYearOfStudy = (int)$forcedRepeatDecision['year_of_study'];
+        }
         
         // Immediately approve semester registration so students can register for courses
         $insertStmt = $conn->prepare("INSERT INTO semester_registrations (student_id, semester_id, year_of_study, status, request_date, created_at, updated_at) VALUES (:student_id, :semester_id, :year_of_study, 'approved', NOW(), NOW(), NOW())");
@@ -733,23 +1127,48 @@ if (!empty($availableCourses)) {
 
 // Fetch approved registrations (courses student is supposed to attend)
 $approvedCourses = [];
-if ($semesterId && $semesterApproval) {
+if ($semesterId) {
     $ac = $conn->prepare("SELECT cr.course_id, c.course_code, c.course_name, c.credit_hours, c.level_year, c.semester_offered
                           FROM course_registrations cr
                           JOIN courses c ON cr.course_id = c.id
                           WHERE cr.student_id = :student_id 
                           AND cr.semester_id = :semester_id 
                           AND cr.status = 'approved'
-                          AND c.level_year = :level_year
-                          AND c.semester_offered = :semester_offered
                           ORDER BY c.course_code");
     $ac->execute([
         'student_id' => $studentProfile['id'], 
-        'semester_id' => $semesterId,
-        'level_year' => $yearOfStudy,
-        'semester_offered' => $selectedSemesterNumber
+        'semester_id' => $semesterId
     ]);
     $approvedCourses = $ac->fetchAll();
+}
+
+if ($isRepeatLocked && $semesterId && empty($approvedCourses)) {
+    try {
+        $assignedRepeat = auto_assign_courses(
+            $conn,
+            (int)$studentProfile['id'],
+            (int)$semesterId,
+            null,
+            (int)($studentProfile['program_id'] ?? 0),
+            (int)$yearOfStudy
+        );
+        if ($assignedRepeat) {
+            $ac = $conn->prepare("SELECT cr.course_id, c.course_code, c.course_name, c.credit_hours, c.level_year, c.semester_offered
+                                  FROM course_registrations cr
+                                  JOIN courses c ON cr.course_id = c.id
+                                  WHERE cr.student_id = :student_id
+                                  AND cr.semester_id = :semester_id
+                                  AND cr.status = 'approved'
+                                  ORDER BY c.course_code");
+            $ac->execute([
+                'student_id' => $studentProfile['id'],
+                'semester_id' => $semesterId
+            ]);
+            $approvedCourses = $ac->fetchAll();
+        }
+    } catch (Exception $e) {
+        error_log('Repeat auto-assignment warning: ' . $e->getMessage());
+    }
 }
 
 // Determine whether selection should be allowed. If courses were assigned by admin
@@ -1211,23 +1630,40 @@ include '../../includes/header.php';
         </div>
     </div>
 
+    <?php
+        $flashSuccess = $session->getFlash('success');
+        $flashError = $session->getFlash('error');
+        $flashInfo = $session->getFlash('info');
+        $flashWarning = $session->getFlash('warning');
+    ?>
     <div class="content-area container p-4">
-        <?php if ($session->getFlash('success')): ?>
+        <?php if (!empty($flashSuccess)): ?>
             <div class="alert alert-success alert-dismissible fade show" role="alert" style="background:#d4edda;border-color:#c3e6cb;color:#155724;border-left:4px solid #28a745;">
-                <i class="fas fa-check-circle"></i> <?php echo e($session->getFlash('success')); ?>
+                <i class="fas fa-check-circle"></i> <?php echo e($flashSuccess); ?>
                 <button type="button" class="close" data-dismiss="alert" aria-label="Close" style="border:none;background:transparent;font-size:20px;line-height:1;color:inherit;opacity:0.9;">&times;</button>
             </div>
         <?php endif; ?>
-        <?php if ($session->getFlash('error')): ?>
+        <?php if (!empty($flashError)): ?>
             <div class="alert alert-danger alert-dismissible fade show" role="alert" style="border-left:4px solid #dc3545;">
-                <i class="fas fa-exclamation-circle"></i> <?php echo e($session->getFlash('error')); ?>
+                <i class="fas fa-exclamation-circle"></i> <?php echo e($flashError); ?>
                 <button type="button" class="close" data-dismiss="alert" aria-label="Close" style="border:none;background:transparent;font-size:20px;line-height:1;color:inherit;opacity:0.9;">&times;</button>
             </div>
         <?php endif; ?>
-        <?php if ($session->getFlash('info')): ?>
-            <div class="alert alert-info alert-dismissible fade show" role="alert" style="border-left:4px solid #17a2b8;">
-                <i class="fas fa-info-circle"></i> <?php echo e($session->getFlash('info')); ?>
+        <?php if (!empty($flashWarning)): ?>
+            <div class="alert alert-warning alert-dismissible fade show" role="alert" style="border-left:4px solid #ffc107;">
+                <i class="fas fa-exclamation-triangle"></i> <?php echo e($flashWarning); ?>
                 <button type="button" class="close" data-dismiss="alert" aria-label="Close" style="border:none;background:transparent;font-size:20px;line-height:1;color:inherit;opacity:0.9;">&times;</button>
+            </div>
+        <?php endif; ?>
+        <?php if (!empty($flashInfo)): ?>
+            <div class="alert alert-info alert-dismissible fade show" role="alert" style="border-left:4px solid #17a2b8;">
+                <i class="fas fa-info-circle"></i> <?php echo e($flashInfo); ?>
+                <button type="button" class="close" data-dismiss="alert" aria-label="Close" style="border:none;background:transparent;font-size:20px;line-height:1;color:inherit;opacity:0.9;">&times;</button>
+            </div>
+        <?php endif; ?>
+        <?php if (!empty($repeatEnforcedNotice)): ?>
+            <div class="alert alert-warning" role="alert" style="border-left:4px solid #ffc107;">
+                <i class="fas fa-redo"></i> <?php echo e($repeatEnforcedNotice); ?>
             </div>
         <?php endif; ?>
 
@@ -1308,8 +1744,9 @@ include '../../includes/header.php';
         <?php else: ?>
         <div class="card mb-3">
             <div class="card-body" style="padding: 1rem;">
-                <form id="courseFilterForm" method="GET" class="mb-3">
+                <form id="courseFilterForm" method="POST" class="mb-3">
                     <?php echo csrfField(); ?>
+                    <input type="hidden" name="action" value="enroll_now">
                     <input type="hidden" name="tab" value="enroll">
                     <div class="enroll-shell">
                         <div class="enroll-shell-head">
@@ -1327,18 +1764,24 @@ include '../../includes/header.php';
                         <div class="enroll-form-row">
                             <div class="enroll-field">
                                 <label>YEAR OF STUDY <span class="req">*</span></label>
-                                <select id="year_of_study_select" name="year_of_study">
+                                <select id="year_of_study_select" name="year_of_study" <?php echo $isRepeatLocked ? 'disabled' : ''; ?>>
                                     <?php for ($y = 1; $y <= 4; $y++): ?>
                                         <option value="<?php echo $y; ?>" <?php echo $yearOfStudy == $y ? 'selected' : ''; ?>>Year <?php echo $y; ?></option>
                                     <?php endfor; ?>
                                 </select>
+                                <?php if ($isRepeatLocked): ?>
+                                    <input type="hidden" name="year_of_study" value="<?php echo (int)$yearOfStudy; ?>">
+                                <?php endif; ?>
                             </div>
                             <div class="enroll-field">
                                 <label>SEMESTER <span class="req">*</span></label>
-                                <select name="semester_number">
+                                <select name="semester_number" <?php echo $isRepeatLocked ? 'disabled' : ''; ?>>
                                     <option value="1" <?php echo $selectedSemesterNumber == 1 ? 'selected' : ''; ?>>Semester 1</option>
                                     <option value="2" <?php echo $selectedSemesterNumber == 2 ? 'selected' : ''; ?>>Semester 2</option>
                                 </select>
+                                <?php if ($isRepeatLocked): ?>
+                                    <input type="hidden" name="semester_number" value="<?php echo (int)$selectedSemesterNumber; ?>">
+                                <?php endif; ?>
                             </div>
                             <div class="enroll-field">
                                 <label>ENROLLING AS? <span class="req">*</span></label>
@@ -1363,11 +1806,10 @@ include '../../includes/header.php';
                     </div>
                 </form>
 
-                <?php if (!$semesterApproval): ?>
-                    <!-- This should rarely show since auto-registration happens above -->
+                <?php if (!$semesterApproval && empty($approvedCourses)): ?>
                     <div class="alert alert-danger">
                         <i class="fas fa-exclamation-triangle"></i> 
-                        <strong>Unable to auto-register.</strong>
+                        <strong>Not enrolled yet.</strong> Click <strong>ENROLL NOW</strong> above to enroll and load your semester courses.
                         <?php if (defined('APP_DEBUG') && APP_DEBUG): ?>
                             <div class="mt-2">
                                 <p>Debugging Information:</p>
@@ -1405,7 +1847,7 @@ include '../../includes/header.php';
                             <div style="margin-bottom: 1rem;">
                                 <h4 style="font-weight: 700; color: #2d3748; font-size: 1.1rem; border-bottom: 3px solid #e2e8f0; padding-bottom: 0.5rem;">
                                     <i class="fas fa-graduation-cap" style="color: #4a5568; margin-right: 0.5rem;"></i>
-                                    <?php echo e($selectedAcademicYearName ?: '2025/2026'); ?>
+                                    <?php echo e($selectedAcademicYearName ?: ($currentSemester['academic_year'] ?? '-')); ?>
                                 </h4>
                             </div>
                             
@@ -1473,7 +1915,7 @@ include '../../includes/header.php';
                                                 <tr>
                                                     <td colspan="10" style="padding: 2rem; text-align: center; color: #6b7280;">
                                                         <i class="fas fa-info-circle" style="margin-right: 0.5rem;"></i>
-                                                        No courses have been assigned yet. Please contact administration.
+                                                        No courses are currently available for the resolved semester context. Try Reload; the system auto-falls back to previous eligible semester when applicable.
                                                     </td>
                                                 </tr>
                                             <?php endif; ?>

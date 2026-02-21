@@ -1,49 +1,97 @@
 <?php
 /**
  * Main Entry Point / Landing Page
- * Redirects to login or appropriate dashboard
+ * Redirects to login or appropriate dashboard using module-isolated sessions
  */
 require_once 'config.php';
 
-// Check all role-specific sessions to find active login
-$roles = ['admin', 'student', 'lecturer', 'finance'];
-$activeRole = null;
+function smnsGetModuleMap() {
+    return [
+        'admin' => [
+            'dashboard' => 'views/admin/dashboard.php',
+            'login' => 'views/admin/login.php',
+        ],
+        'student' => [
+            'dashboard' => 'views/student/dashboard.php',
+            'login' => 'views/student/login.php',
+        ],
+        'lecturer' => [
+            'dashboard' => 'views/lecturer/dashboard.php',
+            'login' => 'views/lecturer/login.php',
+        ],
+        'finance' => [
+            'dashboard' => 'views/finance/dashboard.php',
+            'login' => 'views/finance/login.php',
+        ],
+    ];
+}
 
-foreach ($roles as $role) {
+function smnsDetectRequestedModule($rawPath) {
+    $path = strtolower(str_replace('\\', '/', (string)$rawPath));
+    $path = ltrim($path, '/');
+    if ($path === '') {
+        return null;
+    }
+
+    if (strpos($path, 'views/admin/') === 0 || strpos($path, 'admin/') === 0) return 'admin';
+    if (strpos($path, 'views/student/') === 0 || strpos($path, 'student/') === 0) return 'student';
+    if (strpos($path, 'views/lecturer/') === 0 || strpos($path, 'lecturer/') === 0) return 'lecturer';
+    if (strpos($path, 'views/finance/') === 0 || strpos($path, 'finance/') === 0) return 'finance';
+
+    return null;
+}
+
+function smnsIsRoleSessionActive($role) {
+    $cookieName = 'SMNS_' . strtoupper($role) . '_SESSION';
+    if (empty($_COOKIE[$cookieName])) {
+        return false;
+    }
+
     if (session_status() === PHP_SESSION_ACTIVE) {
         session_write_close();
     }
-    
-    session_name('SMNS_' . strtoupper($role) . '_SESSION');
+
+    session_name($cookieName);
     @session_start();
-    
-    if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
-        $activeRole = $role;
+
+    $active = !empty($_SESSION[$role . '_logged_in']) && (($_SESSION[$role . '_role'] ?? null) === $role);
+
+    if (session_status() === PHP_SESSION_ACTIVE) {
         session_write_close();
-        
-        // Redirect to appropriate dashboard based on role
-        switch($activeRole) {
-            case 'admin':
-                header('Location: views/admin/dashboard.php');
-                exit;
-            case 'student':
-                header('Location: views/student/dashboard.php');
-                exit;
-            case 'lecturer':
-                header('Location: views/lecturer/dashboard.php');
-                exit;
-            case 'finance':
-                header('Location: views/finance/dashboard.php');
-                exit;
-        }
+    }
+
+    return $active;
+}
+
+$modules = smnsGetModuleMap();
+$roles = array_keys($modules);
+$activeRoles = [];
+foreach ($roles as $role) {
+    if (smnsIsRoleSessionActive($role)) {
+        $activeRoles[] = $role;
     }
 }
 
-// No active session - close any open session
-if (session_status() === PHP_SESSION_ACTIVE) {
-    session_write_close();
+$requestedUrl = $_GET['url'] ?? '';
+$requestedModule = smnsDetectRequestedModule($requestedUrl);
+
+// If an invalid/missing page was requested inside a module, keep the user in that module flow.
+if ($requestedModule !== null) {
+    if (in_array($requestedModule, $activeRoles, true)) {
+        header('Location: ' . $modules[$requestedModule]['dashboard']);
+        exit;
+    }
+
+    header('Location: ' . $modules[$requestedModule]['login']);
+    exit;
 }
 
-// Redirect to unified login page
+// Default landing behavior: send active users to their dashboard, otherwise to unified login.
+if (!empty($activeRoles)) {
+    $primaryRole = $activeRoles[0];
+    header('Location: ' . $modules[$primaryRole]['dashboard']);
+    exit;
+}
+
 header('Location: views/auth/login.php');
 exit;

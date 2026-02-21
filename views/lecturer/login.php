@@ -147,10 +147,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
             
 
-            <form method="POST" action="" class="login-form" autocomplete="off">
+            <form method="POST" action="" class="login-form" autocomplete="on">
                 <?php echo csrfField(); ?>
                 <input type="hidden" name="step" value="<?php echo $step; ?>">
-                <input type="hidden" name="username" value="<?php echo htmlspecialchars($entered_username); ?>">
+                <input type="hidden" name="username" value="<?php echo htmlspecialchars($entered_username); ?>" autocomplete="section-lecturer username">
                 
                 <?php if ($step === 1): ?>
                     <div class="form-group">
@@ -162,6 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                    name="username"
                                    value="<?php echo htmlspecialchars($entered_username); ?>"
                                    placeholder="Enter your Lecturer ID (e.g. LEC001)"
+                                   autocomplete="section-lecturer username"
                                    required autofocus>
                             
                         </div>
@@ -184,6 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                    id="password"
                                    name="password"
                                    placeholder="Enter lecturer password"
+                                   autocomplete="section-lecturer current-password"
                                    required autofocus>
                             <button type="button" class="btn btn-sm btn-outline-secondary" style="position:absolute; right:10px; top:50%; transform:translateY(-50%);" onclick="togglePassword('password', this)">Show</button>
                         </div>

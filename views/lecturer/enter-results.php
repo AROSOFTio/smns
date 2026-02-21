@@ -21,6 +21,24 @@ $lecturerProfile = $currentUser['profile'];
 $db   = new Database();
 $conn = $db->getConnection();
 
+// Ensure results_audit table exists for CW edit/submit tracking.
+$conn->exec("CREATE TABLE IF NOT EXISTS `results_audit` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `result_id` int(11) NOT NULL,
+  `student_id` int(11) NOT NULL,
+  `course_id` int(11) NOT NULL,
+  `changed_by_user_id` int(11) NOT NULL,
+  `change_type` enum('publish','edit') NOT NULL,
+  `old_marks` longtext DEFAULT NULL,
+  `new_marks` longtext NOT NULL,
+  `reason` text DEFAULT NULL,
+  `changed_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `result_id` (`result_id`),
+  KEY `student_id` (`student_id`),
+  KEY `course_id` (`course_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
 // ---------------------------------------------------------------------------
 // Filters: Academic Year, Semester, Course (assigned to this lecturer)
 // ---------------------------------------------------------------------------
@@ -29,6 +47,9 @@ $academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_ye
 $defaultAcademicYearId  = Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0);
 $selectedAcademicYearId = isset($_REQUEST['academic_year_id']) ? (int) $_REQUEST['academic_year_id'] : $defaultAcademicYearId;
 $selectedSemesterNumber = isset($_REQUEST['semester_number']) ? (int) $_REQUEST['semester_number'] : (Helper::getCurrentSemester()['semester_number'] ?? 1);
+if ($selectedSemesterNumber < 1 || $selectedSemesterNumber > 2) {
+    $selectedSemesterNumber = 1;
+}
 
 // Map AY + semester number to semester row
 $mapStmt = $conn->prepare('SELECT id, semester_name FROM semesters WHERE academic_year_id = :ay AND semester_number = :sn LIMIT 1');
@@ -45,7 +66,7 @@ if ($semesterId) {
             INNER JOIN courses c ON ca.course_id = c.id
             WHERE ca.lecturer_id = :lecturer_id
               AND ca.semester_id  = :semester_id
-              AND ca.status       = 'active'
+              AND ca.status IN ('active','completed')
             ORDER BY c.course_code";
     $stmt = $conn->prepare($sql);
     $stmt->execute([
@@ -74,25 +95,39 @@ if ($selectedCourseId && !empty($assignedCourses)) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['save_draft']) || isset($_POST['submit_results'])) && $semesterId) {
     $selectedCourseId = (int) ($_POST['course_id'] ?? 0);
 
+    if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $session->setFlash('error', 'Security token expired. Please retry saving marks.');
+        header('Location: ' . BASE_URL . '/views/lecturer/enter-results.php?academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber . '&course_id=' . $selectedCourseId);
+        exit;
+    }
+
+    if ($selectedCourseId <= 0) {
+        $session->setFlash('error', 'Please select a valid course before saving marks.');
+        header('Location: ' . BASE_URL . '/views/lecturer/enter-results.php?academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber);
+        exit;
+    }
+
     // Security: verify course is actually assigned to this lecturer in this semester
-    if ($selectedCourseId) {
-        $check = $conn->prepare('SELECT COUNT(*) FROM course_assignments WHERE lecturer_id = :lecturer AND course_id = :course AND semester_id = :semester AND status = "active"');
-        $check->execute([
-            'lecturer' => $lecturerProfile['id'],
-            'course'   => $selectedCourseId,
-            'semester' => $semesterId,
-        ]);
-        if (!$check->fetchColumn()) {
-            $session->setFlash('error', 'You are not assigned to this course for the selected semester.');
-            header('Location: ' . BASE_URL . '/views/lecturer/enter-results.php?academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber);
-            exit;
-        }
+    $check = $conn->prepare("SELECT COUNT(*) FROM course_assignments WHERE lecturer_id = :lecturer AND course_id = :course AND semester_id = :semester AND status IN ('active','completed')");
+    $check->execute([
+        'lecturer' => $lecturerProfile['id'],
+        'course'   => $selectedCourseId,
+        'semester' => $semesterId,
+    ]);
+    if (!$check->fetchColumn()) {
+        $session->setFlash('error', 'You are not assigned to this course for the selected semester.');
+        header('Location: ' . BASE_URL . '/views/lecturer/enter-results.php?academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber);
+        exit;
     }
 
     $cwData   = $_POST['cw'] ?? []; // [student_id => cw_mark]
     $now      = date('Y-m-d H:i:s');
     $isSubmit = isset($_POST['submit_results']);
     $newStatus = $isSubmit ? 'submitted' : 'draft';
+    $auditReason = $isSubmit
+        ? 'Lecturer coursework submitted for admin approval'
+        : 'Lecturer coursework saved as draft';
+    $changedByUserId = (int)($currentUser['id'] ?? 0);
 
     // Check if there's any data to process
     if (empty($cwData)) {
@@ -108,6 +143,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['save_draft']) || iss
     $conn->beginTransaction();
 
     try {
+        $savedCount = 0;
+        $lockedCount = 0;
+        $inputCount = 0;
+        $auditStmt = $conn->prepare("INSERT INTO results_audit (result_id, student_id, course_id, changed_by_user_id, change_type, old_marks, new_marks, reason) VALUES (:result_id, :student_id, :course_id, :user_id, 'edit', :old_marks, :new_marks, :reason)");
+
         foreach ($cwData as $studentId => $cwMarkRaw) {
             $studentId = (int) $studentId;
 
@@ -116,6 +156,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['save_draft']) || iss
             }
 
             $cwMark = trim($cwMarkRaw) === '' ? null : (float) $cwMarkRaw;
+            if (trim((string)$cwMarkRaw) !== '') {
+                $inputCount++;
+            }
 
             if ($cwMark !== null) {
                 if ($cwMark < 0 || $cwMark > 40) {
@@ -129,7 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['save_draft']) || iss
             }
 
             // Check if draft result already exists (ignore submitted results)
-            $existingStmt = $conn->prepare('SELECT id, assignment_marks, status FROM results WHERE student_id = :student AND course_id = :course AND semester_id = :semester LIMIT 1');
+            $existingStmt = $conn->prepare('SELECT id, assignment_marks, final_exam_marks, total_marks, grade, status FROM results WHERE student_id = :student AND course_id = :course AND semester_id = :semester LIMIT 1');
             $existingStmt->execute([
                 'student'  => $studentId,
                 'course'   => $selectedCourseId,
@@ -137,7 +180,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['save_draft']) || iss
             ]);
             $existing = $existingStmt->fetch(PDO::FETCH_ASSOC);
 
+            $resultId = 0;
+            $oldMarks = null;
+            $newMarks = null;
+            $needsAudit = true;
+
             if ($existing) {
+                $resultId = (int)($existing['id'] ?? 0);
+                $oldMarks = $existing;
+
+                // Lock lecturer editing once admin has approved/published.
+                if (in_array((string)($existing['status'] ?? ''), ['approved', 'published'], true)) {
+                    $lockedCount++;
+                    continue;
+                }
+
                 // Update existing result row with new marks and status
                 $updateSql = 'UPDATE results SET assignment_marks = :cw, entered_by = :lecturer, status = :status';
                 $params = [
@@ -156,6 +213,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['save_draft']) || iss
                 $params['updated_at'] = $now;
                 $u = $conn->prepare($updateSql);
                 $u->execute($params);
+                if ($u->rowCount() > 0) {
+                    $savedCount++;
+                }
+
+                $newStmt = $conn->prepare("SELECT assignment_marks, final_exam_marks, total_marks, grade, status FROM results WHERE id = :id");
+                $newStmt->execute(['id' => $resultId]);
+                $newMarks = $newStmt->fetch(PDO::FETCH_ASSOC);
+                if ($newMarks && $oldMarks) {
+                    $needsAudit = (
+                        (string)($oldMarks['assignment_marks'] ?? '') !== (string)($newMarks['assignment_marks'] ?? '') ||
+                        (string)($oldMarks['status'] ?? '') !== (string)($newMarks['status'] ?? '')
+                    );
+                }
             } else {
                 // Insert new result row
                 $insertSql = 'INSERT INTO results (student_id, course_id, semester_id, assignment_marks, status, entered_by, submitted_date, created_at, updated_at)
@@ -171,6 +241,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['save_draft']) || iss
                     'submitted_date' => $isSubmit ? $now : null,
                     'created_at'     => $now,
                     'updated_at'     => $now,
+                ]);
+                $resultId = (int)$conn->lastInsertId();
+                if ($resultId > 0) {
+                    $savedCount++;
+                }
+
+                $newStmt = $conn->prepare("SELECT assignment_marks, final_exam_marks, total_marks, grade, status FROM results WHERE id = :id");
+                $newStmt->execute(['id' => $resultId]);
+                $newMarks = $newStmt->fetch(PDO::FETCH_ASSOC);
+            }
+
+            if ($resultId > 0 && $changedByUserId > 0 && $needsAudit && $newMarks) {
+                $auditStmt->execute([
+                    'result_id' => $resultId,
+                    'student_id' => $studentId,
+                    'course_id' => $selectedCourseId,
+                    'user_id' => $changedByUserId,
+                    'old_marks' => $oldMarks ? json_encode($oldMarks) : null,
+                    'new_marks' => json_encode($newMarks),
+                    'reason' => $auditReason
                 ]);
             }
         }
@@ -209,9 +299,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['save_draft']) || iss
                 }
             }
             
-            $session->setFlash('success', 'Coursework marks submitted successfully for approval. <a href="' . BASE_URL . '/views/lecturer/draft-results.php" class="alert-link">View your submitted results</a>');
+            if ($savedCount > 0) {
+                $session->setFlash('success', $savedCount . ' coursework row(s) submitted for approval. You can track progress in Draft Results.');
+            } elseif ($lockedCount > 0) {
+                $session->setFlash('info', 'No rows were submitted. ' . $lockedCount . ' row(s) are already approved/published and cannot be changed by lecturer.');
+            } else {
+                $session->setFlash('info', 'No coursework changes were detected to submit.');
+            }
         } else {
-            $session->setFlash('success', 'Coursework marks saved as draft. <a href="' . BASE_URL . '/views/lecturer/draft-results.php" class="alert-link">View all drafts</a>');
+            if ($savedCount > 0) {
+                $session->setFlash('success', $savedCount . ' coursework row(s) saved as draft. Saved marks remain visible here and in Draft Results.');
+            } elseif ($inputCount === 0) {
+                $session->setFlash('info', 'No marks entered. You can save partial marks any time and continue later.');
+            } elseif ($lockedCount > 0) {
+                $session->setFlash('info', 'No rows were saved. ' . $lockedCount . ' row(s) are already approved/published and locked from lecturer edits.');
+            } else {
+                $session->setFlash('info', 'No coursework changes were detected.');
+            }
         }
 
         header('Location: ' . BASE_URL . '/views/lecturer/enter-results.php?academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber . '&course_id=' . $selectedCourseId);
@@ -227,6 +331,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['save_draft']) || iss
 // ---------------------------------------------------------------------------
 
 $students = [];
+$statusSummary = ['draft' => 0, 'submitted' => 0, 'approved' => 0, 'published' => 0, 'no_mark' => 0];
+$filledMarksCount = 0;
+$lockedRowsCount = 0;
+$lastSavedAt = null;
 if ($semesterId && $selectedCourseId) {
     $sql = "SELECT s.id, s.first_name, s.last_name, s.student_id AS reg_no,
                    s.level_year, p.program_name,
@@ -242,7 +350,7 @@ if ($semesterId && $selectedCourseId) {
                               AND r.semester_id = cr.semester_id
             WHERE cr.semester_id = :semester_id
               AND cr.course_id   = :course_id
-              AND cr.status IN ('pending', 'approved')
+              AND cr.status IN ('pending', 'approved', 'registered', 'submitted')
             ORDER BY s.last_name, s.first_name";
     $stmt = $conn->prepare($sql);
     $stmt->execute([
@@ -250,6 +358,60 @@ if ($semesterId && $selectedCourseId) {
         'course_id'   => $selectedCourseId,
     ]);
     $students = $stmt->fetchAll();
+
+    // Fallback: keep lecturer's previously saved rows visible even if
+    // registration rows are missing/out-of-sync.
+    if (empty($students)) {
+        $fallbackSql = "SELECT s.id, s.first_name, s.last_name, s.student_id AS reg_no,
+                               s.level_year, p.program_name,
+                               r.assignment_marks AS cw_marks,
+                               r.final_exam_marks AS exam_marks,
+                               r.total_marks,
+                               r.status
+                        FROM results r
+                        INNER JOIN students s ON r.student_id = s.id
+                        LEFT JOIN programs p ON s.program_id = p.id
+                        WHERE r.semester_id = :semester_id
+                          AND r.course_id   = :course_id
+                          AND r.entered_by  = :lecturer_id
+                        ORDER BY s.last_name, s.first_name";
+        $fallbackStmt = $conn->prepare($fallbackSql);
+        $fallbackStmt->execute([
+            'semester_id' => $semesterId,
+            'course_id' => $selectedCourseId,
+            'lecturer_id' => (int)$lecturerProfile['id'],
+        ]);
+        $students = $fallbackStmt->fetchAll();
+    }
+
+    foreach ($students as $row) {
+        $status = (string)($row['status'] ?? '');
+        if ($status === 'draft') $statusSummary['draft']++;
+        elseif ($status === 'submitted') $statusSummary['submitted']++;
+        elseif ($status === 'approved') $statusSummary['approved']++;
+        elseif ($status === 'published') $statusSummary['published']++;
+        else $statusSummary['no_mark']++;
+        if ($row['cw_marks'] !== null && $row['cw_marks'] !== '') {
+            $filledMarksCount++;
+        }
+        if (in_array($status, ['approved', 'published'], true)) {
+            $lockedRowsCount++;
+        }
+    }
+
+    $lastSavedStmt = $conn->prepare("
+        SELECT MAX(updated_at)
+        FROM results
+        WHERE semester_id = :semester_id
+          AND course_id = :course_id
+          AND entered_by = :lecturer_id
+    ");
+    $lastSavedStmt->execute([
+        'semester_id' => $semesterId,
+        'course_id' => $selectedCourseId,
+        'lecturer_id' => (int)$lecturerProfile['id']
+    ]);
+    $lastSavedAt = $lastSavedStmt->fetchColumn() ?: null;
 }
 
 $pageTitle = 'Enter Results (Coursework) - ' . APP_NAME;
@@ -272,11 +434,19 @@ include '../../includes/header.php';
     </div>
 
     <div class="content-area container p-4">
-        <?php if ($session->getFlash('error')): ?>
-            <div class="alert alert-danger"><?php echo e($session->getFlash('error')); ?></div>
+        <?php
+            $flashError = $session->getFlash('error');
+            $flashSuccess = $session->getFlash('success');
+            $flashInfo = $session->getFlash('info');
+        ?>
+        <?php if (!empty($flashError)): ?>
+            <div class="alert alert-danger"><?php echo e($flashError); ?></div>
         <?php endif; ?>
-        <?php if ($session->getFlash('success')): ?>
-            <div class="alert alert-success"><?php echo e($session->getFlash('success')); ?></div>
+        <?php if (!empty($flashSuccess)): ?>
+            <div class="alert alert-success"><?php echo e($flashSuccess); ?></div>
+        <?php endif; ?>
+        <?php if (!empty($flashInfo)): ?>
+            <div class="alert alert-info"><?php echo e($flashInfo); ?></div>
         <?php endif; ?>
 
         <div class="card mb-3">
@@ -291,7 +461,7 @@ include '../../includes/header.php';
 
                     <label class="mr-2">Semester:</label>
                     <select name="semester_number" class="form-control mr-2" onchange="this.form.submit();">
-                        <?php for ($i = 1; $i <= 4; $i++): ?>
+                        <?php for ($i = 1; $i <= 2; $i++): ?>
                             <option value="<?php echo $i; ?>" <?php echo $selectedSemesterNumber == $i ? 'selected' : ''; ?>>Semester <?php echo $i; ?></option>
                         <?php endfor; ?>
                     </select>
@@ -315,11 +485,31 @@ include '../../includes/header.php';
                     <p class="text-muted mb-0">Please select a course to enter coursework marks.</p>
                 <?php else: ?>
                     <h5 class="mb-3">Coursework (out of 40) - <?php echo e($semesterName); ?></h5>
+                    <div class="alert alert-light border mb-3" style="font-size:13px;">
+                        <strong>Draft Flow:</strong> You can save partial marks and continue later. Drafts remain visible here and in
+                        <a href="<?php echo BASE_URL; ?>/views/lecturer/draft-results.php">Draft Results</a>.
+                        <?php if (!empty($lastSavedAt)): ?>
+                            <span class="ml-2 text-muted">Last saved: <?php echo e(date('M d, Y H:i:s', strtotime($lastSavedAt))); ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="d-flex flex-wrap mb-3" style="gap:8px;">
+                        <span class="badge badge-secondary" style="font-size:12px;">Draft: <?php echo (int)$statusSummary['draft']; ?></span>
+                        <span class="badge badge-info" style="font-size:12px;">Submitted: <?php echo (int)$statusSummary['submitted']; ?></span>
+                        <span class="badge badge-success" style="font-size:12px;">Approved: <?php echo (int)$statusSummary['approved']; ?></span>
+                        <span class="badge badge-primary" style="font-size:12px;">Published: <?php echo (int)$statusSummary['published']; ?></span>
+                        <span class="badge badge-light border" style="font-size:12px;">No Mark: <?php echo (int)$statusSummary['no_mark']; ?></span>
+                        <span class="badge badge-dark" style="font-size:12px;">Filled CW: <?php echo (int)$filledMarksCount; ?></span>
+                        <span class="badge badge-warning" style="font-size:12px;">Locked: <?php echo (int)$lockedRowsCount; ?></span>
+                    </div>
 
                     <?php if (empty($students)): ?>
-                        <p class="text-muted mb-0">No students registered for this course yet.</p>
+                        <div class="alert alert-warning mb-0">
+                            No student marks were found for this course and semester.
+                            If students are expected, confirm course registration and assignment mappings.
+                        </div>
                     <?php else: ?>
                         <form method="POST">
+                            <?php echo csrfField(); ?>
                             <input type="hidden" name="academic_year_id" value="<?php echo $selectedAcademicYearId; ?>">
                             <input type="hidden" name="semester_number" value="<?php echo $selectedSemesterNumber; ?>">
                             <input type="hidden" name="course_id" value="<?php echo $selectedCourseId; ?>">
@@ -333,21 +523,21 @@ include '../../includes/header.php';
                                             <th>Reg #</th>
                                             <th>Program</th>
                                             <th>Year</th>
-                                            <th>CW (0–40)</th>
+                                            <th>CW (0-40)</th>
                                             <th>Status</th>
                                             <th>Exam / Final (Read-Only)</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <?php $i = 1; foreach ($students as $s): ?>
-                                            <tr>
+                                            <tr class="<?php echo $s['cw_marks'] !== null ? 'has-cw-row' : ''; ?>">
                                                 <td><?php echo $i++; ?></td>
                                                 <td><?php echo e($s['first_name'] . ' ' . $s['last_name']); ?></td>
                                                 <td><?php echo e($s['reg_no']); ?></td>
                                                 <td><?php echo e($s['program_name'] ?? '-'); ?></td>
                                                 <td><?php echo 'Year ' . e($s['level_year'] ?? '-'); ?></td>
                                                 <td style="max-width:120px;">
-                                                    <input type="number" name="cw[<?php echo $s['id']; ?>]" class="form-control form-control-sm" min="0" max="40" step="0.01" value="<?php echo $s['cw_marks'] !== null ? htmlspecialchars($s['cw_marks']) : ''; ?>" />
+                                                    <input type="number" name="cw[<?php echo $s['id']; ?>]" class="form-control form-control-sm" min="0" max="40" step="0.01" value="<?php echo $s['cw_marks'] !== null ? htmlspecialchars($s['cw_marks']) : ''; ?>" <?php echo in_array((string)($s['status'] ?? ''), ['approved','published'], true) ? 'readonly' : ''; ?> />
                                                 </td>
                                                 <td>
                                                     <?php if ($s['status'] === 'submitted'): ?>
@@ -373,10 +563,14 @@ include '../../includes/header.php';
                                 </table>
                             </div>
 
-                            <div class="mt-3">
-                                <button type="submit" name="save_draft" class="btn btn-secondary btn-sm">Save Draft</button>
-                                <button type="submit" name="submit_results" class="btn btn-primary btn-sm" onclick="return confirm('Submit coursework marks for approval? You cannot edit after approval/publication.');">Submit for Approval</button>
-                                <p class="text-muted mt-2" style="font-size:12px;">
+                            <div class="mt-3 result-actions">
+                                <button type="submit" name="save_draft" class="btn btn-secondary btn-sm">
+                                    <i class="fas fa-save mr-1"></i> Save Draft (Partial Allowed)
+                                </button>
+                                <button type="submit" name="submit_results" class="btn btn-primary btn-sm" onclick="return confirm('Submit saved coursework marks for approval? You cannot edit after approval/publication.');">
+                                    <i class="fas fa-paper-plane mr-1"></i> Submit Saved Marks for Approval
+                                </button>
+                                <p class="text-muted mt-2 mb-0" style="font-size:12px;">
                                     Note: You can only enter Coursework (CW) marks out of 40. Exam marks (60%), final total and grade will be entered and approved by the examiner/auditor. You cannot modify exam or final marks.
                                 </p>
                             </div>
@@ -397,5 +591,21 @@ include '../../includes/header.php';
         </div>
     </div>
 </div>
+
+<style>
+.has-cw-row {
+    background: #f7fbff;
+}
+
+.result-actions {
+    position: sticky;
+    bottom: 8px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+</style>
 
 <?php include '../../includes/footer.php'; ?>

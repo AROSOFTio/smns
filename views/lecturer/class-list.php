@@ -57,7 +57,7 @@ $selectedCourseId = isset($_GET['course_id']) ? (int) $_GET['course_id'] : 0;
 $classList = [];
 if ($semesterId && $selectedCourseId) {
     $sql = "SELECT s.id, s.first_name, s.last_name, s.student_id AS reg_no,
-                   s.level_year, p.program_name, cr.status, cr.registration_date
+                   s.level_year, s.academic_status, p.program_name, cr.status, cr.registration_date
             FROM course_registrations cr
             INNER JOIN students s ON cr.student_id = s.id
             LEFT JOIN programs p ON s.program_id = p.id
@@ -142,18 +142,34 @@ include '../../includes/header.php';
                                         <th>Reg #</th>
                                         <th>Program</th>
                                         <th>Year</th>
-                                        <th>Status</th>
+                                        <th>Academic Status</th>
+                                        <th>Reg Status</th>
                                         <th>Registered On</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php $i = 1; foreach ($classList as $s): ?>
+                                        <?php
+                                            $academicStatusMeta = getStudentAcademicStatusMeta(
+                                                $conn,
+                                                (int)($s['id'] ?? 0),
+                                                (int)$semesterId,
+                                                (string)($s['academic_status'] ?? '')
+                                            );
+                                            $academicStatusLabel = (string)($academicStatusMeta['label'] ?? 'Status Pending');
+                                            $academicStatusStyle = (string)($academicStatusMeta['style'] ?? getAcademicStatusChipStyle('neutral'));
+                                        ?>
                                         <tr>
                                             <td><?php echo $i++; ?></td>
                                             <td><?php echo e($s['first_name'] . ' ' . $s['last_name']); ?></td>
                                             <td><?php echo e($s['reg_no']); ?></td>
                                             <td><?php echo e($s['program_name'] ?? '-'); ?></td>
                                             <td><?php echo 'Year ' . e($s['level_year'] ?? '-'); ?></td>
+                                            <td>
+                                                <span style="<?php echo e($academicStatusStyle); ?> border-radius:6px; padding:4px 10px; font-weight:600; font-size:12px; line-height:1; white-space:nowrap;">
+                                                    <?php echo e($academicStatusLabel); ?>
+                                                </span>
+                                            </td>
                                             <td>
                                                 <span class="badge badge-<?php echo $s['status'] === 'approved' ? 'success' : 'warning'; ?>">
                                                     <?php echo e(ucfirst($s['status'])); ?>

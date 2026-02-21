@@ -259,6 +259,184 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
     }
 }
 
+/**
+ * Human-friendly labels and areas for health checks.
+ */
+function getHealthCheckMetadata($checkName) {
+    $map = [
+        'database' => ['label' => 'Database Connection', 'area' => 'Core/Database'],
+        'auth' => ['label' => 'Authentication', 'area' => 'Core/Auth'],
+        'session' => ['label' => 'Session Management', 'area' => 'Core/Session'],
+        'security' => ['label' => 'Security', 'area' => 'Core/Security'],
+        'helper' => ['label' => 'Helper Functions', 'area' => 'Core/Helper'],
+        'logger' => ['label' => 'Logger', 'area' => 'Core/Logger'],
+        'classes' => ['label' => 'Core Class Loading', 'area' => 'Core'],
+        'permissions' => ['label' => 'Directory Permissions', 'area' => 'Filesystem'],
+        'constants' => ['label' => 'System Constants', 'area' => 'Configuration'],
+        'smtp' => ['label' => 'SMTP Connectivity', 'area' => 'Email/SMTP'],
+        'admin_pages' => ['label' => 'Admin Module Pages', 'area' => 'Module: Admin'],
+        'student_pages' => ['label' => 'Student Module Pages', 'area' => 'Module: Student'],
+        'lecturer_pages' => ['label' => 'Lecturer Module Pages', 'area' => 'Module: Lecturer'],
+        'finance_pages' => ['label' => 'Finance Module Pages', 'area' => 'Module: Finance'],
+        'admin_data' => ['label' => 'Admin Module Data', 'area' => 'Module: Admin'],
+        'student_data' => ['label' => 'Student Module Data', 'area' => 'Module: Student'],
+        'lecturer_data' => ['label' => 'Lecturer Module Data', 'area' => 'Module: Lecturer'],
+        'finance_data' => ['label' => 'Finance Module Data', 'area' => 'Module: Finance'],
+    ];
+
+    if (isset($map[$checkName])) {
+        return $map[$checkName];
+    }
+
+    return [
+        'label' => ucwords(str_replace('_', ' ', (string)$checkName)),
+        'area' => 'System',
+    ];
+}
+
+/**
+ * Extract warning/fail issues with location context.
+ */
+function collectHealthIssuesWithLocation($checks) {
+    $issues = [];
+    foreach ($checks as $checkName => $check) {
+        $status = strtolower((string)($check['status'] ?? ''));
+        if ($status !== 'warning' && $status !== 'fail') {
+            continue;
+        }
+        $meta = getHealthCheckMetadata((string)$checkName);
+        $issues[] = [
+            'check' => (string)$checkName,
+            'label' => $meta['label'],
+            'area' => $meta['area'],
+            'status' => $status,
+            'message' => (string)($check['message'] ?? ''),
+        ];
+    }
+    return $issues;
+}
+
+function ensureSystemHealthAlertTable($conn) {
+    $conn->exec("CREATE TABLE IF NOT EXISTS system_health_alerts (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        issue_hash VARCHAR(64) NOT NULL,
+        fail_count INT NOT NULL DEFAULT 0,
+        warning_count INT NOT NULL DEFAULT 0,
+        issues_json MEDIUMTEXT NULL,
+        email_sent TINYINT(1) NOT NULL DEFAULT 0,
+        recipient_count INT NOT NULL DEFAULT 0,
+        sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        resolved_at DATETIME NULL,
+        reported_by_user_id INT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_issue_hash (issue_hash),
+        INDEX idx_sent_at (sent_at),
+        INDEX idx_resolved (resolved_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+}
+
+function sendSystemHealthAlertIfNeeded($checks, $currentUser) {
+    try {
+        $issues = collectHealthIssuesWithLocation($checks);
+        $failCount = 0;
+        $warningCount = 0;
+        foreach ($issues as $issue) {
+            if ($issue['status'] === 'fail') $failCount++;
+            if ($issue['status'] === 'warning') $warningCount++;
+        }
+
+        $db = new Database();
+        $conn = $db->getConnection();
+        ensureSystemHealthAlertTable($conn);
+
+        // If issues are resolved, mark previous unresolved alerts as resolved.
+        if (empty($issues)) {
+            $conn->exec("UPDATE system_health_alerts SET resolved_at = NOW() WHERE resolved_at IS NULL");
+            return;
+        }
+
+        $signatureData = [];
+        foreach ($issues as $issue) {
+            $signatureData[] = [$issue['check'], $issue['status'], $issue['message']];
+        }
+        $issueHash = hash('sha256', json_encode($signatureData));
+
+        // Anti-spam cooldown for unchanged issue set.
+        $cooldownMinutes = 30;
+        $recentStmt = $conn->prepare("SELECT sent_at FROM system_health_alerts WHERE issue_hash = :hash ORDER BY id DESC LIMIT 1");
+        $recentStmt->execute(['hash' => $issueHash]);
+        $recent = $recentStmt->fetch(PDO::FETCH_ASSOC);
+        if ($recent && !empty($recent['sent_at'])) {
+            $lastTs = strtotime($recent['sent_at']);
+            if ($lastTs !== false && (time() - $lastTs) < ($cooldownMinutes * 60)) {
+                return;
+            }
+        }
+
+        $adminStmt = $conn->query("
+            SELECT email
+            FROM users
+            WHERE role = 'admin' AND status = 'active' AND email IS NOT NULL AND email <> ''
+        ");
+        $emails = [];
+        while ($row = $adminStmt->fetch(PDO::FETCH_ASSOC)) {
+            $email = trim((string)($row['email'] ?? ''));
+            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $emails[] = $email;
+            }
+        }
+        $emails = array_values(array_unique($emails));
+
+        $subject = APP_NAME . " - System Health Alert ({$failCount} failed, {$warningCount} warning)";
+        $lines = [];
+        $lines[] = "System health check detected warning/fail states.";
+        $lines[] = "Time: " . date('Y-m-d H:i:s');
+        $lines[] = "Fail count: {$failCount}";
+        $lines[] = "Warning count: {$warningCount}";
+        $lines[] = "Reported by: " . (($currentUser['username'] ?? 'system'));
+        $lines[] = "Location: " . BASE_URL . "/views/admin/system/health.php";
+        $lines[] = "";
+        $lines[] = "Issues:";
+        foreach ($issues as $i => $issue) {
+            $idx = $i + 1;
+            $lines[] = "{$idx}. [{$issue['status']}] {$issue['label']} ({$issue['area']}) - {$issue['message']}";
+        }
+        $lines[] = "";
+        $lines[] = "Action required: review System Health page and run maintenance actions where needed.";
+        $body = implode("\n", $lines);
+
+        $emailSent = false;
+        if (!empty($emails)) {
+            $emailSent = (bool)Helper::sendEmail(
+                $emails,
+                $subject,
+                $body,
+                null,
+                [
+                    'context_label' => 'System health alert',
+                    'source_page' => 'views/admin/system/health.php',
+                    'notify_admin_on_failure' => false
+                ]
+            );
+        }
+
+        $insert = $conn->prepare("INSERT INTO system_health_alerts
+            (issue_hash, fail_count, warning_count, issues_json, email_sent, recipient_count, sent_at, reported_by_user_id)
+            VALUES (:issue_hash, :fail_count, :warning_count, :issues_json, :email_sent, :recipient_count, NOW(), :reported_by_user_id)");
+        $insert->execute([
+            'issue_hash' => $issueHash,
+            'fail_count' => $failCount,
+            'warning_count' => $warningCount,
+            'issues_json' => json_encode($issues),
+            'email_sent' => $emailSent ? 1 : 0,
+            'recipient_count' => count($emails),
+            'reported_by_user_id' => (int)($currentUser['id'] ?? 0),
+        ]);
+    } catch (Exception $e) {
+        error_log('System health alert dispatch error: ' . $e->getMessage());
+    }
+}
+
 $checks = [];
 
 // 1. Database Connection Test
@@ -429,6 +607,71 @@ try {
 } catch (Exception $e) {
     $checks['smtp'] = ['status' => 'fail', 'message' => 'SMTP check error: ' . $e->getMessage()];
 } 
+
+// 11. Module page coverage checks (all major modules)
+$modulePageChecks = [
+    'admin_pages' => ['label' => 'Admin', 'paths' => ['views/admin/login.php', 'views/admin/dashboard.php', 'views/admin/logout.php']],
+    'student_pages' => ['label' => 'Student', 'paths' => ['views/student/login.php', 'views/student/dashboard.php', 'views/student/logout.php']],
+    'lecturer_pages' => ['label' => 'Lecturer', 'paths' => ['views/lecturer/login.php', 'views/lecturer/dashboard.php', 'views/lecturer/logout.php']],
+    'finance_pages' => ['label' => 'Finance', 'paths' => ['views/finance/login.php', 'views/finance/dashboard.php', 'views/finance/logout.php']],
+];
+foreach ($modulePageChecks as $checkKey => $cfg) {
+    $missing = [];
+    foreach ($cfg['paths'] as $relPath) {
+        $fullPath = BASE_PATH . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relPath);
+        if (!is_file($fullPath)) {
+            $missing[] = $relPath;
+        }
+    }
+    if (empty($missing)) {
+        $checks[$checkKey] = ['status' => 'pass', 'message' => $cfg['label'] . ' module routes/pages present'];
+    } else {
+        $checks[$checkKey] = ['status' => 'fail', 'message' => $cfg['label'] . ' module missing files: ' . implode(', ', $missing)];
+    }
+}
+
+// 12. Module data checks (tables used by each module)
+try {
+    $dbForModules = new Database();
+    $connForModules = $dbForModules->getConnection();
+
+    $moduleDataChecks = [
+        'admin_data' => ['label' => 'Admin', 'tables' => ['users', 'admins', 'notifications']],
+        'student_data' => ['label' => 'Student', 'tables' => ['students', 'course_registrations', 'results']],
+        'lecturer_data' => ['label' => 'Lecturer', 'tables' => ['lecturers', 'course_assignments', 'results']],
+        'finance_data' => ['label' => 'Finance', 'tables' => ['finance_staff', 'invoices', 'payments']],
+    ];
+
+    foreach ($moduleDataChecks as $checkKey => $cfg) {
+        $missingTables = [];
+        foreach ($cfg['tables'] as $table) {
+            $st = $connForModules->prepare("
+                SELECT COUNT(*) AS c
+                FROM information_schema.tables
+                WHERE table_schema = DATABASE() AND table_name = :t
+            ");
+            $st->execute(['t' => $table]);
+            $exists = (int)$st->fetchColumn();
+            if ($exists < 1) {
+                $missingTables[] = $table;
+            }
+        }
+
+        if (empty($missingTables)) {
+            $checks[$checkKey] = ['status' => 'pass', 'message' => $cfg['label'] . ' module data tables available'];
+        } else {
+            $checks[$checkKey] = ['status' => 'fail', 'message' => $cfg['label'] . ' module missing tables: ' . implode(', ', $missingTables)];
+        }
+    }
+} catch (Exception $e) {
+    $checks['admin_data'] = ['status' => 'fail', 'message' => 'Module data check failed: ' . $e->getMessage()];
+    $checks['student_data'] = ['status' => 'fail', 'message' => 'Module data check failed: ' . $e->getMessage()];
+    $checks['lecturer_data'] = ['status' => 'fail', 'message' => 'Module data check failed: ' . $e->getMessage()];
+    $checks['finance_data'] = ['status' => 'fail', 'message' => 'Module data check failed: ' . $e->getMessage()];
+}
+
+// Send throttled email alert to admins when warnings/failures exist.
+sendSystemHealthAlertIfNeeded($checks, $currentUser ?? []);
 
 $pageTitle = 'System Health Check - ' . APP_NAME;
 $additionalCSS = ['admin.css'];

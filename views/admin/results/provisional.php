@@ -75,13 +75,22 @@ $conn->exec("CREATE TABLE IF NOT EXISTS `results_audit` (
   KEY `course_id` (`course_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
-// Handle POST: Publish selected course results to students (status => published)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish']) && $semesterId) {
+$redirectProvisional = function($ayId, $semNo, $courseId = 0) {
+    $url = 'provisional.php?academic_year_id=' . (int)$ayId . '&semester_number=' . (int)$semNo;
+    if ((int)$courseId > 0) {
+        $url .= '&course_id=' . (int)$courseId;
+    }
+    return $url;
+};
+
+// Handle POST: Publish selected course or whole semester results to students (status => published)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['publish']) || isset($_POST['bulk_publish'])) && $semesterId) {
+    $isBulkPublish = isset($_POST['bulk_publish']);
     $selectedCourseId = (int) ($_POST['course_id'] ?? 0);
 
-    if ($selectedCourseId <= 0) {
+    if (!$isBulkPublish && $selectedCourseId <= 0) {
         $session->setFlash('error', 'Invalid course selection for publishing.');
-        header('Location: provisional.php?academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber);
+        header('Location: ' . $redirectProvisional($selectedAcademicYearId, $selectedSemesterNumber));
         exit;
     }
 
@@ -91,28 +100,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish']) && $semest
     try {
         $conn->beginTransaction();
 
+        $whereSql = "WHERE semester_id = :semester_id AND status = 'approved'";
+        $params = ['semester_id' => (int)$semesterId];
+        if (!$isBulkPublish) {
+            $whereSql .= " AND course_id = :course_id";
+            $params['course_id'] = (int)$selectedCourseId;
+        }
+
         // Fetch all results being published for audit logging
         $fetchSql = "SELECT id, student_id, course_id, assignment_marks, final_exam_marks, total_marks, grade, status 
-                     FROM results 
-                     WHERE semester_id = :semester_id AND course_id = :course_id AND status = 'approved'";
+                     FROM results {$whereSql}";
         $fetchStmt = $conn->prepare($fetchSql);
-        $fetchStmt->execute(['semester_id' => $semesterId, 'course_id' => $selectedCourseId]);
+        $fetchStmt->execute($params);
         $resultsToPublish = $fetchStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($resultsToPublish)) {
+            $conn->rollBack();
+            $session->setFlash('info', 'No approved results were found for publishing.');
+            header('Location: ' . $redirectProvisional($selectedAcademicYearId, $selectedSemesterNumber, $selectedCourseId));
+            exit;
+        }
 
         $updateSql = "UPDATE results
                       SET status = 'published',
                           published_date = :published_date,
                           updated_at = :updated_at
-                      WHERE semester_id = :semester_id
-                        AND course_id   = :course_id
-                        AND status      = 'approved'";
+                      {$whereSql}";
         $u = $conn->prepare($updateSql);
-        $u->execute([
-            'published_date' => $now,
-            'updated_at'     => $now,
-            'semester_id'    => $semesterId,
-            'course_id'      => $selectedCourseId,
-        ]);
+        $uParams = $params;
+        $uParams['published_date'] = $now;
+        $uParams['updated_at'] = $now;
+        $u->execute($uParams);
 
         // Log each result to audit table as 'publish'
         $auditStmt = $conn->prepare("INSERT INTO results_audit (result_id, student_id, course_id, changed_by_user_id, change_type, old_marks, new_marks, reason) VALUES (:result_id, :student_id, :course_id, :user_id, 'publish', :old_marks, :new_marks, :reason)");
@@ -127,14 +145,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish']) && $semest
                 'user_id'     => $adminUserId,
                 'old_marks'   => json_encode($oldMarks),
                 'new_marks'   => json_encode($newMarks),
-                'reason'      => 'Published to student portal'
+                'reason'      => $isBulkPublish ? 'Bulk published to student portal (semester scope)' : 'Published to student portal'
             ]);
         }
 
         $conn->commit();
-        $session->setFlash('success', 'Results published to student portals successfully. A copy has been saved for record keeping.');
+        $session->setFlash('success', 'Publishing successful. ' . count($resultsToPublish) . ' result(s) are now visible on student portals.');
 
-        header('Location: provisional.php?academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber . '&course_id=' . $selectedCourseId);
+        header('Location: ' . $redirectProvisional($selectedAcademicYearId, $selectedSemesterNumber, $selectedCourseId));
         exit;
     } catch (Exception $e) {
         $conn->rollBack();
@@ -202,6 +220,9 @@ include '../../../includes/header.php';
         <?php if ($session->getFlash('success')): ?>
             <div class="alert alert-success"><?php echo e($session->getFlash('success')); ?></div>
         <?php endif; ?>
+        <?php if ($session->getFlash('info')): ?>
+            <div class="alert alert-info"><?php echo e($session->getFlash('info')); ?></div>
+        <?php endif; ?>
 
         <div class="card mb-3">
             <div class="card-body" style="overflow-x:hidden;">
@@ -230,6 +251,17 @@ include '../../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </form>
+
+                <?php if ($semesterId && !empty($coursesWithResults)): ?>
+                    <form method="POST" class="mb-3">
+                        <input type="hidden" name="academic_year_id" value="<?php echo (int)$selectedAcademicYearId; ?>">
+                        <input type="hidden" name="semester_number" value="<?php echo (int)$selectedSemesterNumber; ?>">
+                        <button type="submit" name="bulk_publish" value="1" class="btn btn-outline-primary btn-sm" onclick="return confirm('Publish ALL approved results for this semester to student portals?');">
+                            <i class="fas fa-bullhorn"></i> Bulk Publish Semester
+                        </button>
+                        <small class="text-muted ml-2">Publishes all approved results in the current semester across courses.</small>
+                    </form>
+                <?php endif; ?>
 
                 <?php if (!$semesterId): ?>
                     <p class="text-muted mb-0">No semester configured for the selected academic year / semester number.</p>

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Enhanced Responsive Navigation Script
  * Handles mobile menu, sidebar collapse, and responsive behaviors
  */
@@ -10,7 +10,7 @@
         // Create mobile menu button
         const mobileBtn = document.createElement('button');
         mobileBtn.className = 'mobile-menu-btn';
-        mobileBtn.innerHTML = '☰';
+        mobileBtn.innerHTML = 'â˜°';
         mobileBtn.setAttribute('aria-label', 'Toggle Navigation');
         document.body.appendChild(mobileBtn);
 
@@ -29,13 +29,13 @@
                 sidebar.classList.remove('active');
                 overlay.classList.remove('active');
                 mobileBtn.classList.remove('active');
-                mobileBtn.innerHTML = '☰';
+                mobileBtn.innerHTML = 'â˜°';
                 document.body.style.overflow = '';
             } else {
                 sidebar.classList.add('active');
                 overlay.classList.add('active');
                 mobileBtn.classList.add('active');
-                mobileBtn.innerHTML = '✕';
+                mobileBtn.innerHTML = 'âœ•';
                 document.body.style.overflow = 'hidden';
             }
         }
@@ -60,7 +60,7 @@
                 sidebar.classList.remove('active');
                 overlay.classList.remove('active');
                 mobileBtn.classList.remove('active');
-                mobileBtn.innerHTML = '☰';
+                mobileBtn.innerHTML = 'â˜°';
                 document.body.style.overflow = '';
             }
         });
@@ -173,7 +173,7 @@
             link.addEventListener('click', function() {
                 // Add loading state
                 const originalHTML = this.innerHTML;
-                this.innerHTML = this.innerHTML.replace(/^.*?(<span.*?>)/, '$1<i style="margin-right: 8px;">⏳</i>');
+                this.innerHTML = this.innerHTML.replace(/^.*?(<span.*?>)/, '$1<i style="margin-right: 8px;">â³</i>');
                 this.style.opacity = '0.7';
                 
                 // Remove loading state after navigation
@@ -186,39 +186,53 @@
     }
 
     // Notification handling
-    function initNotificationHandling() {
-        // Auto-dismiss alerts (skip success alerts and any explicitly marked with data-auto-dismiss="false")
-        const alerts = document.querySelectorAll('.alert:not(.alert-success):not([data-auto-dismiss="false"])');
-        alerts.forEach(alert => {
-            setTimeout(() => {
-                alert.style.opacity = '0';
-                setTimeout(() => {
-                    alert.remove();
-                }, 300);
-            }, 5000);
-        });
-        
-        // Add close buttons to alerts (including non-auto-dismissable ones)
+        function initNotificationHandling() {
+        const AUTO_DISMISS_MS = 20000;
         const allAlerts = document.querySelectorAll('.alert');
-        allAlerts.forEach(alert => {
-                closeBtn.innerHTML = '×';
-                closeBtn.className = 'close';
-                closeBtn.style.cssText = `
-                    float: right;
-                    background: none;
-                    border: none;
-                    font-size: 1.5rem;
-                    cursor: pointer;
-                    opacity: 0.5;
-                `;
-                
-                closeBtn.addEventListener('click', () => {
+
+        allAlerts.forEach((alert) => {
+            if (!alert.dataset.alertBound) {
+                alert.dataset.alertBound = '1';
+                alert.style.transition = alert.style.transition || 'opacity 0.3s ease';
+
+                if (!alert.querySelector('.close')) {
+                    const closeBtn = document.createElement('button');
+                    closeBtn.type = 'button';
+                    closeBtn.className = 'close';
+                    closeBtn.setAttribute('aria-label', 'Close');
+                    closeBtn.innerHTML = '&times;';
+                    closeBtn.addEventListener('click', () => {
+                        alert.style.opacity = '0';
+                        setTimeout(() => alert.remove(), 300);
+                    });
+                    alert.insertBefore(closeBtn, alert.firstChild);
+                }
+            }
+
+            if (alert.getAttribute('data-auto-dismiss') === 'false') {
+                return;
+            }
+
+            let timer = null;
+            const startTimer = () => {
+                if (timer) clearTimeout(timer);
+                timer = setTimeout(() => {
                     alert.style.opacity = '0';
                     setTimeout(() => alert.remove(), 300);
-                });
-                
-                alert.insertBefore(closeBtn, alert.firstChild);
-            }
+                }, AUTO_DISMISS_MS);
+            };
+            const stopTimer = () => {
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+            };
+
+            startTimer();
+            alert.addEventListener('mouseenter', stopTimer);
+            alert.addEventListener('mouseleave', startTimer);
+            alert.addEventListener('focusin', stopTimer);
+            alert.addEventListener('focusout', startTimer);
         });
     }
 

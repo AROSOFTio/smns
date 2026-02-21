@@ -23,6 +23,12 @@ $conn = $db->getConnection();
 
 // Current semester
 $currentSemester = Helper::getCurrentSemester();
+$currentAcademicYearLabel = 'N/A';
+if (!empty($currentSemester['academic_year_id'])) {
+    $ayStmt = $conn->prepare("SELECT year_name FROM academic_years WHERE id = :id LIMIT 1");
+    $ayStmt->execute(['id' => (int)$currentSemester['academic_year_id']]);
+    $currentAcademicYearLabel = $ayStmt->fetchColumn() ?: 'N/A';
+}
 
 // Total courses assigned
 $stmt = $conn->prepare("SELECT COUNT(*) as count FROM course_assignments 
@@ -150,6 +156,10 @@ include '../../includes/header.php';
                 <strong>Dept:</strong> <?php echo e($lecturerProfile['department'] ?? 'N/A'); ?> &nbsp;|&nbsp;
                 <?php echo e($lecturerProfile['specialization'] ?? ''); ?>
             </p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap;">CURRENT YR. <span style="color:#2563eb;"><?php echo e($currentAcademicYearLabel); ?></span></span>
+                <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap;">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name'] ?? 'N/A'); ?></span></span>
+            </div>
         </div>
         
         <!-- Lecturer Stats Cards -->
@@ -189,6 +199,7 @@ include '../../includes/header.php';
                     <h3><?php echo $currentSemester['semester_name'] ?? 'N/A'; ?></h3>
                     <p>Current Semester</p>
                     <div class="stat-change positive">🎯 Active</div>
+                    <div class="stat-change neutral">Year: <?php echo e($currentAcademicYearLabel); ?></div>
                 </div>
             </div>
         </div>

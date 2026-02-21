@@ -212,7 +212,20 @@ include '../../includes/header.php';
 
             <!-- Academic Year Header -->
             <h3 class="academic-year-header">
-                <i class="fas fa-graduation-cap"></i> Academic Year 2025/2026
+                <i class="fas fa-graduation-cap"></i>
+                <?php
+                $registrationAcademicYears = [];
+                foreach ($organizedRegistrations as $yearSemesters) {
+                    foreach ($yearSemesters as $semesterData) {
+                        $label = trim((string)($semesterData['academic_year'] ?? ''));
+                        if ($label !== '') {
+                            $registrationAcademicYears[$label] = true;
+                        }
+                    }
+                }
+                $registrationAcademicYearText = implode(', ', array_keys($registrationAcademicYears));
+                ?>
+                <?php echo !empty($registrationAcademicYearText) ? 'Academic Year ' . e($registrationAcademicYearText) : 'Academic Year -'; ?>
             </h3>
 
             <?php 

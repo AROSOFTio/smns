@@ -81,41 +81,83 @@ class Logger {
      */
     public function getLoginSessions($limit = 50) {
         try {
-            // Get login events with their corresponding logout
-            $sql = "SELECT 
+            // Pair each login with the first logout before the next login.
+            // If no logout exists but another login exists, close the session at next login (superseded).
+            $sql = "SELECT
                         login.id,
                         login.user_id,
-                        login.description as login_description,
-                        login.created_at as login_time,
-                        logout.created_at as logout_time,
+                        login.description AS login_description,
+                        login.created_at AS login_time,
                         u.username,
-                        CASE 
-                            WHEN logout.created_at IS NOT NULL 
-                            THEN TIMESTAMPDIFF(MINUTE, login.created_at, logout.created_at)
-                            ELSE NULL 
-                        END as session_duration_minutes
+                        (
+                            SELECT MIN(next_login.created_at)
+                            FROM activity_logs next_login
+                            WHERE next_login.user_id = login.user_id
+                              AND next_login.action = 'login'
+                              AND next_login.created_at > login.created_at
+                        ) AS next_login_time,
+                        (
+                            SELECT MIN(next_logout.created_at)
+                            FROM activity_logs next_logout
+                            WHERE next_logout.user_id = login.user_id
+                              AND next_logout.action = 'logout'
+                              AND next_logout.created_at > login.created_at
+                              AND (
+                                    (
+                                        SELECT MIN(nl.created_at)
+                                        FROM activity_logs nl
+                                        WHERE nl.user_id = login.user_id
+                                          AND nl.action = 'login'
+                                          AND nl.created_at > login.created_at
+                                    ) IS NULL
+                                    OR next_logout.created_at < (
+                                        SELECT MIN(nl2.created_at)
+                                        FROM activity_logs nl2
+                                        WHERE nl2.user_id = login.user_id
+                                          AND nl2.action = 'login'
+                                          AND nl2.created_at > login.created_at
+                                    )
+                              )
+                        ) AS logout_time
                     FROM activity_logs login
                     LEFT JOIN users u ON login.user_id = u.id
-                    LEFT JOIN activity_logs logout ON (
-                        logout.user_id = login.user_id 
-                        AND logout.action = 'logout' 
-                        AND logout.created_at > login.created_at
-                        AND logout.created_at = (
-                            SELECT MIN(lo.created_at) 
-                            FROM activity_logs lo 
-                            WHERE lo.user_id = login.user_id 
-                            AND lo.action = 'logout' 
-                            AND lo.created_at > login.created_at
-                        )
-                    )
                     WHERE login.action = 'login'
-                    ORDER BY login.created_at DESC 
+                    ORDER BY login.created_at DESC
                     LIMIT :limit";
             $stmt = $this->db->prepare($sql);
             $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
             $stmt->execute();
-            
-            return $stmt->fetchAll();
+
+            $sessions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($sessions as &$session) {
+                $actualLogout = $session['logout_time'] ?? null;
+                $nextLogin = $session['next_login_time'] ?? null;
+
+                $sessionEnd = null;
+                $endType = 'active';
+                if (!empty($actualLogout)) {
+                    $sessionEnd = $actualLogout;
+                    $endType = 'logout';
+                } elseif (!empty($nextLogin)) {
+                    $sessionEnd = $nextLogin;
+                    $endType = 'superseded';
+                }
+
+                $session['session_end_time'] = $sessionEnd;
+                $session['end_type'] = $endType;
+                $session['session_duration_minutes'] = null;
+
+                if (!empty($sessionEnd)) {
+                    $loginTs = strtotime((string)$session['login_time']);
+                    $endTs = strtotime((string)$sessionEnd);
+                    if ($loginTs && $endTs && $endTs >= $loginTs) {
+                        $session['session_duration_minutes'] = (int)floor(($endTs - $loginTs) / 60);
+                    }
+                }
+            }
+            unset($session);
+
+            return $sessions;
         } catch(Exception $e) {
             error_log("Get login sessions error: " . $e->getMessage());
             return [];

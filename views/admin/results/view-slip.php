@@ -94,27 +94,14 @@ if (!empty($studentProfile['entry_semester_id'])) {
     $intakeLabel = $studentProfile['entry_year'];
 }
 
-// Academic status as of print date
-$academicStatus = 'Not Registered';
-if ($semesterId) {
-    try {
-        $regStmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM course_registrations WHERE student_id = :sid AND semester_id = :semid AND status = 'approved'");
-        $regStmt->execute(['sid' => $studentProfile['id'], 'semid' => $semesterId]);
-        $registered = (int) ($regStmt->fetch()['cnt'] ?? 0);
-
-        if ($registered > 0) {
-            $resStmt = $conn->prepare("SELECT COUNT(DISTINCT course_id) AS cnt FROM results WHERE student_id = :sid AND semester_id = :semid AND status = 'published'");
-            $resStmt->execute(['sid' => $studentProfile['id'], 'semid' => $semesterId]);
-            $published = (int) ($resStmt->fetch()['cnt'] ?? 0);
-
-            if ($published >= $registered) $academicStatus = 'Complete';
-            elseif ($published > 0) $academicStatus = 'In Progress';
-            else $academicStatus = 'Incomplete';
-        }
-    } catch (Exception $e) {
-        $academicStatus = 'Incomplete';
-    }
-}
+// Academic standing status (shared system logic)
+$academicStatusMeta = getStudentAcademicStatusMeta(
+    $conn,
+    (int)($studentProfile['id'] ?? 0),
+    (int)$semesterId,
+    (string)($studentProfile['academic_status'] ?? '')
+);
+$academicStatus = (string)($academicStatusMeta['label'] ?? 'Status Pending');
 
 // ---------------------------------------------------------------------
 // Fetch all registered courses for the semester + any results

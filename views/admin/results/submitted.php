@@ -87,6 +87,103 @@ $conn->exec("CREATE TABLE IF NOT EXISTS `results_audit` (
   KEY `course_id` (`course_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
+$redirectSubmitted = function($ayId, $semNo, $courseId = 0) {
+    $url = 'submitted.php?academic_year_id=' . (int)$ayId . '&semester_number=' . (int)$semNo;
+    if ((int)$courseId > 0) {
+        $url .= '&course_id=' . (int)$courseId;
+    }
+    return $url;
+};
+
+// ---------------------------------------------------------------------
+// Handle POST: Bulk Approve Submitted Results
+// ---------------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['bulk_approve_course']) || isset($_POST['bulk_approve_semester'])) && $semesterId) {
+    $scopeCourseId = isset($_POST['bulk_approve_course']) ? (int)($_POST['course_id'] ?? 0) : 0;
+    $adminId = $adminProfile['id'] ?? null;
+    $adminUserId = (int)($currentUser['id'] ?? 0);
+    $now = date('Y-m-d H:i:s');
+
+    if (!$adminId) {
+        $session->setFlash('error', 'Admin profile not found. Cannot bulk approve results.');
+        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $scopeCourseId));
+        exit;
+    }
+
+    if (isset($_POST['bulk_approve_course']) && $scopeCourseId <= 0) {
+        $session->setFlash('error', 'Please select a course before bulk approval.');
+        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber));
+        exit;
+    }
+
+    try {
+        $conn->beginTransaction();
+
+        $whereSql = "WHERE semester_id = :semester_id AND status = 'submitted' AND final_exam_marks IS NOT NULL";
+        $params = ['semester_id' => (int)$semesterId];
+        if ($scopeCourseId > 0) {
+            $whereSql .= " AND course_id = :course_id";
+            $params['course_id'] = $scopeCourseId;
+        }
+
+        $fetchSql = "SELECT id, student_id, course_id, assignment_marks, final_exam_marks, total_marks, grade, status FROM results {$whereSql}";
+        $fetchStmt = $conn->prepare($fetchSql);
+        $fetchStmt->execute($params);
+        $rows = $fetchStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($rows)) {
+            $conn->rollBack();
+            $session->setFlash('info', 'No submitted results with exam marks were found for bulk approval.');
+            header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $scopeCourseId));
+            exit;
+        }
+
+        $updStmt = $conn->prepare("UPDATE results SET status = 'approved', approved_by = :admin_id, approved_date = :approved_date, updated_at = :updated_at WHERE id = :id AND status = 'submitted'");
+        $newStmt = $conn->prepare("SELECT assignment_marks, final_exam_marks, total_marks, grade, status FROM results WHERE id = :id");
+        $auditStmt = $conn->prepare("INSERT INTO results_audit (result_id, student_id, course_id, changed_by_user_id, change_type, old_marks, new_marks, reason) VALUES (:result_id, :student_id, :course_id, :user_id, 'edit', :old_marks, :new_marks, :reason)");
+
+        $approvedCount = 0;
+        foreach ($rows as $row) {
+            $updStmt->execute([
+                'admin_id' => $adminId,
+                'approved_date' => $now,
+                'updated_at' => $now,
+                'id' => (int)$row['id']
+            ]);
+            if ($updStmt->rowCount() < 1) {
+                continue;
+            }
+
+            $newStmt->execute(['id' => (int)$row['id']]);
+            $newRow = $newStmt->fetch(PDO::FETCH_ASSOC);
+            $auditStmt->execute([
+                'result_id' => (int)$row['id'],
+                'student_id' => (int)$row['student_id'],
+                'course_id' => (int)$row['course_id'],
+                'user_id' => $adminUserId,
+                'old_marks' => json_encode($row),
+                'new_marks' => json_encode($newRow ?: $row),
+                'reason' => isset($_POST['bulk_approve_course'])
+                    ? 'Bulk approved submitted results for selected course'
+                    : 'Bulk approved submitted results for current semester'
+            ]);
+            $approvedCount++;
+        }
+
+        $conn->commit();
+        $session->setFlash('success', 'Bulk approval completed. ' . $approvedCount . ' result(s) moved to Approved status.');
+        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $scopeCourseId));
+        exit;
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        $session->setFlash('error', 'Bulk approval failed: ' . $e->getMessage());
+        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $scopeCourseId));
+        exit;
+    }
+}
+
 // ---------------------------------------------------------------------
 // Handle POST: Enter Exam Marks (60%) - Provisional Save
 // ---------------------------------------------------------------------
@@ -260,6 +357,9 @@ include '../../../includes/header.php';
         <?php if ($session->getFlash('success')): ?>
             <div class="alert alert-success"><?php echo e($session->getFlash('success')); ?></div>
         <?php endif; ?>
+        <?php if ($session->getFlash('info')): ?>
+            <div class="alert alert-info"><?php echo e($session->getFlash('info')); ?></div>
+        <?php endif; ?>
 
         <div class="card mb-3">
             <div class="card-body">
@@ -288,6 +388,17 @@ include '../../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </form>
+
+                <?php if ($semesterId): ?>
+                    <form method="POST" class="mb-3">
+                        <input type="hidden" name="academic_year_id" value="<?php echo (int)$selectedAcademicYearId; ?>">
+                        <input type="hidden" name="semester_number" value="<?php echo (int)$selectedSemesterNumber; ?>">
+                        <button type="submit" name="bulk_approve_semester" value="1" class="btn btn-outline-success btn-sm" onclick="return confirm('Bulk approve all submitted results with exam marks for this semester?');">
+                            <i class="fas fa-check-double"></i> Bulk Approve Semester
+                        </button>
+                        <small class="text-muted ml-2">Approves all submitted rows with exam marks in the selected semester.</small>
+                    </form>
+                <?php endif; ?>
 
                 <?php if (!$semesterId): ?>
                     <p class="text-muted mb-0">No semester configured for the selected academic year / semester number.</p>
@@ -383,6 +494,9 @@ include '../../../includes/header.php';
                                 
                                 <button type="submit" class="btn btn-primary btn-sm" onclick="return confirm('Save exam marks? Changes will be logged in the audit trail.');">
                                     Save Exam Marks
+                                </button>
+                                <button type="submit" name="bulk_approve_course" value="1" class="btn btn-success btn-sm ml-2" onclick="return confirm('Bulk approve all submitted results with exam marks for this course?');">
+                                    Bulk Approve This Course
                                 </button>
                                 <p class="text-muted mt-2" style="font-size:12px;">
                                     <strong>Policy:</strong> Lecturers provide coursework (40%). Admins enter exam marks (60%) here.<br>
