@@ -205,6 +205,9 @@ include '../../../includes/header.php';
 .status-active    { color:#16a34a; font-weight:600; font-size:0.82rem; }
 .status-completed { color:#2563eb; font-weight:600; font-size:0.82rem; }
 .status-cancelled { color:#dc2626; font-weight:600; font-size:0.82rem; }
+.sched-level-header { background:#f0fdf4; border-left:4px solid #16a34a; padding:6px 20px; font-weight:600; color:#15803d; font-size:0.88rem; border-bottom:1px solid #dcfce7; }
+.sched-index-cell { border-right:2px solid #e2e8f0; background:#f8fafc; text-align:center; vertical-align:middle; color:#94a3b8; font-weight:600; }
+.sched-lecturer-cell-wrap { border-right:2px solid #e2e8f0; background:#f8fafc; vertical-align:middle; }
 
 /* Unassigned courses section */
 .ua-card { border: 2px solid #fca5a5; border-radius: 8px; margin-bottom: 2rem; box-shadow: 0 1px 4px rgba(239,68,68,0.1); overflow: hidden; }
@@ -221,10 +224,103 @@ include '../../../includes/header.php';
 .ua-table tbody td { padding:8px 10px; vertical-align:middle; font-size:0.85rem; border-top:1px solid #fff1f2; word-wrap:break-word; }
 .ua-table tbody tr:hover { background:#fff5f5; }
 .ua-course-badge { display:inline-block; background:#fef2f2; color:#b91c1c; border:1px solid #fca5a5; border-radius:4px; font-size:0.7rem; padding:1px 5px; font-weight:600; }
+.ua-row-index { color:#94a3b8; font-weight:600; text-align:center; }
+.ua-sem-col { color:#94a3b8; font-size:0.82rem; }
 
 /* Filter form — wraps on small screens */
 .filter-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .filter-form select, .filter-form button, .filter-form a { flex-shrink: 0; }
+
+/* Page-specific dark mode overrides */
+html[data-theme='dark'] .filter-form .form-control {
+    background: var(--app-surface-2) !important;
+    border-color: var(--app-border) !important;
+    color: var(--app-text) !important;
+}
+html[data-theme='dark'] .filter-form .form-control option {
+    background: var(--app-surface-1);
+    color: var(--app-text);
+}
+html[data-theme='dark'] .sched-card,
+html[data-theme='dark'] .ua-card {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+    box-shadow: none;
+}
+html[data-theme='dark'] .sched-sem-header {
+    background: #0f2b57 !important;
+    color: #dbeafe !important;
+    border-bottom-color: #1e3a8a !important;
+}
+html[data-theme='dark'] .sched-level-header {
+    background: #062e1f !important;
+    color: #86efac !important;
+    border-left-color: #22c55e !important;
+    border-bottom-color: #14532d !important;
+}
+html[data-theme='dark'] .sched-table thead th {
+    background: var(--app-surface-2) !important;
+    color: #f8fafc !important;
+    border-bottom-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .sched-table tbody td {
+    border-top-color: var(--app-border) !important;
+    color: var(--app-text) !important;
+}
+html[data-theme='dark'] .sched-table tbody tr:hover { background: #172033 !important; }
+html[data-theme='dark'] .sched-index-cell,
+html[data-theme='dark'] .sched-lecturer-cell-wrap {
+    background: #141d2d !important;
+    border-right-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .sched-index-cell,
+html[data-theme='dark'] .ua-row-index,
+html[data-theme='dark'] .ua-sem-col { color: #94a3b8 !important; }
+html[data-theme='dark'] .lecturer-cell { color: #93c5fd !important; }
+html[data-theme='dark'] .lecturer-id-badge {
+    background: #1e3a8a !important;
+    color: #dbeafe !important;
+    border-color: #3b82f6 !important;
+}
+html[data-theme='dark'] .course-badge {
+    background: #14532d !important;
+    color: #bbf7d0 !important;
+    border-color: #16a34a !important;
+}
+html[data-theme='dark'] .cu-badge {
+    background: #422006 !important;
+    color: #fef3c7 !important;
+    border-color: #a16207 !important;
+}
+html[data-theme='dark'] .status-active { color: #4ade80 !important; }
+html[data-theme='dark'] .status-completed { color: #60a5fa !important; }
+html[data-theme='dark'] .status-cancelled { color: #f87171 !important; }
+html[data-theme='dark'] .ua-sem-header {
+    background: #3b0a0a !important;
+    color: #fecaca !important;
+    border-bottom-color: #7f1d1d !important;
+}
+html[data-theme='dark'] .ua-year-bar {
+    background: #2a1113 !important;
+    color: #fecaca !important;
+    border-left-color: #ef4444 !important;
+    border-bottom-color: #7f1d1d !important;
+}
+html[data-theme='dark'] .ua-table thead th {
+    background: #3b0a0a !important;
+    color: #fecaca !important;
+    border-bottom-color: #7f1d1d !important;
+}
+html[data-theme='dark'] .ua-table tbody td {
+    border-top-color: #4a1b1f !important;
+    color: var(--app-text) !important;
+}
+html[data-theme='dark'] .ua-table tbody tr:hover { background: #2a1113 !important; }
+html[data-theme='dark'] .ua-course-badge {
+    background: #450a0a !important;
+    color: #fecaca !important;
+    border-color: #ef4444 !important;
+}
 
 @media (max-width: 768px) {
     .sched-table col.col-lec  { width: 22%; }
@@ -343,7 +439,7 @@ include '../../../includes/header.php';
                                 foreach ($lecturers as $ldata) $totalCourses += count($ldata['courses']);
                             ?>
                             <!-- Year of Study sub-header -->
-                            <div style="background:#f0fdf4; border-left:4px solid #16a34a; padding:6px 20px; font-weight:600; color:#15803d; font-size:0.88rem; border-bottom:1px solid #dcfce7;">
+                            <div class="sched-level-header">
                                 <i class="fas fa-users mr-1"></i> Year <?php echo $lvl; ?> &nbsp;&mdash;&nbsp;
                                 <span style="font-weight:400;"><?php echo $totalLecturers; ?> lecturer(s), <?php echo $totalCourses; ?> course(s)</span>
                             </div>
@@ -358,16 +454,17 @@ include '../../../includes/header.php';
                                         <col class="col-status">
                                         <col class="col-action">
                                     </colgroup>
-                                        <tr>
-                                            <th>#</th>
-                                            <th>Lecturer</th>
-                                            <th>Course Code</th>
-                                            <th>Course Name</th>
-                                            <th>Credit Units</th>
-                                            <th>Status</th>
-                                            <th>Action</th>
-                                        </tr>
-                                    </thead>
+                                        <thead>
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Lecturer</th>
+                                                <th>Course Code</th>
+                                                <th>Course Name</th>
+                                                <th>Credit Units</th>
+                                                <th>Status</th>
+                                                <th>Action</th>
+                                            </tr>
+                                        </thead>
                                     <tbody>
                                         <?php $rowNum = 1; ?>
                                         <?php foreach ($lecturers as $lecCode => $ldata): ?>
@@ -375,10 +472,10 @@ include '../../../includes/header.php';
                                             <?php foreach ($ldata['courses'] as $i => $c): ?>
                                                 <tr>
                                                     <?php if ($i === 0): ?>
-                                                        <td rowspan="<?php echo $courseCount; ?>" style="border-right:2px solid #e2e8f0; background:#f8fafc; text-align:center; vertical-align:middle; color:#94a3b8; font-weight:600;">
+                                                        <td rowspan="<?php echo $courseCount; ?>" class="sched-index-cell">
                                                             <?php echo $rowNum++; ?>
                                                         </td>
-                                                        <td rowspan="<?php echo $courseCount; ?>" style="border-right:2px solid #e2e8f0; background:#f8fafc; vertical-align:middle;">
+                                                        <td rowspan="<?php echo $courseCount; ?>" class="sched-lecturer-cell-wrap">
                                                             <div class="lecturer-cell"><?php echo e($ldata['name']); ?></div>
                                                             <span class="lecturer-id-badge"><?php echo e($lecCode); ?></span>
                                                         </td>
@@ -469,11 +566,11 @@ include '../../../includes/header.php';
                                 <tbody>
                                     <?php foreach ($courses as $idx => $uc): ?>
                                         <tr>
-                                            <td style="color:#94a3b8; font-weight:600; text-align:center;"><?php echo $idx + 1; ?></td>
+                                            <td class="ua-row-index"><?php echo $idx + 1; ?></td>
                                             <td><span class="ua-course-badge"><?php echo e($uc['course_code']); ?></span></td>
                                             <td><?php echo e($uc['course_name']); ?></td>
                                             <td><span class="cu-badge"><?php echo e($uc['credit_hours']); ?> CU</span></td>
-                                            <td style="color:#94a3b8; font-size:0.82rem;">
+                                            <td class="ua-sem-col">
                                                 <?php echo $uc['semester_offered'] == 3 ? 'Both' : 'Sem ' . $uc['semester_offered']; ?>
                                             </td>
                                         </tr>

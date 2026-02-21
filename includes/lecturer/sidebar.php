@@ -84,10 +84,10 @@ $lecturerProfile = $currentUser['profile'] ?? [];
             </li>
             
             <li class="menu-section">Reports</li>
-            
+             
             <li>
-                <a href="<?php echo BASE_URL; ?>/views/lecturer/reports.php" class="<?php echo $currentPage == 'reports.php' ? 'active' : ''; ?>" title="Reports">
-                    <i class="fas fa-chart-pie"></i> <span>Reports</span>
+                <a href="<?php echo BASE_URL; ?>/views/lecturer/reports.php" class="<?php echo $currentPage == 'reports.php' ? 'active' : ''; ?>" title="Teaching Reports">
+                    <i class="fas fa-chart-pie"></i> <span>Teaching Reports</span>
                 </a>
             </li>
             

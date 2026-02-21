@@ -251,6 +251,96 @@ body { background:#f2f4f7; }
 .mail-empty { display:flex; align-items:center; justify-content:center; min-height:340px; color:#64748b; font-size:1.1rem; }
 .mail-stat { color:#0f172a; font-weight:700; font-size:.85rem; }
 
+/* Dark mode overrides for mailbox */
+html[data-theme='dark'] .mail-shell {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .mail-left {
+    background: var(--app-surface-1) !important;
+    border-right-color: var(--app-border) !important;
+    border-bottom-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .mail-title {
+    color: #93c5fd !important;
+}
+html[data-theme='dark'] .mail-folder {
+    color: #e5e7eb !important;
+    border-color: transparent !important;
+}
+html[data-theme='dark'] .mail-folder:hover {
+    background: #1f2937 !important;
+}
+html[data-theme='dark'] .mail-folder.active {
+    background: #0f2a39 !important;
+    color: #7dd3fc !important;
+    border-color: #164e63 !important;
+}
+html[data-theme='dark'] .mail-stat {
+    color: #cbd5e1 !important;
+}
+html[data-theme='dark'] .mail-folder.active .mail-stat {
+    color: #bae6fd !important;
+}
+html[data-theme='dark'] .mail-right {
+    background: var(--app-surface-1) !important;
+}
+html[data-theme='dark'] .mail-toolbar {
+    background: var(--app-surface-2) !important;
+    border-bottom-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .mail-search {
+    background: var(--app-surface-1) !important;
+    color: #e5e7eb !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .mail-search::placeholder {
+    color: #94a3b8 !important;
+}
+html[data-theme='dark'] .mail-btn {
+    background: var(--app-surface-1) !important;
+    color: #e5e7eb !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .mail-btn.primary {
+    background: #1f7aa8 !important;
+    color: #fff !important;
+    border-color: #1f7aa8 !important;
+}
+html[data-theme='dark'] .mail-list {
+    background: var(--app-surface-1) !important;
+}
+html[data-theme='dark'] .mail-item {
+    background: var(--app-surface-2) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .mail-item.unread {
+    background: #112030 !important;
+    border-left-color: #38bdf8 !important;
+}
+html[data-theme='dark'] .mail-item-title {
+    color: #f8fafc !important;
+}
+html[data-theme='dark'] .mail-item-time {
+    color: #94a3b8 !important;
+}
+html[data-theme='dark'] .mail-item-msg {
+    color: #cbd5e1 !important;
+}
+html[data-theme='dark'] .mail-action {
+    background: #0f172a !important;
+    color: #cbd5e1 !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .mail-action.warn {
+    background: #3a1820 !important;
+    color: #fecaca !important;
+    border-color: #7f1d1d !important;
+}
+html[data-theme='dark'] .mail-empty {
+    color: #94a3b8 !important;
+}
+
 @media (max-width: 1200px) {
     .mail-shell { grid-template-columns:1fr; }
     .mail-left { border-right:none; border-bottom:1px solid #e5e7eb; }
@@ -302,6 +392,12 @@ body { background:#f2f4f7; }
                 <img src="/assets/img/student_sample.jpg" alt="Profile" class="student-profile-pic">
             <?php endif; ?>
             <span style="font-size:.98rem; color:#222; font-weight:600; white-space:nowrap;"><?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?></span>
+            <a href="<?php echo e($linkMailbox); ?>" title="My Mailbox" style="position:relative; display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border:1px solid #dbe3ef; border-radius:50%; color:#1f7aa8; text-decoration:none; background:#fff;">
+                <i class="far fa-envelope"></i>
+                <?php if ($unreadCount > 0): ?>
+                    <span style="position:absolute; top:-6px; right:-6px; min-width:16px; height:16px; padding:0 4px; border-radius:999px; background:#ef4444; color:#fff; font-size:10px; font-weight:700; line-height:16px; text-align:center;"><?php echo $unreadCount > 99 ? '99+' : $unreadCount; ?></span>
+                <?php endif; ?>
+            </a>
             <div class="profile-dropdown" style="position:relative;">
                 <button id="profileDropBtn" style="background:none; border:none; font-size:0.98rem; cursor:pointer; padding:0 6px;">
                     <i class="fas fa-chevron-down"></i>

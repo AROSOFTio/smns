@@ -634,6 +634,85 @@ include '../../includes/header.php';
     padding: 20px;
 }
 
+html[data-theme='dark'] .content-area .card {
+    background: #0f172a;
+    border-color: #334155;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='dark'] .content-area .card-body,
+html[data-theme='dark'] .content-area .card-footer,
+html[data-theme='dark'] .content-area .table thead[style*='background-color: #f8f9fa;'],
+html[data-theme='dark'] .content-area .card-body[style*='background-color:#f8f9fa'],
+html[data-theme='dark'] .content-area .card-body[style*='background-color: #f8f9fa'],
+html[data-theme='dark'] .content-area .card-footer[style*='background-color:#f8f9fa'],
+html[data-theme='dark'] .content-area .card-footer[style*='background-color: #f8f9fa'] {
+    background: #0f172a !important;
+    color: #e5e7eb;
+}
+
+html[data-theme='dark'] .content-area .form-label,
+html[data-theme='dark'] .content-area label,
+html[data-theme='dark'] .content-area [style*='color:#495057'],
+html[data-theme='dark'] .content-area [style*='color: #495057'] {
+    color: #e5e7eb !important;
+}
+
+html[data-theme='dark'] .content-area .text-muted,
+html[data-theme='dark'] .content-area small,
+html[data-theme='dark'] .content-area [style*='color:#6c757d'],
+html[data-theme='dark'] .content-area [style*='color: #6c757d'],
+html[data-theme='dark'] .content-area [style*='color:#adb5bd'],
+html[data-theme='dark'] .content-area [style*='color: #adb5bd'] {
+    color: #94a3b8 !important;
+}
+
+html[data-theme='dark'] .content-area .form-control {
+    background: #0b1220;
+    border-color: #475569;
+    color: #e2e8f0;
+}
+
+html[data-theme='dark'] .content-area .form-control:focus {
+    background: #0b1220;
+    border-color: #60a5fa;
+    color: #f8fafc;
+    box-shadow: 0 0 0 0.2rem rgba(96, 165, 250, 0.2);
+}
+
+html[data-theme='dark'] .content-area .badge-light {
+    background-color: #1f2937 !important;
+    border-color: #475569 !important;
+    color: #e2e8f0 !important;
+}
+
+html[data-theme='dark'] .content-area .table,
+html[data-theme='dark'] .content-area .table th,
+html[data-theme='dark'] .content-area .table td {
+    color: #e5e7eb;
+    border-color: #334155;
+}
+
+html[data-theme='dark'] .content-area .table thead th {
+    background: #1e293b !important;
+    color: #f8fafc;
+}
+
+html[data-theme='dark'] .content-area .table tbody tr:hover {
+    background-color: #1e293b !important;
+    border-left-color: #60a5fa !important;
+}
+
+html[data-theme='dark'] .content-area .alert-info {
+    background: linear-gradient(135deg, #082f49 0%, #0f172a 100%);
+    border-color: #155e75;
+    color: #bae6fd;
+}
+
+html[data-theme='dark'] .content-area .alert-info a {
+    color: #7dd3fc;
+}
+
 @media (max-width: 768px) {
     .col-md-8, .col-md-4 {
         text-align: center;

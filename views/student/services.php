@@ -188,6 +188,20 @@ body { background: #f2f4f7; }
 .request-box label { font-size:.84rem; font-weight:700; margin-bottom:6px; display:block; }
 .request-box textarea { width:100%; min-height:110px; border:1px solid #cbd5e1; border-radius:8px; padding:8px 10px; font-size:.84rem; }
 .request-box button { margin-top:10px; border:1px solid #1f7aa8; background:#1f7aa8; color:#fff; border-radius:8px; padding:8px 12px; font-weight:700; font-size:.84rem; }
+
+/* Dark mode overrides for services tiles */
+html[data-theme='dark'] .service-tile {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+    color: #e5e7eb !important;
+}
+html[data-theme='dark'] .service-tile:hover {
+    background: #273449 !important;
+    border-color: #3b82f6 !important;
+}
+html[data-theme='dark'] .service-tile i {
+    color: #93c5fd !important;
+}
 </style>
 
 <div class="student-sidebar">

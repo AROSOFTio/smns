@@ -281,6 +281,71 @@ body { background: #f8fafc; }
 .badge-published { background:#dcfce7; border:1px solid #86efac; color:#166534; padding:2px 8px; border-radius:999px; font-size:.75rem; }
 .badge-provisional { background:#ffedd5; border:1px solid #fdba74; color:#9a3412; padding:2px 8px; border-radius:999px; font-size:.75rem; }
 .semester-title { background:#f8fafc; border:1px solid #e2e8f0; border-bottom:none; padding:.65rem .9rem; font-size:.94rem; font-weight:600; color:#334155; margin-top:1rem; }
+
+/* Dark mode overrides for results/provisional card */
+html[data-theme='dark'] .cardx {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+    box-shadow: 0 4px 16px rgba(2, 6, 23, 0.45) !important;
+}
+html[data-theme='dark'] .cardx-head {
+    background: var(--app-surface-2) !important;
+    border-bottom-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .cardx-title {
+    color: #e5e7eb !important;
+}
+html[data-theme='dark'] .view-switch a {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+    color: #cbd5e1 !important;
+}
+html[data-theme='dark'] .view-switch a:hover {
+    background: #273449 !important;
+    color: #e2e8f0 !important;
+}
+html[data-theme='dark'] .view-switch a.active {
+    background: #1f7aa8 !important;
+    border-color: #1f7aa8 !important;
+    color: #ffffff !important;
+}
+html[data-theme='dark'] .cardx > div[style*='padding:1rem 1.2rem;'] {
+    background: var(--app-surface-1) !important;
+    color: #e5e7eb !important;
+}
+html[data-theme='dark'] .semester-title {
+    background: var(--app-surface-2) !important;
+    border-color: var(--app-border) !important;
+    color: #e5e7eb !important;
+}
+html[data-theme='dark'] .tbl {
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .tbl th {
+    background: #1f2937 !important;
+    color: #f8fafc !important;
+    border-bottom-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .tbl td {
+    color: #e5e7eb !important;
+    border-bottom-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .tbl tbody tr:nth-child(odd) {
+    background: rgba(148, 163, 184, 0.06) !important;
+}
+html[data-theme='dark'] .tbl tbody tr:hover {
+    background: rgba(59, 130, 246, 0.10) !important;
+}
+html[data-theme='dark'] .badge-published {
+    background: #14532d !important;
+    border-color: #22c55e !important;
+    color: #bbf7d0 !important;
+}
+html[data-theme='dark'] .badge-provisional {
+    background: #7c2d12 !important;
+    border-color: #fdba74 !important;
+    color: #fed7aa !important;
+}
 </style>
 
 <div class="student-sidebar">

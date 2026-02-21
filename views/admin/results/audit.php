@@ -180,16 +180,18 @@ include '../../../includes/header.php';
         padding: 15px;
     }
     
-    /* Table responsiveness */
-    .table-responsive {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
+    /* Keep results tables fully visible without horizontal scrolling */
+    .table-responsive,
+    .table-responsive[style*='overflow-x: auto'] {
+        overflow-x: visible !important;
         max-width: 100%;
     }
     
     .table {
         margin-bottom: 0;
         font-size: 0.875rem;
+        width: 100%;
+        table-layout: fixed;
     }
     
     .table th, 
@@ -198,23 +200,34 @@ include '../../../includes/header.php';
         padding: 0.5rem;
         white-space: normal;
         word-wrap: break-word;
+        overflow-wrap: anywhere;
     }
     
-    /* Column specific widths */
-    .table td:nth-child(1) { min-width: 120px; } /* Date/Time */
-    .table td:nth-child(2) { min-width: 130px; } /* Student */
-    .table td:nth-child(3) { min-width: 120px; } /* Course */
-    .table td:nth-child(4) { min-width: 70px; }  /* Type */
-    .table td:nth-child(5) { min-width: 90px; }  /* Old Marks */
-    .table td:nth-child(6) { min-width: 90px; }  /* New Marks */
-    .table td:nth-child(7) { min-width: 100px; } /* Changed By */
-    .table td:nth-child(8) { 
-        min-width: 120px; 
-        max-width: 200px;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-    } /* Reason */
-    .table td:nth-child(9) { min-width: 90px; }  /* Actions */
+    /* Override inline min-width styles generated in table headers/cells */
+    .table th[style*='min-width'],
+    .table td[style*='min-width'] {
+        min-width: 0 !important;
+        width: auto !important;
+        max-width: none !important;
+    }
+
+    /* Column widths tuned to fit viewport */
+    .table th:nth-child(1), .table td:nth-child(1) { width: 10%; } /* Date/Time */
+    .table th:nth-child(2), .table td:nth-child(2) { width: 13%; } /* Student */
+    .table th:nth-child(3), .table td:nth-child(3) { width: 14%; } /* Course */
+    .table th:nth-child(4), .table td:nth-child(4) { width: 7%; }  /* Type */
+    .table th:nth-child(5), .table td:nth-child(5) { width: 11%; } /* Old Marks */
+    .table th:nth-child(6), .table td:nth-child(6) { width: 11%; } /* New Marks */
+    .table th:nth-child(7), .table td:nth-child(7) { width: 10%; } /* Changed By */
+    .table th:nth-child(8), .table td:nth-child(8) { width: 14%; } /* Reason */
+    .table th:nth-child(9), .table td:nth-child(9) { width: 10%; } /* Actions */
+
+    .table td small {
+        display: inline-block;
+        max-width: 100%;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }
     
     /* Button styling */
     .btn-sm {
@@ -224,8 +237,9 @@ include '../../../includes/header.php';
     }
     
     /* Actions column */
-    .table td:last-child {
-        white-space: nowrap;
+    .table td:last-child,
+    .table td[style*='white-space: nowrap'] {
+        white-space: normal !important;
         text-align: center;
     }
     
@@ -244,6 +258,30 @@ include '../../../includes/header.php';
         font-weight: bold;
         background-color: #fff;
         border-color: #dee2e6 #dee2e6 #fff;
+    }
+
+    html[data-theme='dark'] .nav-tabs {
+        border-bottom-color: #334155;
+    }
+
+    html[data-theme='dark'] .nav-tabs .nav-link {
+        color: #cbd5e1;
+        background: transparent;
+        border-color: transparent;
+    }
+
+    html[data-theme='dark'] .nav-tabs .nav-link:hover,
+    html[data-theme='dark'] .nav-tabs .nav-link:focus {
+        color: #f8fafc;
+        background: #1e293b;
+        border-color: #334155 #334155 #334155;
+    }
+
+    html[data-theme='dark'] .nav-tabs .nav-link.active {
+        color: #f8fafc;
+        background: #1e293b;
+        border-color: #475569 #475569 #1e293b;
+        font-weight: 700;
     }
     
     /* Card body padding */

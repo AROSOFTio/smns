@@ -267,6 +267,52 @@ include '../../../includes/header.php';
     cursor: not-allowed;
 }
 
+/* Page-specific dark mode overrides */
+html[data-theme='dark'] .academic-year-header {
+    color: #f8fafc !important;
+    border-bottom-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .academic-year-header i {
+    color: #93c5fd !important;
+}
+html[data-theme='dark'] .level-section h4 {
+    color: #e2e8f0 !important;
+}
+html[data-theme='dark'] .semester-section .card {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+    box-shadow: none;
+}
+html[data-theme='dark'] .semester-section .card-header {
+    background: #1f2937 !important;
+    border-bottom-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .semester-section .card-header h5 {
+    color: #f8fafc !important;
+}
+html[data-theme='dark'] .semester-section .card-header h5 i {
+    color: #93c5fd !important;
+}
+html[data-theme='dark'] .semester-section .table thead th {
+    background: var(--app-surface-2) !important;
+    color: #f8fafc !important;
+    border-bottom-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .semester-section .table tbody td {
+    border-top-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .semester-section .table tbody tr:nth-child(even) {
+    background: #111827 !important;
+}
+html[data-theme='dark'] .semester-section .table tbody tr:hover {
+    background: #1f2937 !important;
+}
+html[data-theme='dark'] .card-body .input-group-text {
+    background: var(--app-surface-2) !important;
+    border-color: var(--app-border) !important;
+    color: #94a3b8 !important;
+}
+
 /* Mobile responsive adjustments */
 @media (max-width: 768px) {
     .content-area .card-body .row .col-md-4,

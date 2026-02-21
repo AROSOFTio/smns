@@ -991,6 +991,39 @@ include '../../../includes/header.php';
 .check-badge {
     margin-left: 15px;
 }
+
+html[data-theme='dark'] .alert.alert-success.mt-3 {
+    background: #14532d;
+    border-color: #166534;
+    color: #dcfce7;
+}
+
+html[data-theme='dark'] .alert.alert-success.mt-3 i,
+html[data-theme='dark'] .alert.alert-success.mt-3 strong {
+    color: #bbf7d0;
+}
+
+html[data-theme='dark'] .health-score .score-circle.excellent {
+    background: #166534;
+    color: #dcfce7;
+    border: 1px solid #22c55e;
+}
+
+html[data-theme='dark'] .health-score .score-circle.good {
+    background: #854d0e;
+    color: #fef3c7;
+    border: 1px solid #f59e0b;
+}
+
+html[data-theme='dark'] .health-score .score-circle.poor {
+    background: #7f1d1d;
+    color: #fee2e2;
+    border: 1px solid #ef4444;
+}
+
+html[data-theme='dark'] .health-score p {
+    color: #e2e8f0;
+}
 </style>
 
 <?php include '../../../includes/footer.php'; ?>

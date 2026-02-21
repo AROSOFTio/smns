@@ -18,8 +18,8 @@ $studentProfile = $currentUser['profile'] ?? [];
 ?>
 <div class="sidebar student-sidebar" id="sidebar">
     <div class="sidebar-header">
-        <h3 style="color:#000000"><?php echo APP_SHORT_NAME; ?></h3>
-        <p><small style="color:#000000;">Student Portal</small></p>
+        <h3><?php echo APP_SHORT_NAME; ?></h3>
+        <p><small>Student Portal</small></p>
 
 
     </div>

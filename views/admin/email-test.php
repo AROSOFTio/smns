@@ -288,6 +288,78 @@ body {
     color: #856404;
     margin: 0;
 }
+
+/* Dark mode contrast fixes for this page */
+html[data-theme='dark'] .config-card {
+    background: #111827;
+    border: 1px solid #334155;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='dark'] .config-header h2 {
+    color: #f9fafb !important;
+}
+
+html[data-theme='dark'] .config-header p {
+    color: #cbd5e1 !important;
+}
+
+html[data-theme='dark'] .current-config,
+html[data-theme='dark'] .test-form,
+html[data-theme='dark'] .instructions-card {
+    background: #1f2937;
+    border: 1px solid #334155;
+}
+
+html[data-theme='dark'] .config-item {
+    border-bottom-color: #334155;
+}
+
+html[data-theme='dark'] .config-label,
+html[data-theme='dark'] .test-form h3,
+html[data-theme='dark'] .test-form p,
+html[data-theme='dark'] .instructions-card h3,
+html[data-theme='dark'] .step-content {
+    color: #e5e7eb !important;
+}
+
+html[data-theme='dark'] .config-value {
+    background: #0f172a;
+    border-color: #475569;
+    color: #e5e7eb !important;
+}
+
+html[data-theme='dark'] .form-group label {
+    color: #e5e7eb !important;
+}
+
+html[data-theme='dark'] .form-group input[type="email"] {
+    background: #0f172a;
+    color: #e5e7eb;
+    border-color: #475569;
+}
+
+html[data-theme='dark'] .form-group input[type="email"]::placeholder {
+    color: #94a3b8;
+}
+
+html[data-theme='dark'] .code-snippet {
+    background: #0f172a;
+    border-color: #334155;
+    color: #e5e7eb;
+}
+
+html[data-theme='dark'] .warning-box {
+    background: #3f2f12;
+    border-color: #7c5a1e;
+}
+
+html[data-theme='dark'] .warning-box h4,
+html[data-theme='dark'] .warning-box p,
+html[data-theme='dark'] .warning-box code,
+html[data-theme='dark'] .warning-box i {
+    color: #fef3c7 !important;
+}
 </style>
 
 <?php include '../../includes/admin/sidebar.php'; ?>

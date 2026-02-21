@@ -1534,6 +1534,154 @@ include '../../includes/header.php';
     .history-status.approved { background:#dcfce7; color:#166534; }
     .history-status.pending { background:#ffedd5; color:#9a3412; }
     .history-status.rejected { background:#fee2e2; color:#991b1b; }
+
+    /* Dark mode overrides for enrollment, current courses, and history blocks */
+    html[data-theme='dark'] .enroll-shell {
+        background: var(--app-surface-1) !important;
+        border-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .enroll-shell-head,
+    html[data-theme='dark'] .enroll-title-row,
+    html[data-theme='dark'] .enroll-form-row,
+    html[data-theme='dark'] .enroll-action-row {
+        background: var(--app-surface-2) !important;
+        border-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .enroll-tab {
+        background: var(--app-surface-1) !important;
+        border-color: var(--app-border) !important;
+        border-bottom-color: var(--app-surface-2) !important;
+        color: #93c5fd !important;
+    }
+    html[data-theme='dark'] .enroll-title,
+    html[data-theme='dark'] .enroll-prog,
+    html[data-theme='dark'] .enroll-field label {
+        color: #e5e7eb !important;
+    }
+    html[data-theme='dark'] .enroll-field .req {
+        color: #f87171 !important;
+    }
+    html[data-theme='dark'] .enroll-field select {
+        background: var(--app-surface-1) !important;
+        color: #e5e7eb !important;
+        border-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .enroll-reload {
+        background: var(--app-surface-1) !important;
+        color: #fca5a5 !important;
+        border-color: #ef4444 !important;
+    }
+    html[data-theme='dark'] .enroll-reload:hover {
+        background: #3a1820 !important;
+        color: #fecaca !important;
+    }
+    html[data-theme='dark'] .enroll-now-btn {
+        background: #1f7aa8 !important;
+        border-color: #1f7aa8 !important;
+        color: #fff !important;
+    }
+
+    html[data-theme='dark'] .current-courses-card {
+        background: var(--app-surface-1) !important;
+        border: 1px solid var(--app-border) !important;
+        box-shadow: 0 2px 10px rgba(2, 6, 23, 0.45) !important;
+    }
+    html[data-theme='dark'] .current-courses-card .current-courses-body {
+        background: var(--app-surface-1) !important;
+    }
+    html[data-theme='dark'] .current-courses-card .current-courses-title,
+    html[data-theme='dark'] .current-courses-card .current-year-title,
+    html[data-theme='dark'] .current-courses-card .current-year-title i {
+        color: #e5e7eb !important;
+        border-bottom-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .current-courses-card .current-study-info {
+        border-bottom-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .current-courses-card .current-study-info span {
+        color: #cbd5e1 !important;
+    }
+    html[data-theme='dark'] .current-courses-card .core-courses-section {
+        background: var(--app-surface-2) !important;
+    }
+    html[data-theme='dark'] .current-courses-card .core-courses-title {
+        background: #374151 !important;
+        color: #f8fafc !important;
+    }
+    html[data-theme='dark'] .current-courses-card .current-courses-table-wrap {
+        background: var(--app-surface-1) !important;
+        border: 1px solid var(--app-border) !important;
+    }
+    html[data-theme='dark'] .current-courses-card .current-courses-table thead {
+        background: #1f2937 !important;
+    }
+    html[data-theme='dark'] .current-courses-card .current-courses-table th {
+        color: #f8fafc !important;
+        border-bottom-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .current-courses-card .current-courses-table td {
+        color: #e5e7eb !important;
+        border-bottom-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .current-courses-card .current-courses-table tr {
+        background: transparent !important;
+    }
+    html[data-theme='dark'] .current-courses-card .current-courses-table tbody tr:nth-child(odd) {
+        background: rgba(148, 163, 184, 0.06) !important;
+    }
+    html[data-theme='dark'] .current-courses-card .current-courses-table tbody tr:hover {
+        background: rgba(59, 130, 246, 0.10) !important;
+    }
+
+    html[data-theme='dark'] .history-shell,
+    html[data-theme='dark'] .history-item,
+    html[data-theme='dark'] .history-body {
+        background: var(--app-surface-1) !important;
+        border-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .history-shell-head {
+        background: var(--app-surface-2) !important;
+        border-bottom-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .history-title {
+        color: #93c5fd !important;
+    }
+    html[data-theme='dark'] .history-item summary {
+        background: var(--app-surface-1) !important;
+        color: #fca5a5 !important;
+    }
+    html[data-theme='dark'] .history-item[open] summary {
+        background: var(--app-surface-2) !important;
+        border-bottom-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .history-summary-label {
+        color: #e5e7eb !important;
+    }
+    html[data-theme='dark'] .history-meta-card {
+        background: var(--app-surface-2) !important;
+        border-color: var(--app-border) !important;
+        color: #cbd5e1 !important;
+    }
+    html[data-theme='dark'] .history-meta-card strong {
+        color: #f8fafc !important;
+    }
+    html[data-theme='dark'] .history-print {
+        background: var(--app-surface-2) !important;
+        border-color: var(--app-border) !important;
+        color: #93c5fd !important;
+    }
+    html[data-theme='dark'] .history-status.approved {
+        background: #14532d !important;
+        color: #bbf7d0 !important;
+    }
+    html[data-theme='dark'] .history-status.pending {
+        background: #7c2d12 !important;
+        color: #fdba74 !important;
+    }
+    html[data-theme='dark'] .history-status.rejected {
+        background: #7f1d1d !important;
+        color: #fecaca !important;
+    }
     
     /* Additional fixes for narrow screens */
     @media (max-width: 576px) {
@@ -1839,20 +1987,20 @@ include '../../includes/header.php';
 
                 <?php else: ?>
                     <!-- Semester registration is approved - show courses -->
-                    <div class="card mb-4" style="border: none; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-                        <div class="card-body" style="padding: 1.5rem;">
-                            <h3 style="margin-bottom: 1rem; font-weight: 700; color: #1a1a1a; font-size: 1.5rem;">Current Courses</h3>
+                    <div class="card mb-4 current-courses-card" style="border: none; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                        <div class="card-body current-courses-body" style="padding: 1.5rem;">
+                            <h3 class="current-courses-title" style="margin-bottom: 1rem; font-weight: 700; color: #1a1a1a; font-size: 1.5rem;">Current Courses</h3>
                             
                             <!-- Academic Year Label -->
-                            <div style="margin-bottom: 1rem;">
-                                <h4 style="font-weight: 700; color: #2d3748; font-size: 1.1rem; border-bottom: 3px solid #e2e8f0; padding-bottom: 0.5rem;">
+                            <div class="current-year-block" style="margin-bottom: 1rem;">
+                                <h4 class="current-year-title" style="font-weight: 700; color: #2d3748; font-size: 1.1rem; border-bottom: 3px solid #e2e8f0; padding-bottom: 0.5rem;">
                                     <i class="fas fa-graduation-cap" style="color: #4a5568; margin-right: 0.5rem;"></i>
                                     <?php echo e($selectedAcademicYearName ?: ($currentSemester['academic_year'] ?? '-')); ?>
                                 </h4>
                             </div>
                             
                             <!-- Study Info -->
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.5rem; padding: 0.75rem 0; border-bottom: 1px solid #e5e7eb;">
+                            <div class="current-study-info" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.5rem; padding: 0.75rem 0; border-bottom: 1px solid #e5e7eb;">
                                 <div style="display: flex; align-items: center;">
                                     <span style="font-weight: 400; color: #6b7280; margin-right: 0.5rem;">Study year:</span>
                                     <span style="font-weight: 600; color: #1f2937;"><?php echo $yearOfStudy; ?></span>
@@ -1864,11 +2012,11 @@ include '../../includes/header.php';
                             </div>
 
                             <!-- Core courses section -->
-                            <div style="background: #f9fafb; padding: 1rem; border-radius: 8px;">
-                                <h5 style="margin-bottom: 1rem; padding: 0.5rem; background: #6b7280; color: white; border-radius: 4px; font-weight: 600; font-size: 1rem;">Core courses</h5>
+                            <div class="core-courses-section" style="background: #f9fafb; padding: 1rem; border-radius: 8px;">
+                                <h5 class="core-courses-title" style="margin-bottom: 1rem; padding: 0.5rem; background: #6b7280; color: white; border-radius: 4px; font-weight: 600; font-size: 1rem;">Core courses</h5>
                                 
-                                <div class="table-responsive" style="background: white; border-radius: 4px; overflow-x: hidden; overflow-y: visible; max-width: 100%;">
-                                    <table class="table table-hover table-sm" style="margin-bottom: 0; width: 100%; table-layout: fixed; font-size: 0.8rem;">
+                                <div class="table-responsive current-courses-table-wrap" style="background: white; border-radius: 4px; overflow-x: hidden; overflow-y: visible; max-width: 100%;">
+                                    <table class="table table-hover table-sm current-courses-table" style="margin-bottom: 0; width: 100%; table-layout: fixed; font-size: 0.8rem;">
                                         <thead style="background: #f3f4f6;">
                                             <tr>
                                                 <th style="padding: 0.6rem 0.4rem; color: #374151; font-weight: 600; border-bottom: 2px solid #e5e7eb; width: 40px; text-align: center; font-size: 0.75rem;">S/N</th>

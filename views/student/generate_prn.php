@@ -510,6 +510,131 @@ body { background: #f2f4f7; }
     color: #b42318;
     font-weight: 700;
 }
+
+/* Dark mode overrides for generate PRN panels */
+html[data-theme='dark'] .prn-card {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .prn-tab {
+    background: var(--app-surface-2) !important;
+    color: #cbd5e1 !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .prn-tab.active {
+    background: var(--app-surface-1) !important;
+    color: #f8fafc !important;
+    border-bottom-color: var(--app-surface-1) !important;
+}
+html[data-theme='dark'] .acc-item {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .acc-head {
+    background: var(--app-surface-2) !important;
+    color: #e5e7eb !important;
+}
+html[data-theme='dark'] .acc-head.active {
+    color: #fca5a5 !important;
+}
+html[data-theme='dark'] .acc-body {
+    background: var(--app-surface-1) !important;
+    color: #e5e7eb !important;
+    border-top-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .acc-body > div[style*='color:#334155'],
+html[data-theme='dark'] .acc-body > div[style*='color: #334155'],
+html[data-theme='dark'] .acc-body > div[style*='color:#64748b'],
+html[data-theme='dark'] .acc-body > div[style*='color: #64748b'] {
+    color: #cbd5e1 !important;
+}
+html[data-theme='dark'] .prn-input {
+    background: var(--app-surface-2) !important;
+    color: #e5e7eb !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .prn-generated {
+    background: rgba(16, 185, 129, 0.12) !important;
+    border-color: rgba(52, 211, 153, 0.5) !important;
+    color: #34d399 !important;
+}
+html[data-theme='dark'] .notice {
+    background: #3a2f14 !important;
+    color: #fef3c7 !important;
+    border-color: #7c5f14 !important;
+}
+html[data-theme='dark'] .notice[style*='background:#eef2ff'],
+html[data-theme='dark'] .notice[style*='background: #eef2ff'],
+html[data-theme='dark'] .notice[style*='background:#f8fafc'],
+html[data-theme='dark'] .notice[style*='background: #f8fafc'],
+html[data-theme='dark'] .notice[style*='background:#ecfdf3'],
+html[data-theme='dark'] .notice[style*='background: #ecfdf3'] {
+    background: var(--app-surface-2) !important;
+    color: #cbd5e1 !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .refs-toolbar {
+    background: var(--app-surface-2) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .refs-groups {
+    background: #0f172a !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .refs-group-btn {
+    color: #cbd5e1 !important;
+}
+html[data-theme='dark'] .refs-group-btn.active {
+    background: var(--app-surface-1) !important;
+    color: #f8fafc !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .refs-reload-btn {
+    background: var(--app-surface-2) !important;
+    color: #fca5a5 !important;
+    border-color: #ef4444 !important;
+}
+html[data-theme='dark'] .refs-reload-btn:hover {
+    background: #3a1820 !important;
+    color: #fecaca !important;
+}
+html[data-theme='dark'] .ref-line {
+    background: var(--app-surface-2) !important;
+    color: #e5e7eb !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .ref-line .red {
+    color: #fca5a5 !important;
+}
+html[data-theme='dark'] .methods-tabs {
+    background: #0f172a !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .method-btn {
+    color: #cbd5e1 !important;
+}
+html[data-theme='dark'] .method-btn.active {
+    background: var(--app-surface-1) !important;
+    color: #93c5fd !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .method-panel {
+    background: var(--app-surface-2) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .method-list {
+    color: #e5e7eb !important;
+}
+html[data-theme='dark'] .mobile-money-col {
+    border-right-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .mobile-money-title {
+    color: #93c5fd !important;
+}
+html[data-theme='dark'] .dial-code {
+    color: #fca5a5 !important;
+}
+
 @media (max-width: 1200px) {
     .chip-row {
         white-space: normal;

@@ -1019,6 +1019,205 @@ body { background: #f2f4f7; }
     color: #b42318;
     font-weight: 700;
 }
+
+/* Dark mode overrides for invoices/bills block */
+html[data-theme='dark'] .prn-card {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .prn-tab {
+    background: var(--app-surface-2) !important;
+    color: #cbd5e1 !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .prn-tab.active {
+    color: #93c5fd !important;
+    border-bottom-color: var(--app-surface-1) !important;
+}
+html[data-theme='dark'] .summary-grid .sum-card {
+    background: var(--app-surface-2) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .sum-label {
+    color: #cbd5e1 !important;
+}
+html[data-theme='dark'] .sum-value {
+    color: #34d399 !important;
+}
+html[data-theme='dark'] .sum-value.due {
+    color: #f87171 !important;
+}
+html[data-theme='dark'] .inv-accordion-item {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .inv-head {
+    background: var(--app-surface-2) !important;
+    color: #fca5a5 !important;
+}
+html[data-theme='dark'] .inv-head.secondary {
+    color: #e2e8f0 !important;
+}
+html[data-theme='dark'] .inv-body {
+    border-top-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .tbl th {
+    background: #1f2937 !important;
+    color: #f8fafc !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .tbl td {
+    background: transparent !important;
+    color: #e5e7eb !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .group-total div {
+    background: #1f2937 !important;
+    color: #e5e7eb !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .group-total span[style*='color:#059669;'],
+html[data-theme='dark'] .group-total span[style*='color: #059669;'] {
+    color: #34d399 !important;
+}
+html[data-theme='dark'] .group-total span[style*='color:#dc2626;'],
+html[data-theme='dark'] .group-total span[style*='color: #dc2626;'] {
+    color: #f87171 !important;
+}
+html[data-theme='dark'] .refs-reload-btn {
+    background: var(--app-surface-2) !important;
+    color: #fca5a5 !important;
+    border-color: #ef4444 !important;
+}
+html[data-theme='dark'] .refs-reload-btn:hover {
+    background: #3a1820 !important;
+    color: #fecaca !important;
+}
+
+
+/* Additional dark-mode contrast fixes for invoice details */
+html[data-theme='dark'] .prn-tabs .prn-tab.active {
+    background: var(--app-surface-1) !important;
+    color: #f8fafc !important;
+}
+html[data-theme='dark'] .inv-head span,
+html[data-theme='dark'] .inv-head i,
+html[data-theme='dark'] .prn-tab i,
+html[data-theme='dark'] .prn-tab span {
+    color: inherit !important;
+}
+html[data-theme='dark'] .inv-body {
+    background: var(--app-surface-1) !important;
+}
+html[data-theme='dark'] .tbl tbody tr:nth-child(odd) {
+    background: rgba(148, 163, 184, 0.06) !important;
+}
+html[data-theme='dark'] .tbl tbody tr:hover {
+    background: rgba(59, 130, 246, 0.10) !important;
+}
+html[data-theme='dark'] .tbl a,
+html[data-theme='dark'] .tbl button {
+    color: #93c5fd !important;
+}
+html[data-theme='dark'] .badge-cleared,
+html[data-theme='dark'] .badge-cleared i {
+    color: #34d399 !important;
+}
+html[data-theme='dark'] .badge-pending,
+html[data-theme='dark'] .badge-pending i {
+    color: #f87171 !important;
+}
+
+/* Dark-mode fixes for transactions tabs and check PRN form */
+html[data-theme='dark'] .tx-shell {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .tx-tabs {
+    background: var(--app-surface-2) !important;
+    border-bottom-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .tx-tab {
+    color: #cbd5e1 !important;
+    border-right-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .tx-tab i {
+    color: inherit !important;
+}
+html[data-theme='dark'] .tx-tab:hover {
+    background: rgba(59, 130, 246, 0.10) !important;
+    color: #e2e8f0 !important;
+}
+html[data-theme='dark'] .tx-tab.active {
+    background: var(--app-surface-1) !important;
+    color: #7dd3fc !important;
+}
+html[data-theme='dark'] .tx-body {
+    background: var(--app-surface-1) !important;
+}
+html[data-theme='dark'] .tx-title {
+    background: var(--app-surface-2) !important;
+    color: #e5e7eb !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .tx-form-row {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .tx-form-row label {
+    color: #e5e7eb !important;
+}
+html[data-theme='dark'] .tx-form-row label span[style*='color:#dc2626;'],
+html[data-theme='dark'] .tx-form-row label span[style*='color: #dc2626;'] {
+    color: #f87171 !important;
+}
+html[data-theme='dark'] .tx-form-row input {
+    background: var(--app-surface-2) !important;
+    color: #e5e7eb !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .tx-form-row input::placeholder {
+    color: #94a3b8 !important;
+}
+html[data-theme='dark'] .tx-check-btn {
+    background: #1f7aa8 !important;
+    border-color: #1f7aa8 !important;
+    color: #fff !important;
+}
+
+/* Dark-mode fixes for fees structure accordion */
+html[data-theme='dark'] .fees-year-card {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .fees-year-head {
+    background: var(--app-surface-2) !important;
+    color: #e5e7eb !important;
+    border-bottom: 1px solid var(--app-border) !important;
+}
+html[data-theme='dark'] .fees-year-head span,
+html[data-theme='dark'] .fees-year-head i {
+    color: inherit !important;
+}
+html[data-theme='dark'] .fees-year-head:hover {
+    background: #273449 !important;
+}
+html[data-theme='dark'] .fees-year-body {
+    background: var(--app-surface-1) !important;
+}
+html[data-theme='dark'] .fees-sem-title {
+    background: #1f3b57 !important;
+    color: #e0f2fe !important;
+}
+html[data-theme='dark'] .fees-total-row td {
+    background: #1f2937 !important;
+    color: #f8fafc !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .fees-year-body .tbl td[style*='color:#64748b;'],
+html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
+    color: #cbd5e1 !important;
+}
 @media (max-width: 1200px) {
     .chip-row {
         white-space: normal;

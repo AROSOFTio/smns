@@ -34,21 +34,32 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
         <?php endif; ?>
     </button>
     <?php
-    // Show change-password quick dropdown for logged-in students, admins, lecturers, or finance next to the bell
-    $isAdmin = isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true;
-    $isStudent = isset($_SESSION['student_logged_in']) && $_SESSION['student_logged_in'] === true;
-    $isLecturer = isset($_SESSION['lecturer_logged_in']) && $_SESSION['lecturer_logged_in'] === true;
-    $isFinance = isset($_SESSION['finance_logged_in']) && $_SESSION['finance_logged_in'] === true;
-    if ($isAdmin || $isStudent || $isLecturer || $isFinance):
+    // Show change-password quick dropdown for logged-in users in the active module.
+    // Role detection must prefer current module context to avoid cross-module endpoint mixups.
+    $role = '';
+    if (!empty($currentUser['role']) && in_array($currentUser['role'], ['admin', 'student', 'lecturer', 'finance'], true)) {
+        $role = (string)$currentUser['role'];
+    } else {
+        $sessionRoleMap = [
+            'SMNS_ADMIN_SESSION' => 'admin',
+            'SMNS_STUDENT_SESSION' => 'student',
+            'SMNS_LECTURER_SESSION' => 'lecturer',
+            'SMNS_FINANCE_SESSION' => 'finance',
+        ];
+        $activeRole = $sessionRoleMap[session_name()] ?? '';
+        if ($activeRole !== '' && !empty($_SESSION[$activeRole . '_logged_in']) && $_SESSION[$activeRole . '_logged_in'] === true) {
+            $role = $activeRole;
+        }
+    }
+    if ($role !== ''):
         $csrf = Security::generateCSRFToken();
-        $role = $isAdmin ? 'admin' : ($isStudent ? 'student' : ($isLecturer ? 'lecturer' : ($isFinance ? 'finance' : '')));
-        if ($isAdmin) {
+        if ($role === 'admin') {
             $changePwdEndpoint = BASE_URL . '/views/admin/change-password.php';
-        } elseif ($isStudent) {
+        } elseif ($role === 'student') {
             $changePwdEndpoint = BASE_URL . '/views/student/change-password.php';
-        } elseif ($isLecturer) {
+        } elseif ($role === 'lecturer') {
             $changePwdEndpoint = BASE_URL . '/views/lecturer/change-password.php';
-        } elseif ($isFinance) {
+        } elseif ($role === 'finance') {
             $changePwdEndpoint = BASE_URL . '/views/finance/change-password.php';
         } else {
             $changePwdEndpoint = '';
@@ -64,24 +75,24 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
             </button>
             <div id="<?php echo $panelId; ?>" class="change-password-panel" style="display:none;position:absolute;right:0;top:40px;z-index:1200;width:320px;background:#fff;color:#333;border:1px solid #ddd;border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:auto;max-height:360px;padding:12px;">
                 <h6 class="mb-3" style="font-size:14px;font-weight:600;">Change Password</h6>
-                <form id="<?php echo $formId; ?>">
+                <form id="<?php echo $formId; ?>" autocomplete="off" data-lpignore="true">
                     <input type="hidden" name="csrf_token" value="<?php echo e($csrf); ?>">
                     <input type="hidden" name="ajax" value="1">
                     <div class="form-group mb-2">
                         <label class="mb-1" style="font-size:13px;">Current password</label>
-                        <input type="password" name="current_password" class="form-control form-control-sm" required autocomplete="current-password">
+                        <input type="password" name="current_password" class="form-control form-control-sm" required autocomplete="off" data-lpignore="true">
                     </div>
                     <div class="form-group mb-2">
                         <label class="mb-1" style="font-size:13px;">New password</label>
-                        <input type="password" name="new_password" class="form-control form-control-sm" required autocomplete="new-password">
+                        <input type="password" name="new_password" class="form-control form-control-sm" required autocomplete="off" data-lpignore="true">
                     </div>
                     <div class="form-group mb-2">
                         <label class="mb-1" style="font-size:13px;">Confirm new password</label>
-                        <input type="password" name="confirm_password" class="form-control form-control-sm" required autocomplete="new-password">
+                        <input type="password" name="confirm_password" class="form-control form-control-sm" required autocomplete="off" data-lpignore="true">
                     </div>
                     <div id="<?php echo $msgId; ?>" style="font-size:13px;margin-bottom:6px;padding:6px;border-radius:3px;"></div>
                     <div class="d-flex justify-content-between align-items-center">
-                        <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('<?php echo $panelId; ?>').style.display='none'">Cancel</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="(function(p){p.style.display='none'; p.querySelectorAll('input[type=password]').forEach(function(i){i.disabled=true;});})(document.getElementById('<?php echo $panelId; ?>'));">Cancel</button>
                         <button type="submit" class="btn btn-primary btn-sm">Change Password</button>
                     </div>
                 </form>
@@ -93,22 +104,58 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                 var panel = document.getElementById('<?php echo $panelId; ?>');
                 var form = document.getElementById('<?php echo $formId; ?>');
                 var msg = document.getElementById('<?php echo $msgId; ?>');
+                var passwordInputs = form ? form.querySelectorAll('input[type="password"]') : [];
+
+                function setPasswordInputsDisabled(disabled) {
+                    if (!passwordInputs || !passwordInputs.length) return;
+                    passwordInputs.forEach(function(input) {
+                        input.disabled = !!disabled;
+                    });
+                }
+
+                function isDarkMode() {
+                    return document.documentElement.getAttribute('data-theme') === 'dark';
+                }
+
+                function applyToggleBaseStyle() {
+                    if (isDarkMode()) {
+                        toggle.style.setProperty('background', 'rgba(51,65,85,0.72)', 'important');
+                        toggle.style.setProperty('border', '1px solid rgba(100,116,139,0.6)', 'important');
+                        toggle.style.setProperty('color', '#e2e8f0', 'important');
+                        toggle.style.setProperty('box-shadow', '0 2px 6px rgba(2,6,23,0.45)', 'important');
+                    } else {
+                        toggle.style.setProperty('background', 'rgba(220,220,220,0.4)', 'important');
+                        toggle.style.setProperty('border', '1px solid rgba(200,200,200,0.5)', 'important');
+                        toggle.style.setProperty('color', '#fff', 'important');
+                        toggle.style.setProperty('box-shadow', '0 2px 4px rgba(0,0,0,0.1)', 'important');
+                    }
+                    toggle.style.setProperty('transform', 'scale(1)', 'important');
+                }
 
                 // Add hover effect
                 toggle.addEventListener('mouseenter', function(){
-                    toggle.style.setProperty('background', 'rgba(235,235,235,0.5)', 'important');
-                    toggle.style.setProperty('transform', 'scale(1.1)', 'important');
-                    toggle.style.setProperty('box-shadow', '0 4px 8px rgba(0,0,0,0.15)', 'important');
+                    if (isDarkMode()) {
+                        toggle.style.setProperty('background', 'rgba(71,85,105,0.88)', 'important');
+                        toggle.style.setProperty('box-shadow', '0 4px 10px rgba(2,6,23,0.55)', 'important');
+                    } else {
+                        toggle.style.setProperty('background', 'rgba(235,235,235,0.5)', 'important');
+                        toggle.style.setProperty('box-shadow', '0 4px 8px rgba(0,0,0,0.15)', 'important');
+                    }
+                    toggle.style.setProperty('transform', 'scale(1.08)', 'important');
                 });
                 toggle.addEventListener('mouseleave', function(){
-                    toggle.style.setProperty('background', 'rgba(220,220,220,0.4)', 'important');
-                    toggle.style.setProperty('transform', 'scale(1)', 'important');
-                    toggle.style.setProperty('box-shadow', '0 2px 4px rgba(0,0,0,0.1)', 'important');
+                    applyToggleBaseStyle();
                 });
+
+                applyToggleBaseStyle();
+                new MutationObserver(function() {
+                    applyToggleBaseStyle();
+                }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
                 function closePanel(e){
                     if (!panel.contains(e.target) && e.target !== toggle) {
                         panel.style.display = 'none';
+                        setPasswordInputsDisabled(true);
                         document.removeEventListener('click', closePanel);
                     }
                 }
@@ -118,8 +165,10 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                     e.stopPropagation();
                     var isVisible = panel.style.display === 'block';
                     panel.style.display = isVisible ? 'none' : 'block';
+                    setPasswordInputsDisabled(isVisible);
                     
                     if (!isVisible) {
+                        setPasswordInputsDisabled(false);
                         // Clear previous messages
                         msg.textContent = '';
                         msg.style.backgroundColor = '';
@@ -129,6 +178,7 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                             document.addEventListener('click', closePanel); 
                         }, 100);
                     } else {
+                        setPasswordInputsDisabled(true);
                         document.removeEventListener('click', closePanel);
                     }
                 });
@@ -187,7 +237,7 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                             msg.style.backgroundColor = '#e6ffed';
                             msg.style.color = '#087f23';
                             msg.textContent = data.message || 'Password changed';
-                            setTimeout(function(){ form.reset(); panel.style.display = 'none'; msg.textContent = ''; }, 900);
+                            setTimeout(function(){ form.reset(); panel.style.display = 'none'; setPasswordInputsDisabled(true); msg.textContent = ''; }, 900);
                         } else {
                             msg.style.backgroundColor = '#fee';
                             msg.style.color = '#c00';
@@ -201,6 +251,9 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                         msg.textContent = 'Network error. Please try again.';
                     });
                 });
+
+                // Keep hidden password fields disabled unless user intentionally opens the panel.
+                setPasswordInputsDisabled(true);
             })();
         </script>
     <?php endif; ?>

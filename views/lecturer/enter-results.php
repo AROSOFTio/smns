@@ -508,7 +508,7 @@ include '../../includes/header.php';
                             If students are expected, confirm course registration and assignment mappings.
                         </div>
                     <?php else: ?>
-                        <form method="POST">
+                        <form method="POST" autocomplete="off" data-lpignore="true">
                             <?php echo csrfField(); ?>
                             <input type="hidden" name="academic_year_id" value="<?php echo $selectedAcademicYearId; ?>">
                             <input type="hidden" name="semester_number" value="<?php echo $selectedSemesterNumber; ?>">
@@ -605,6 +605,48 @@ include '../../includes/header.php';
     border-radius: 8px;
     padding: 10px;
     box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme='dark'] .table.table-sm thead th {
+    background: #1e293b;
+    color: #f8fafc;
+    border-color: #334155;
+}
+
+html[data-theme='dark'] .table.table-sm tbody td {
+    color: #e5e7eb;
+    border-color: #334155;
+}
+
+html[data-theme='dark'] .table.table-hover tbody tr:hover {
+    background: #1e293b !important;
+}
+
+html[data-theme='dark'] .has-cw-row {
+    background: #132235;
+}
+
+html[data-theme='dark'] .table.table-sm .text-muted {
+    color: #cbd5e1 !important;
+}
+
+html[data-theme='dark'] .table.table-sm input.form-control {
+    background: #0b1220;
+    border-color: #475569;
+    color: #e2e8f0;
+}
+
+html[data-theme='dark'] .table.table-sm input.form-control[readonly] {
+    background: #1e293b;
+    color: #dbeafe;
+    border-color: #64748b;
+    opacity: 1;
+}
+
+html[data-theme='dark'] .result-actions {
+    background: #0f172a;
+    border-color: #334155;
+    box-shadow: 0 2px 10px rgba(2, 6, 23, 0.45);
 }
 </style>
 
