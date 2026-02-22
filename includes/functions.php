@@ -189,21 +189,75 @@ function getSetting($key, $default = null) {
  * On Windows, prefer php-win.exe to avoid opening a console window.
  */
 function resolvePhpExecBinary($preferWindowless = true) {
-    $binary = (defined('PHP_BINARY') && PHP_BINARY) ? PHP_BINARY : 'php';
+    $candidates = [];
 
-    if ($preferWindowless && DIRECTORY_SEPARATOR === '\\') {
-        $binaryName = strtolower((string)basename($binary));
-        if ($binaryName === 'php-win.exe') {
-            return $binary;
-        }
+    // Optional hard override from config/environment.
+    if (defined('PHP_EXEC_BINARY') && PHP_EXEC_BINARY) {
+        $candidates[] = (string)PHP_EXEC_BINARY;
+    }
+    $envPhp = getenv('PHP_EXEC_BINARY');
+    if (is_string($envPhp) && $envPhp !== '') {
+        $candidates[] = $envPhp;
+    }
 
-        $candidate = dirname($binary) . DIRECTORY_SEPARATOR . 'php-win.exe';
-        if (is_file($candidate)) {
-            return $candidate;
+    // Runtime binary detected by PHP.
+    if (defined('PHP_BINARY') && PHP_BINARY) {
+        $candidates[] = (string)PHP_BINARY;
+    }
+
+    // Common local server layout relative to BASE_PATH (e.g. R:\xxxamp\htdocs\smns).
+    if (defined('BASE_PATH')) {
+        $baseRoot = dirname(dirname((string)BASE_PATH));
+        $candidates[] = $baseRoot . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'php.exe';
+        if ($preferWindowless && DIRECTORY_SEPARATOR === '\\') {
+            $candidates[] = $baseRoot . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'php-win.exe';
         }
     }
 
-    return $binary;
+    // Generic PATH fallback.
+    $candidates[] = 'php';
+
+    $normalized = [];
+    foreach ($candidates as $cand) {
+        $cand = trim((string)$cand);
+        if ($cand === '') {
+            continue;
+        }
+        if (isset($normalized[$cand])) {
+            continue;
+        }
+        $normalized[$cand] = true;
+    }
+
+    foreach (array_keys($normalized) as $binary) {
+        // If explicitly asking for windowless on Windows, prefer php-win in same folder.
+        if ($preferWindowless && DIRECTORY_SEPARATOR === '\\') {
+            $binaryName = strtolower((string)basename($binary));
+            if ($binaryName === 'php-win.exe') {
+                if ($binary === 'php-win.exe' || is_file($binary)) {
+                    return $binary;
+                }
+            }
+
+            if ($binary !== 'php' && $binary !== 'php.exe') {
+                $phpWinCandidate = dirname($binary) . DIRECTORY_SEPARATOR . 'php-win.exe';
+                if (is_file($phpWinCandidate)) {
+                    return $phpWinCandidate;
+                }
+            }
+        }
+
+        // Use direct binary if it exists or if it's a PATH command.
+        if ($binary === 'php' || $binary === 'php.exe') {
+            return $binary;
+        }
+        if (is_file($binary)) {
+            return $binary;
+        }
+    }
+
+    // Last-resort fallback.
+    return $preferWindowless && DIRECTORY_SEPARATOR === '\\' ? 'php-win.exe' : 'php';
 }
 
 /**

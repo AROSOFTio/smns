@@ -15,28 +15,182 @@
         <?php endforeach; ?>
     <?php endif; ?>
 
-    <!-- Session Inactivity Timeout Checker -->
+    <?php
+        $autoLogoutModule = '';
+        $autoLogoutToken = '';
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            foreach (['admin', 'student', 'lecturer', 'finance'] as $role) {
+                if (!empty($_SESSION[$role . '_logged_in']) && (($_SESSION[$role . '_role'] ?? '') === $role)) {
+                    $autoLogoutModule = $role;
+                    $autoLogoutToken = (string)($_SESSION[$role . '_session_token'] ?? '');
+                    break;
+                }
+            }
+        }
+    ?>
+
+        <!-- Session Inactivity Timeout Checker -->
     <script>
     (function() {
+        var ACTIVE_MODULE = <?php echo json_encode($autoLogoutModule); ?>;
+        var ACTIVE_TOKEN = <?php echo json_encode($autoLogoutToken); ?>;
+        var AUTO_LOGOUT_ENABLED = !!ACTIVE_MODULE;
+        var AUTO_LOGOUT_ENDPOINT = '<?php echo BASE_URL; ?>/api/auto-logout.php';
         var TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
-        var WARNING_MS = 60 * 1000;       // warn 1 minute before
+        var WARNING_MS = 60 * 1000; // warn 1 minute before
         var lastActivity = Date.now();
         var warned = false;
         var warningModal = null;
+        var hasLoggedOut = false;
+        var hasTimedOut = false;
+        var internalNavigation = false;
+        var TAB_KEY = ACTIVE_MODULE ? ('smns_open_tabs_' + ACTIVE_MODULE) : '';
+        var tabId = '';
+        var HEARTBEAT_MS = 15000;
+        var STALE_TAB_MS = 45000;
 
-        // Detect current module from URL path
+        function getSafeTabMap(raw) {
+            if (!raw) return {};
+            try {
+                var parsed = JSON.parse(raw);
+                return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+            } catch (err) {
+                return {};
+            }
+        }
+
+        function pruneTabMap(map) {
+            var now = Date.now();
+            var out = {};
+            Object.keys(map || {}).forEach(function(id) {
+                var ts = Number(map[id] || 0);
+                if (ts > 0 && (now - ts) <= STALE_TAB_MS) {
+                    out[id] = ts;
+                }
+            });
+            return out;
+        }
+
+        function getOpenTabMap() {
+            if (!TAB_KEY) return {};
+            var raw = '';
+            try {
+                raw = localStorage.getItem(TAB_KEY);
+            } catch (err) {
+                return {};
+            }
+            var map = getSafeTabMap(raw);
+            map = pruneTabMap(map);
+            try {
+                localStorage.setItem(TAB_KEY, JSON.stringify(map));
+            } catch (err) {
+                // Ignore storage write failures.
+            }
+            return map;
+        }
+
+        function setOpenTabMap(map) {
+            if (!TAB_KEY) return;
+            try {
+                localStorage.setItem(TAB_KEY, JSON.stringify(pruneTabMap(map)));
+            } catch (err) {
+                // Ignore storage write failures.
+            }
+        }
+
+        function getTabCount(map) {
+            return Object.keys(map || {}).length;
+        }
+
+        function touchCurrentTab() {
+            if (!AUTO_LOGOUT_ENABLED || !tabId) return;
+            var map = getOpenTabMap();
+            map[tabId] = Date.now();
+            setOpenTabMap(map);
+        }
+
+        function registerTab() {
+            if (!AUTO_LOGOUT_ENABLED) return;
+            if (!tabId) {
+                tabId = sessionStorage.getItem('smns_tab_id_' + ACTIVE_MODULE) || '';
+            }
+            if (!tabId) {
+                tabId = ACTIVE_MODULE + '_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+                sessionStorage.setItem('smns_tab_id_' + ACTIVE_MODULE, tabId);
+            }
+            touchCurrentTab();
+        }
+
+        function unregisterTab() {
+            if (!AUTO_LOGOUT_ENABLED || !tabId) return 0;
+            var map = getOpenTabMap();
+            delete map[tabId];
+            setOpenTabMap(map);
+            return getTabCount(map);
+        }
+
+        function postAutoLogout(reason) {
+            if (!AUTO_LOGOUT_ENABLED || hasLoggedOut) return;
+            hasLoggedOut = true;
+
+            var body = new URLSearchParams();
+            body.append('module', ACTIVE_MODULE);
+            body.append('token', ACTIVE_TOKEN || '');
+            body.append('reason', reason || 'close');
+            body.append('source', 'footer');
+            var payload = body.toString();
+
+            if (navigator.sendBeacon) {
+                try {
+                    var blob = new Blob([payload], { type: 'application/x-www-form-urlencoded;charset=UTF-8' });
+                    navigator.sendBeacon(AUTO_LOGOUT_ENDPOINT, blob);
+                    return;
+                } catch (err) {
+                    // Fall through to fetch.
+                }
+            }
+
+            fetch(AUTO_LOGOUT_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                credentials: 'same-origin',
+                cache: 'no-store',
+                keepalive: true,
+                body: payload
+            }).catch(function() {});
+        }
+
+        function postPresence(reason) {
+            if (!AUTO_LOGOUT_ENABLED) return;
+            var body = new URLSearchParams();
+            body.append('module', ACTIVE_MODULE);
+            body.append('token', ACTIVE_TOKEN || '');
+            body.append('reason', reason || 'page_load');
+            body.append('source', 'footer');
+            fetch(AUTO_LOGOUT_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                credentials: 'same-origin',
+                cache: 'no-store',
+                keepalive: true,
+                body: body.toString()
+            }).catch(function() {});
+        }
+
         function getModuleLoginUrl() {
             var path = window.location.pathname;
             var modules = ['admin', 'student', 'lecturer', 'finance'];
             for (var i = 0; i < modules.length; i++) {
-                if (path.indexOf('/views/' + modules[i] + '/') !== -1) {
+                if (
+                    path.indexOf('/views/' + modules[i] + '/') !== -1 ||
+                    path.indexOf('/' + modules[i] + '/') !== -1
+                ) {
                     return '<?php echo BASE_URL; ?>/views/' + modules[i] + '/login.php?error=session_expired';
                 }
             }
             return '<?php echo BASE_URL; ?>/views/auth/login.php?error=session_expired';
         }
 
-        // Reset timer on any user interaction
         function resetTimer() {
             lastActivity = Date.now();
             warned = false;
@@ -47,7 +201,6 @@
             document.addEventListener(evt, resetTimer, { passive: true });
         });
 
-        // Warning modal
         function showWarning() {
             if (warningModal) return;
             warningModal = document.createElement('div');
@@ -62,7 +215,6 @@
             document.body.appendChild(warningModal);
             document.getElementById('stoStayBtn').addEventListener('click', function() {
                 resetTimer();
-                // Ping server to refresh session
                 fetch(window.location.href, { method: 'HEAD', cache: 'no-store' }).catch(function(){});
             });
         }
@@ -74,14 +226,56 @@
             }
         }
 
-        // Check every 5 seconds
+        registerTab();
+        postPresence('page_load');
+        if (AUTO_LOGOUT_ENABLED) {
+            setInterval(function() {
+                touchCurrentTab();
+            }, HEARTBEAT_MS);
+        }
+
+        document.addEventListener('click', function(e) {
+            var anchor = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+            if (!anchor) return;
+            var href = anchor.getAttribute('href') || '';
+            if (!href || href.charAt(0) === '#') return;
+            if (anchor.target && anchor.target.toLowerCase() === '_blank') return;
+            if (anchor.hasAttribute('download')) return;
+            if (/^(mailto:|tel:|javascript:)/i.test(href)) return;
+            internalNavigation = true;
+        }, true);
+
+        document.addEventListener('submit', function() {
+            internalNavigation = true;
+        }, true);
+
+        window.addEventListener('keydown', function(e) {
+            var key = (e.key || '').toLowerCase();
+            if (key === 'f5' || ((e.ctrlKey || e.metaKey) && key === 'r')) {
+                internalNavigation = true;
+            }
+        }, true);
+
+        window.addEventListener('pagehide', function(event) {
+            var remainingTabs = unregisterTab();
+            if (AUTO_LOGOUT_ENABLED && !internalNavigation && !event.persisted && remainingTabs === 0) {
+                postAutoLogout('browser_close');
+            }
+        });
+
         setInterval(function() {
             var elapsed = Date.now() - lastActivity;
             var remaining = TIMEOUT_MS - elapsed;
 
             if (remaining <= 0) {
-                // Expired — redirect to login
-                window.location.href = getModuleLoginUrl();
+                if (!hasTimedOut) {
+                    hasTimedOut = true;
+                    unregisterTab();
+                    postAutoLogout('inactivity_timeout');
+                    setTimeout(function() {
+                        window.location.href = getModuleLoginUrl();
+                    }, 120);
+                }
                 return;
             }
 
@@ -90,7 +284,6 @@
                 showWarning();
             }
 
-            // Update countdown
             var cd = document.getElementById('stoCountdown');
             if (cd && remaining > 0) {
                 cd.textContent = Math.ceil(remaining / 1000);

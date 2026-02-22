@@ -163,7 +163,7 @@ if (!isset($currentUser) || !is_array($currentUser)) {
                 </a>
             </li>
             <li>
-                <a href="<?php echo BASE_URL; ?>/admin/unlock_user.php">
+                <a href="<?php echo BASE_URL; ?>/admin/unlock_user.php" class="<?php echo $currentPage == 'unlock_user.php' ? 'active' : ''; ?>">
                     <i class="fas fa-unlock"></i><span>Unlock User Account</span>
                 </a>
             </li>

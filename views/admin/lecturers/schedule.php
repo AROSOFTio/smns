@@ -30,6 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignment_id'
             'semester' => $_POST['filter_semester'] ?? '',
             'lecturer' => $_POST['filter_lecturer'] ?? '',
             'level'    => $_POST['filter_level'] ?? '',
+            'program'  => $_POST['filter_program'] ?? '',
+            'status'   => $_POST['filter_status'] ?? '',
         ]));
         header('Location: schedule.php' . ($qs ? '?' . $qs : ''));
         exit;
@@ -41,133 +43,206 @@ $filterYear     = $_GET['year']     ?? '';
 $filterSemester = $_GET['semester'] ?? '';
 $filterLecturer = $_GET['lecturer'] ?? '';
 $filterLevel    = $_GET['level']    ?? '';
-
-// Build main query
-$sql = "
-    SELECT
-        ay.year_name,
-        s.semester_name,
-        s.semester_number,
-        c.level_year,
-        l.id            AS lecturer_db_id,
-        l.lecturer_id   AS lecturer_code,
-        CONCAT(l.first_name, ' ', l.last_name) AS lecturer_name,
-        c.course_code,
-        c.course_name,
-        c.credit_hours,
-        ca.id           AS assignment_id,
-        ca.status       AS assignment_status
-    FROM course_assignments ca
-    INNER JOIN lecturers      l  ON ca.lecturer_id  = l.id
-    INNER JOIN courses        c  ON ca.course_id    = c.id
-    INNER JOIN semesters      s  ON ca.semester_id  = s.id
-    INNER JOIN academic_years ay ON s.academic_year_id = ay.id
-    WHERE 1=1
-";
-$params = [];
-
-if ($filterYear) {
-    $sql .= " AND ay.year_name = :year";
-    $params['year'] = $filterYear;
-}
-if ($filterSemester) {
-    $sql .= " AND s.semester_number = :semester";
-    $params['semester'] = $filterSemester;
-}
-if ($filterLecturer) {
-    $sql .= " AND l.id = :lecturer";
-    $params['lecturer'] = $filterLecturer;
-}
-if ($filterLevel) {
-    $sql .= " AND c.level_year = :level";
-    $params['level'] = $filterLevel;
+$filterProgram  = $_GET['program']  ?? '';
+$filterStatus   = $_GET['status']   ?? 'active';
+$allowedStatuses = ['all', 'active', 'completed', 'cancelled'];
+if (!in_array($filterStatus, $allowedStatuses, true)) {
+    $filterStatus = 'active';
 }
 
-$sql .= " ORDER BY ay.year_name DESC, s.semester_number ASC, c.level_year ASC, l.last_name ASC, c.course_code ASC";
-
-$stmt = $conn->prepare($sql);
-$stmt->execute($params);
-$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Group: [academic_year][semester_name][level_year] => [lecturer_code => [name, courses[]]]
-$grouped = [];
-foreach ($rows as $row) {
-    $y   = $row['year_name'];
-    $s   = $row['semester_name'];
-    $lvl = intval($row['level_year']) ?: 1;
-    $lc  = $row['lecturer_code'];
-    if (!isset($grouped[$y][$s][$lvl][$lc])) {
-        $grouped[$y][$s][$lvl][$lc] = [
-            'name'    => $row['lecturer_name'],
-            'courses' => [],
-        ];
+// Smart defaults: only when nothing is specified at all
+$noFiltersSet = ($filterSemester === '' && $filterYear === '' && $filterProgram === '' && $filterLevel === '' && $filterLecturer === '' && $filterStatus === 'active');
+if ($noFiltersSet) {
+    $activeSemRow = $conn->query("
+        SELECT s.semester_number, ay.year_name
+        FROM semesters s
+        JOIN academic_years ay ON ay.id = s.academic_year_id
+        WHERE s.status = 'active'
+        ORDER BY s.start_date DESC, s.id DESC
+        LIMIT 1
+    ")->fetch(PDO::FETCH_ASSOC);
+    if ($activeSemRow) {
+        if ($filterSemester === '') {
+            $filterSemester = (string)$activeSemRow['semester_number'];
+        }
+        if ($filterYear === '') {
+            $filterYear = $activeSemRow['year_name'];
+        }
     }
-    $grouped[$y][$s][$lvl][$lc]['courses'][] = $row;
 }
 
-// Filter dropdowns
-$years = $conn->query("
-    SELECT DISTINCT ay.year_name FROM academic_years ay
-    INNER JOIN semesters s ON s.academic_year_id = ay.id
-    INNER JOIN course_assignments ca ON ca.semester_id = s.id
-    ORDER BY ay.year_name DESC
-")->fetchAll(PDO::FETCH_COLUMN);
+// Program list
+$programList = $conn->query("
+    SELECT id, program_code, program_name
+    FROM programs
+    WHERE status = 'active'
+    ORDER BY program_name ASC
+")->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch courses NOT assigned to any lecturer, filtered the same way
-$uaSql = "
-    SELECT
-        c.id, c.course_code, c.course_name, c.credit_hours,
-        c.level_year, c.semester_offered
+// Default program if none selected: pick the program with most active courses
+if ($noFiltersSet && $filterProgram === '' && $programList) {
+    $pidRow = $conn->query("
+        SELECT program_id
+        FROM courses
+        WHERE status = 'active'
+        GROUP BY program_id
+        ORDER BY COUNT(*) DESC
+        LIMIT 1
+    ")->fetchColumn();
+    if ($pidRow) {
+        $filterProgram = (string)$pidRow;
+    }
+}
+
+// Resolve semester IDs for the chosen year/semester number (for assignment lookup)
+$targetSemesterIds = [];
+if ($filterSemester !== '') {
+    $semStmt = $conn->prepare("
+        SELECT s.id
+        FROM semesters s
+        JOIN academic_years ay ON ay.id = s.academic_year_id
+        WHERE s.semester_number = :sem
+        " . ($filterYear ? " AND ay.year_name = :year" : "") . "
+    ");
+    $semParams = ['sem' => $filterSemester];
+    if ($filterYear) {
+        $semParams['year'] = $filterYear;
+    }
+    $semStmt->execute($semParams);
+    $targetSemesterIds = $semStmt->fetchAll(PDO::FETCH_COLUMN);
+} elseif ($filterYear !== '') {
+    $semStmt = $conn->prepare("
+        SELECT s.id
+        FROM semesters s
+        JOIN academic_years ay ON ay.id = s.academic_year_id
+        WHERE ay.year_name = :year
+    ");
+    $semStmt->execute(['year' => $filterYear]);
+    $targetSemesterIds = $semStmt->fetchAll(PDO::FETCH_COLUMN);
+} else {
+    $targetSemesterIds = $conn->query("SELECT id FROM semesters")->fetchAll(PDO::FETCH_COLUMN);
+}
+
+// Fetch courses for the selected program / level / semester
+$courseSql = "
+    SELECT c.id, c.course_code, c.course_name, c.credit_hours, c.level_year, c.semester_offered,
+           p.program_code, p.program_name
     FROM courses c
-    WHERE c.id NOT IN (SELECT DISTINCT course_id FROM course_assignments)
+    JOIN programs p ON p.id = c.program_id
+    WHERE c.status = 'active'
 ";
-$uaParams = [];
+$courseParams = [];
+if ($filterProgram) {
+    $courseSql .= " AND c.program_id = :program";
+    $courseParams['program'] = $filterProgram;
+}
 if ($filterLevel) {
-    $uaSql .= " AND c.level_year = :level";
-    $uaParams['level'] = $filterLevel;
+    $courseSql .= " AND c.level_year = :level";
+    $courseParams['level'] = $filterLevel;
 }
 if ($filterSemester) {
-    $uaSql .= " AND (c.semester_offered = :sem OR c.semester_offered = 3)";
-    $uaParams['sem'] = $filterSemester;
+    $courseSql .= " AND (c.semester_offered = :sem OR c.semester_offered = 3)";
+    $courseParams['sem'] = $filterSemester;
 }
-// If lecturer filter active, unassigned courses are irrelevant — skip
-if (!$filterLecturer) {
-    $uaSql .= " ORDER BY c.level_year ASC, c.semester_offered ASC, c.course_code ASC";
-    $uaStmt = $conn->prepare($uaSql);
-    $uaStmt->execute($uaParams);
-    $uaRows = $uaStmt->fetchAll(PDO::FETCH_ASSOC);
-} else {
-    $uaRows = [];
+$courseSql .= " ORDER BY c.level_year ASC, c.semester_offered ASC, c.course_code ASC";
+
+$courseStmt = $conn->prepare($courseSql);
+$courseStmt->execute($courseParams);
+$courses = $courseStmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Map courses by id
+$courseMap = [];
+foreach ($courses as $c) {
+    $courseMap[$c['id']] = $c + ['lecturers' => []];
 }
 
-// Group unassigned: [semester_number][level_year] => [courses[]]
-// If a specific semester is already filtered, only put them under that semester key
+// Fetch assignments for these courses in the selected semester IDs (if available)
+if (!empty($courseMap) && !empty($targetSemesterIds)) {
+    $inCourse = implode(',', array_fill(0, count($courseMap), '?'));
+    $inSem    = implode(',', array_fill(0, count($targetSemesterIds), '?'));
+    $assignSql = "
+        SELECT ca.course_id, ca.status, ca.assigned_date,
+               l.lecturer_id, l.first_name, l.last_name, l.id AS lecturer_db_id
+        FROM course_assignments ca
+        JOIN lecturers l ON l.id = ca.lecturer_id
+        WHERE ca.course_id IN ($inCourse)
+          AND ca.semester_id IN ($inSem)
+          AND l.status = 'active'
+    ";
+    $assignParams = array_merge(array_keys($courseMap), $targetSemesterIds);
+    if ($filterStatus !== 'all') {
+        $assignSql .= " AND ca.status = ?";
+        $assignParams[] = $filterStatus;
+    }
+    $assignStmt = $conn->prepare($assignSql);
+    $assignStmt->execute($assignParams);
+    $assignRows = $assignStmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($assignRows as $ar) {
+        $cid = (int)$ar['course_id'];
+        if (!isset($courseMap[$cid])) continue;
+        $courseMap[$cid]['lecturers'][] = $ar;
+    }
+}
+
+// If a lecturer is selected, only keep that lecturer's assignments/courses
+if ($filterLecturer !== '') {
+    $selectedLecturer = (int)$filterLecturer;
+    foreach ($courseMap as $cid => &$course) {
+        $course['lecturers'] = array_values(array_filter(
+            $course['lecturers'],
+            static fn($lt) => (int)$lt['lecturer_db_id'] === $selectedLecturer
+        ));
+        if (empty($course['lecturers'])) {
+            unset($courseMap[$cid]);
+        }
+    }
+    unset($course);
+}
+
+// Build unassigned courses groups for the "Courses Without Lecturer" section
 $uaGrouped = [];
-foreach ($uaRows as $r) {
-    $sem = intval($r['semester_offered']);
-    $lvl = intval($r['level_year']) ?: 1;
-    if ($filterSemester) {
-        // User already scoped to one semester — group everything under it
-        $uaGrouped[intval($filterSemester)][$lvl][] = $r;
-    } elseif ($sem === 3) {
-        $uaGrouped[1][$lvl][] = $r;
-        $uaGrouped[2][$lvl][] = $r;
-    } else {
-        $uaGrouped[$sem][$lvl][] = $r;
+$uaYearLabel = $filterYear ?: 'All Academic Years';
+if ($filterLecturer === '') {
+    foreach ($courseMap as $course) {
+        if (!empty($course['lecturers'])) {
+            continue;
+        }
+        $level = (int)$course['level_year'] ?: 1;
+        if ($filterSemester !== '') {
+            $semKeys = [(int)$filterSemester];
+        } else {
+            $offered = (int)$course['semester_offered'];
+            $semKeys = ($offered === 3) ? [1, 2] : [$offered];
+        }
+        foreach ($semKeys as $semKey) {
+            $uaGrouped[$semKey][$level][] = $course;
+        }
     }
 }
 ksort($uaGrouped);
-foreach ($uaGrouped as &$sg) ksort($sg);
-unset($sg);
+foreach ($uaGrouped as &$levels) {
+    ksort($levels);
+}
+unset($levels);
 
-// Label for year context in unassigned header
-$uaYearLabel = $filterYear ?: 'All Academic Years';
+// Build grouped structure: [level_year] => courses[]
+$groupedCourses = [];
+foreach ($courseMap as $c) {
+    $lvl = (int)$c['level_year'];
+    if (!isset($groupedCourses[$lvl])) $groupedCourses[$lvl] = [];
+    $groupedCourses[$lvl][] = $c;
+}
+ksort($groupedCourses);
 
+// Years dropdown based on semesters table (not assignments)
+$years = $conn->query("SELECT year_name FROM academic_years ORDER BY start_date DESC")->fetchAll(PDO::FETCH_COLUMN);
+
+// Lecturers dropdown (active)
 $lecturerList = $conn->query("
-    SELECT DISTINCT l.id, l.lecturer_id, l.first_name, l.last_name
-    FROM lecturers l
-    INNER JOIN course_assignments ca ON ca.lecturer_id = l.id
-    ORDER BY l.last_name, l.first_name
+    SELECT id, lecturer_id, first_name, last_name
+    FROM lecturers
+    WHERE status = 'active'
+    ORDER BY last_name, first_name
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 $unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
@@ -176,9 +251,12 @@ include '../../../includes/header.php';
 ?>
 
 <style>
-/* Prevent ANY horizontal scroll on the page */
-.main-content { overflow-x: hidden; }
-.content-area  { overflow-x: hidden; }
+/* Keep parent containers from clipping filter controls */
+.main-content { overflow-x: visible; }
+.content-area  { overflow-x: visible; }
+.card.filter-card,
+.card.filter-card .card-body,
+.filter-form { overflow: visible !important; }
 
 .sched-card { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 2rem; box-shadow: 0 1px 4px rgba(0,0,0,0.07); overflow: hidden; }
 .sched-year-header { background: linear-gradient(135deg,#1e40af,#3b82f6); color:#fff; padding:12px 20px; font-size: 1.1rem; font-weight: 700; }
@@ -205,6 +283,7 @@ include '../../../includes/header.php';
 .status-active    { color:#16a34a; font-weight:600; font-size:0.82rem; }
 .status-completed { color:#2563eb; font-weight:600; font-size:0.82rem; }
 .status-cancelled { color:#dc2626; font-weight:600; font-size:0.82rem; }
+.sched-program-header { background:#eff6ff; border-left:4px solid #3b82f6; padding:6px 20px; font-weight:600; color:#1d4ed8; font-size:0.86rem; border-bottom:1px solid #bfdbfe; }
 .sched-level-header { background:#f0fdf4; border-left:4px solid #16a34a; padding:6px 20px; font-weight:600; color:#15803d; font-size:0.88rem; border-bottom:1px solid #dcfce7; }
 .sched-index-cell { border-right:2px solid #e2e8f0; background:#f8fafc; text-align:center; vertical-align:middle; color:#94a3b8; font-weight:600; }
 .sched-lecturer-cell-wrap { border-right:2px solid #e2e8f0; background:#f8fafc; vertical-align:middle; }
@@ -228,8 +307,43 @@ include '../../../includes/header.php';
 .ua-sem-col { color:#94a3b8; font-size:0.82rem; }
 
 /* Filter form — wraps on small screens */
-.filter-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.filter-form select, .filter-form button, .filter-form a { flex-shrink: 0; }
+.filter-card { position: static; }
+.filter-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    overflow-x: visible;
+    overflow-y: visible;
+    white-space: normal;
+}
+.filter-form .form-control,
+.filter-form button,
+.filter-form a {
+    flex: 1 1 165px;
+    min-width: 150px;
+    max-width: 230px;
+}
+.filter-form button,
+.filter-form a {
+    flex: 0 0 auto;
+    min-width: auto;
+    max-width: none;
+    white-space: nowrap;
+}
+@media (max-width: 992px) {
+    .filter-form {
+        align-items: flex-start;
+        overflow: visible;
+    }
+    .filter-form .form-control,
+    .filter-form button,
+    .filter-form a {
+        width: auto;
+        min-width: 0;
+        max-width: none;
+    }
+}
 
 /* Page-specific dark mode overrides */
 html[data-theme='dark'] .filter-form .form-control {
@@ -250,6 +364,12 @@ html[data-theme='dark'] .ua-card {
 html[data-theme='dark'] .sched-sem-header {
     background: #0f2b57 !important;
     color: #dbeafe !important;
+    border-bottom-color: #1e3a8a !important;
+}
+html[data-theme='dark'] .sched-program-header {
+    background: #10243f !important;
+    color: #bfdbfe !important;
+    border-left-color: #3b82f6 !important;
     border-bottom-color: #1e3a8a !important;
 }
 html[data-theme='dark'] .sched-level-header {
@@ -368,7 +488,7 @@ html[data-theme='dark'] .ua-course-badge {
     <div class="content-area">
 
         <!-- Filters -->
-        <div class="card mb-3">
+        <div class="card mb-3 filter-card">
             <div class="card-body py-2">
                 <form method="GET" class="filter-form">
                     <select name="year" class="form-control form-control-sm">
@@ -389,6 +509,14 @@ html[data-theme='dark'] .ua-course-badge {
                         <option value="3" <?php echo $filterLevel === '3' ? 'selected' : ''; ?>>Year 3</option>
                         <option value="4" <?php echo $filterLevel === '4' ? 'selected' : ''; ?>>Year 4</option>
                     </select>
+                    <select name="program" class="form-control form-control-sm">
+                        <option value="">All Programs</option>
+                        <?php foreach ($programList as $program): ?>
+                            <option value="<?php echo (int)$program['id']; ?>" <?php echo (string)$filterProgram === (string)$program['id'] ? 'selected' : ''; ?>>
+                                <?php echo e($program['program_code'] . ' - ' . $program['program_name']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
                     <select name="lecturer" class="form-control form-control-sm">
                         <option value="">All Lecturers</option>
                         <?php foreach ($lecturerList as $lec): ?>
@@ -397,123 +525,124 @@ html[data-theme='dark'] .ua-course-badge {
                             </option>
                         <?php endforeach; ?>
                     </select>
+                    <select name="status" class="form-control form-control-sm">
+                        <option value="active" <?php echo $filterStatus === 'active' ? 'selected' : ''; ?>>Active Assignments</option>
+                        <option value="all" <?php echo $filterStatus === 'all' ? 'selected' : ''; ?>>All Statuses</option>
+                        <option value="completed" <?php echo $filterStatus === 'completed' ? 'selected' : ''; ?>>Completed</option>
+                        <option value="cancelled" <?php echo $filterStatus === 'cancelled' ? 'selected' : ''; ?>>Cancelled</option>
+                    </select>
                     <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-filter"></i> Filter</button>
                     <a href="schedule.php" class="btn btn-secondary btn-sm"><i class="fas fa-undo"></i> Reset</a>
                 </form>
             </div>
         </div>
 
-        <?php if (empty($grouped)): ?>
+        <?php
+            $totalUniqueCourses = count($courseMap);
+            $assignmentCount = 0;
+            $lecturerSet = [];
+            foreach ($courseMap as $c) {
+                foreach ($c['lecturers'] as $lt) {
+                    $assignmentCount++;
+                    $lecturerSet[$lt['lecturer_db_id']] = true;
+                }
+            }
+            $totalLecturers = count($lecturerSet);
+            $displayYear = $filterYear ?: 'All Years';
+            $displaySem  = $filterSemester ? 'Semester ' . $filterSemester : 'All Semesters';
+        ?>
+
+        <?php if (empty($courseMap)): ?>
             <div class="card">
                 <div class="card-body text-center text-muted py-5">
                     <i class="fas fa-chalkboard-teacher fa-3x mb-3"></i>
-                    <h5>No lecturer assignments found</h5>
-                    <p>No course assignments match the selected filters.</p>
+                    <h5>No courses found</h5>
+                    <p>No courses match the selected filters.</p>
                 </div>
             </div>
         <?php else: ?>
-            <?php foreach ($grouped as $year => $semesters): ?>
-                <div class="sched-card">
-                    <div class="sched-year-header">
-                        <i class="fas fa-graduation-cap mr-2"></i> Academic Year: <?php echo e($year); ?>
-                    </div>
-
-                    <?php foreach ($semesters as $semName => $yearGroups): ?>
-                        <?php
-                            // Count totals for this semester across all year groups
-                            $semTotalLecturers = 0; $semTotalCourses = 0;
-                            foreach ($yearGroups as $lecturers) {
-                                $semTotalLecturers += count($lecturers);
-                                foreach ($lecturers as $ldata) $semTotalCourses += count($ldata['courses']);
-                            }
-                        ?>
-                        <div class="sched-sem-header">
-                            <i class="fas fa-calendar-alt mr-1"></i> <?php echo e($semName); ?>
-                            &nbsp;|&nbsp; <span style="font-weight:400;"><?php echo $semTotalLecturers; ?> lecturer(s) &mdash; <?php echo $semTotalCourses; ?> course assignment(s)</span>
-                        </div>
-
-                        <?php foreach ($yearGroups as $lvl => $lecturers): ?>
-                            <?php
-                                $totalCourses   = 0;
-                                $totalLecturers = count($lecturers);
-                                foreach ($lecturers as $ldata) $totalCourses += count($ldata['courses']);
-                            ?>
-                            <!-- Year of Study sub-header -->
-                            <div class="sched-level-header">
-                                <i class="fas fa-users mr-1"></i> Year <?php echo $lvl; ?> &nbsp;&mdash;&nbsp;
-                                <span style="font-weight:400;"><?php echo $totalLecturers; ?> lecturer(s), <?php echo $totalCourses; ?> course(s)</span>
-                            </div>
-                        <div class="table-responsive" style="overflow-x:hidden;">
-                                <table class="table sched-table mb-0">
-                                    <colgroup>
-                                        <col class="col-num">
-                                        <col class="col-lec">
-                                        <col class="col-code">
-                                        <col class="col-name">
-                                        <col class="col-cu">
-                                        <col class="col-status">
-                                        <col class="col-action">
-                                    </colgroup>
-                                        <thead>
-                                            <tr>
-                                                <th>#</th>
-                                                <th>Lecturer</th>
-                                                <th>Course Code</th>
-                                                <th>Course Name</th>
-                                                <th>Credit Units</th>
-                                                <th>Status</th>
-                                                <th>Action</th>
-                                            </tr>
-                                        </thead>
-                                    <tbody>
-                                        <?php $rowNum = 1; ?>
-                                        <?php foreach ($lecturers as $lecCode => $ldata): ?>
-                                            <?php $courseCount = count($ldata['courses']); ?>
-                                            <?php foreach ($ldata['courses'] as $i => $c): ?>
-                                                <tr>
-                                                    <?php if ($i === 0): ?>
-                                                        <td rowspan="<?php echo $courseCount; ?>" class="sched-index-cell">
-                                                            <?php echo $rowNum++; ?>
-                                                        </td>
-                                                        <td rowspan="<?php echo $courseCount; ?>" class="sched-lecturer-cell-wrap">
-                                                            <div class="lecturer-cell"><?php echo e($ldata['name']); ?></div>
-                                                            <span class="lecturer-id-badge"><?php echo e($lecCode); ?></span>
-                                                        </td>
-                                                    <?php endif; ?>
-                                                    <td><span class="course-badge"><?php echo e($c['course_code']); ?></span></td>
-                                                    <td><?php echo e($c['course_name']); ?></td>
-                                                    <td><span class="cu-badge"><?php echo e($c['credit_hours']); ?> CU</span></td>
-                                                    <td>
-                                                        <span class="status-<?php echo $c['assignment_status']; ?>">
-                                                            <?php echo ucfirst($c['assignment_status']); ?>
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <form method="POST" class="d-inline delete-assignment-form">
-                                                            <input type="hidden" name="delete_assignment_id" value="<?php echo $c['assignment_id']; ?>">
-                                                            <input type="hidden" name="filter_year" value="<?php echo e($filterYear); ?>">
-                                                            <input type="hidden" name="filter_semester" value="<?php echo e($filterSemester); ?>">
-                                                            <input type="hidden" name="filter_lecturer" value="<?php echo e($filterLecturer); ?>">
-                                                            <input type="hidden" name="filter_level" value="<?php echo e($filterLevel); ?>">
-                                                            <button type="submit" class="btn btn-danger btn-sm" title="Remove this course assignment">
-                                                                <i class="fas fa-trash-alt"></i>
-                                                            </button>
-                                                        </form>
-                                                    </td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        <?php endforeach; ?>
-
-                    <?php endforeach; ?>
+            <div class="sched-card">
+                <div class="sched-year-header">
+                    <i class="fas fa-graduation-cap mr-2"></i> Academic Year: <?php echo e($displayYear); ?> &mdash; <?php echo e($displaySem); ?>
                 </div>
-            <?php endforeach; ?>
+                <div class="sched-program-header">
+                    <i class="fas fa-layer-group mr-1"></i>
+                    Program: <?php
+                        $pRow = array_values(array_filter($programList, fn($p) => (string)$p['id'] === (string)$filterProgram));
+                        echo e($pRow ? ($pRow[0]['program_code'] . ' - ' . $pRow[0]['program_name']) : 'All Programs');
+                    ?>
+                    &nbsp;|&nbsp; <span style="font-weight:400;"><?php echo $totalLecturers; ?> lecturer(s), <?php echo $assignmentCount; ?> assignment(s), <?php echo $totalUniqueCourses; ?> unique course(s)</span>
+                </div>
+
+                <?php foreach ($groupedCourses as $lvl => $courseList): ?>
+                    <?php
+                        $lvlAssign = 0;
+                        $lvlLectSet = [];
+                        foreach ($courseList as $c) {
+                            foreach ($c['lecturers'] as $lt) {
+                                $lvlAssign++;
+                                $lvlLectSet[$lt['lecturer_db_id']] = true;
+                            }
+                        }
+                    ?>
+                    <div class="sched-level-header">
+                        <i class="fas fa-users mr-1"></i> Year <?php echo $lvl; ?>
+                        &nbsp;|&nbsp; <span style="font-weight:400;"><?php echo count($lvlLectSet); ?> lecturer(s), <?php echo $lvlAssign; ?> assignment(s), <?php echo count($courseList); ?> course(s)</span>
+                    </div>
+                    <div class="table-responsive" style="overflow-x:hidden;">
+                        <table class="table sched-table mb-0">
+                            <colgroup>
+                                <col class="col-num">
+                                <col class="col-code">
+                                <col class="col-name">
+                                <col class="col-cu">
+                                <col class="col-lec">
+                                <col class="col-status">
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Course Code</th>
+                                    <th>Course Name</th>
+                                    <th>Credit Units</th>
+                                    <th>Lecturer(s)</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php $rowNum = 1; ?>
+                                <?php foreach ($courseList as $c): ?>
+                                    <?php
+                                        $lectNames = [];
+                                        $statusTags = [];
+                                        foreach ($c['lecturers'] as $lt) {
+                                            $lectNames[] = trim($lt['first_name'] . ' ' . $lt['last_name']) . ' (' . $lt['lecturer_id'] . ')';
+                                            $statusTags[] = ucfirst($lt['status'] ?? 'active');
+                                        }
+                                        $statusText = $statusTags ? implode(', ', array_unique($statusTags)) : 'Unassigned';
+                                        $statusClass = $statusTags ? strtolower($statusTags[0]) : 'cancelled';
+                                    ?>
+                                    <tr>
+                                        <td class="sched-index-cell"><?php echo $rowNum++; ?></td>
+                                        <td><span class="course-badge"><?php echo e($c['course_code']); ?></span></td>
+                                        <td><?php echo e($c['course_name']); ?></td>
+                                        <td><span class="cu-badge"><?php echo e($c['credit_hours']); ?> CU</span></td>
+                                        <td><?php echo $lectNames ? e(implode(' | ', $lectNames)) : '<span class="text-muted">Unassigned</span>'; ?></td>
+                                        <td>
+                                            <span class="status-<?php echo $statusClass; ?>">
+                                                <?php echo e($statusText); ?>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endforeach; ?>
+            </div>
         <?php endif; ?>
 
-        <?php if (!empty($uaGrouped) && !$filterLecturer): ?>
+        <?php if (!empty($uaGrouped) && !$filterLecturer && $filterStatus === 'active'): ?>
             <?php
                 $uaTotalAll = 0;
                 foreach ($uaGrouped as $semLevels) foreach ($semLevels as $clist) $uaTotalAll += count($clist);
@@ -588,7 +717,7 @@ html[data-theme='dark'] .ua-course-badge {
 
 <script>
 // Auto-submit on dropdown change
-document.querySelectorAll('select[name="year"], select[name="semester"], select[name="level"], select[name="lecturer"]')
+document.querySelectorAll('select[name="year"], select[name="semester"], select[name="level"], select[name="program"], select[name="lecturer"], select[name="status"]')
     .forEach(el => el.addEventListener('change', () => el.closest('form').submit()));
 
 // Confirm before deleting a course assignment
