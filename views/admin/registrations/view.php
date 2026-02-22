@@ -36,11 +36,37 @@ $stmt->execute(['id' => $semesterId]);
 $semester = $stmt->fetch();
 
 // Get registrations
-$stmt = $conn->prepare("SELECT cr.*, c.course_code, c.course_name, c.credit_hours
-                        FROM course_registrations cr
-                        JOIN courses c ON cr.course_id = c.id
-                        WHERE cr.student_id = :student_id AND cr.semester_id = :semester_id");
-$stmt->execute(['student_id' => $studentId, 'semester_id' => $semesterId]);
+$registeredYear = 0;
+try {
+    $yrStmt = $conn->prepare("
+        SELECT year_of_study
+        FROM semester_registrations
+        WHERE student_id = :student_id
+          AND semester_id = :semester_id
+          AND status = 'approved'
+        ORDER BY id DESC
+        LIMIT 1
+    ");
+    $yrStmt->execute(['student_id' => $studentId, 'semester_id' => $semesterId]);
+    $registeredYear = (int)$yrStmt->fetchColumn();
+} catch (Exception $e) {
+    $registeredYear = 0;
+}
+
+$sql = "SELECT cr.*, c.course_code, c.course_name, c.credit_hours
+        FROM course_registrations cr
+        JOIN courses c ON cr.course_id = c.id
+        JOIN semesters s ON cr.semester_id = s.id
+        WHERE cr.student_id = :student_id
+          AND cr.semester_id = :semester_id
+          AND (c.semester_offered = s.semester_number OR c.semester_offered = 3)";
+$params = ['student_id' => $studentId, 'semester_id' => $semesterId];
+if ($registeredYear > 0) {
+    $sql .= " AND c.level_year = :registered_year";
+    $params['registered_year'] = $registeredYear;
+}
+$stmt = $conn->prepare($sql);
+$stmt->execute($params);
 $regs = $stmt->fetchAll();
 
 $pageTitle = 'Registered Courses - ' . APP_NAME;

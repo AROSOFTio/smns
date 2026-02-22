@@ -4,6 +4,7 @@
  */
 $currentPage = basename($_SERVER['PHP_SELF']);
 $currentDir  = basename(dirname($_SERVER['PHP_SELF']));
+$currentReportType = $_GET['report'] ?? '';
 
 // Use existing session/auth/currentUser if already set by the page
 if (!isset($session) || !is_object($session)) {
@@ -21,12 +22,15 @@ if (!isset($currentUser) || !is_array($currentUser)) {
     .sidebar {
         width: 260px;
         height: 100vh;
+        height: 100dvh;
+        max-height: 100dvh;
         background: #f8f9fa;
         position: fixed;
         left: 0;
         top: 0;
-        overflow-y: auto;
-        overflow-x: hidden;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
         box-shadow: 2px 0 10px rgba(0, 0, 0, 0.08);
         z-index: 1000;
         border-right: 1px solid #e5e7eb;
@@ -36,10 +40,21 @@ if (!isset($currentUser) || !is_array($currentUser)) {
         text-align: center;
         background: #ffffff;
         border-bottom: 2px solid #e5e7eb;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        flex: 0 0 auto;
     }
     .sidebar-header h3 { color: #000; margin: 0 0 3px 0; font-size: 20px; font-weight: 700; }
     .sidebar-header p { color: #64748b; margin: 0; font-size: 11px; }
-    .sidebar-menu { padding: 12px 0 80px 0; }
+    .sidebar-menu {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 12px 0 104px 0;
+        scrollbar-gutter: stable;
+    }
     .sidebar-menu ul { list-style: none; padding: 0; margin: 0; }
     .sidebar-menu li { margin: 0; }
     .sidebar-menu > ul > li > a {
@@ -117,10 +132,18 @@ if (!isset($currentUser) || !is_array($currentUser)) {
                     <i class="fas fa-inbox"></i><span>Student Requests</span>
                 </a>
             </li>
-            <li>
-                <a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php" class="<?php echo $currentDir == 'reports' ? 'active' : ''; ?>">
+            <li class="<?php echo $currentDir == 'reports' ? 'open' : ''; ?>">
+                <a href="#" class="has-submenu <?php echo $currentDir == 'reports' ? 'active' : ''; ?>">
                     <i class="fas fa-chart-bar"></i><span>Reports</span>
                 </a>
+                <ul class="submenu">
+                    <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=executive" class="<?php echo ($currentDir == 'reports' && ($currentReportType === 'executive' || $currentPage === 'index.php')) ? 'active' : ''; ?>">Executive Summary</a></li>
+                    <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=enrollment" class="<?php echo ($currentDir == 'reports' && $currentReportType === 'enrollment') ? 'active' : ''; ?>">Enrollment Trends</a></li>
+                    <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=financial" class="<?php echo ($currentDir == 'reports' && $currentReportType === 'financial') ? 'active' : ''; ?>">Financial Summary</a></li>
+                    <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=staff" class="<?php echo ($currentDir == 'reports' && $currentReportType === 'staff') ? 'active' : ''; ?>">Staff Workload</a></li>
+                    <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=system" class="<?php echo ($currentDir == 'reports' && $currentReportType === 'system') ? 'active' : ''; ?>">System Overview</a></li>
+                    <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/schedules.php" class="<?php echo ($currentDir == 'reports' && $currentPage === 'schedules.php') ? 'active' : ''; ?>">Scheduled Reports</a></li>
+                </ul>
             </li>
 
             <li class="menu-section">System & Settings</li>

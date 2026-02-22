@@ -57,6 +57,71 @@ $pageTitle = 'Course Roster - ' . APP_NAME;
 include '../../../includes/header.php';
 ?>
 <?php include '../../../includes/admin/sidebar.php'; ?>
+<style>
+    html, body {
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+    .main-content, .content-area {
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+    .content-area .card {
+        overflow: hidden;
+    }
+    .content-area .table-responsive {
+        max-width: 100%;
+        overflow-x: auto;
+    }
+    .content-area form.form-inline {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: flex-end;
+    }
+    .content-area form.form-inline .form-control {
+        max-width: 100%;
+    }
+    html[data-theme='dark'] .content-area.container {
+        color: #e2e8f0;
+    }
+    html[data-theme='dark'] .content-area .card {
+        background: #0b1220;
+        border: 1px solid #1e293b;
+        box-shadow: 0 8px 24px rgba(2, 6, 23, 0.45);
+    }
+    html[data-theme='dark'] .content-area .card-body {
+        color: #e2e8f0;
+    }
+    html[data-theme='dark'] .content-area .table {
+        color: #e2e8f0;
+    }
+    html[data-theme='dark'] .content-area .table thead th {
+        background: #152238;
+        border-color: #26354d;
+        color: #cbd5e1;
+    }
+    html[data-theme='dark'] .content-area .table td {
+        border-color: #223047;
+    }
+    html[data-theme='dark'] .content-area .table-hover tbody tr:hover {
+        background: rgba(59, 130, 246, 0.14);
+    }
+    html[data-theme='dark'] .content-area a {
+        color: #93c5fd;
+    }
+    html[data-theme='dark'] .content-area a:hover {
+        color: #bfdbfe;
+    }
+    html[data-theme='dark'] .content-area .btn-outline-secondary {
+        color: #cbd5e1;
+        border-color: #334155;
+    }
+    html[data-theme='dark'] .content-area .btn-outline-secondary:hover {
+        background: #1f2937;
+        color: #f8fafc;
+    }
+</style>
 <div class="main-content">
     <div class="topbar">
         <div class="topbar-left">

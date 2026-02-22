@@ -77,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Validate course code format
     if (!empty($course_code) && !preg_match('/^[A-Z]{2,4}\d{3,4}$/', $course_code)) {
-        $errors[] = 'Course code should be in format like BTH101, MDIV501, etc.';
+        $errors[] = 'Course code should be in format like BIB1101, THE4208, etc.';
     }
 
     // Check if course code already exists (excluding current course)
@@ -186,9 +186,9 @@ include '../../../includes/header.php';
                         <div class="form-group col-md-3">
                             <label>Course Code <span class="text-danger">*</span></label>
                             <input type="text" name="course_code" class="form-control" required
-                                   placeholder="e.g., BTH101" value="<?php echo e($_POST['course_code'] ?? $course['course_code']); ?>"
-                                   pattern="[A-Z]{2,4}\d{3,4}" title="Format: BTH101, MDIV501, etc.">
-                            <small class="text-muted">Unique code like BTH101, MDIV501</small>
+                                   placeholder="e.g., BIB1101" value="<?php echo e($_POST['course_code'] ?? $course['course_code']); ?>"
+                                   pattern="[A-Z]{2,4}\d{3,4}" title="Format: BIB1101, THE4208, etc.">
+                            <small class="text-muted">Unique code like BIB1101, THE4208</small>
                         </div>
                         <div class="form-group col-md-6">
                             <label>Course Name <span class="text-danger">*</span></label>

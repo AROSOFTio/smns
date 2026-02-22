@@ -42,6 +42,10 @@ function sendScheduledReportNow($conn, $schedule) {
     $filters = json_decode($schedule['filters'] ?? '{}', true) ?: [];
     $type = $schedule['report_type'];
     $csv = '';
+    $csvEscape = function ($value) {
+        $str = str_replace('"', '""', (string)$value);
+        return '"' . $str . '"';
+    };
 
     if ($type === 'enrollment') {
         $from = $filters['from'] ?? date('Y-01-01');
@@ -57,8 +61,13 @@ function sendScheduledReportNow($conn, $schedule) {
         $stmt = $conn->prepare("SELECT DATE_FORMAT(payment_date, '%Y-%m') as period, COALESCE(SUM(amount),0) as total FROM payments WHERE DATE(payment_date) BETWEEN :from AND :to GROUP BY period ORDER BY period");
         $stmt->execute(['from' => $from, 'to' => $to]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $csv .= "Period,Collections\n";
-        foreach ($rows as $r) $csv .= "{$r['period']},{$r['total']}\n";
+        $csv .= "Period,Collections (USD/UGX)\n";
+        foreach ($rows as $r) {
+            $csv .= implode(',', [
+                $csvEscape($r['period']),
+                $csvEscape(Helper::formatCurrencyDual((float)$r['total'], 'UGX'))
+            ]) . "\n";
+        }
     } elseif ($type === 'system') {
         // system overview: semester-by-semester metrics for configured academic year
         $semesterId = $filters['semester_id'] ?? 0;
@@ -81,20 +90,108 @@ function sendScheduledReportNow($conn, $schedule) {
                 $co = $conn->prepare("SELECT COUNT(DISTINCT course_id) FROM course_assignments WHERE semester_id = :sid"); $co->execute(['sid'=>$sid]); $coursesOffered = $co->fetchColumn();
                 $la = $conn->prepare("SELECT COUNT(DISTINCT lecturer_id) FROM course_assignments WHERE semester_id = :sid"); $la->execute(['sid'=>$sid]); $lecturersAssigned = $la->fetchColumn();
                 $gpaS = $conn->prepare("SELECT AVG(semester_gpa) FROM student_gpas WHERE semester_id = :sid"); $gpaS->execute(['sid'=>$sid]); $avgGpa = $gpaS->fetchColumn();
-                $csv .= "{$sem['semester_name']},{$newStudents},{$regTotal},{$regApproved},{$paymentsCollected},{$invoicesIssued},{$outstanding},{$resultsPublished},{$coursesOffered},{$lecturersAssigned},{$avgGpa}\n";
+                $csv .= implode(',', [
+                    $csvEscape($sem['semester_name']),
+                    $csvEscape($newStudents),
+                    $csvEscape($regTotal),
+                    $csvEscape($regApproved),
+                    $csvEscape(Helper::formatCurrencyDual((float)$paymentsCollected, 'UGX')),
+                    $csvEscape($invoicesIssued),
+                    $csvEscape(Helper::formatCurrencyDual((float)$outstanding, 'UGX')),
+                    $csvEscape($resultsPublished),
+                    $csvEscape($coursesOffered),
+                    $csvEscape($lecturersAssigned),
+                    $csvEscape($avgGpa)
+                ]) . "\n";
             }
         }
     } else {
-        // staff -> list lecturers + courses assigned for semester
+        // staff -> lecturers + finance operators workload
         $semesterId = $filters['semester_id'] ?? (Helper::getCurrentSemester()['id'] ?? 0);
-        $stmt = $conn->prepare("SELECT l.id, CONCAT(l.first_name,' ',l.last_name) as lecturer, COUNT(DISTINCT ca.course_id) AS courses_assigned
+        if (!$semesterId) {
+            try {
+                $semesterId = (int)($conn->query("SELECT semester_id FROM course_assignments ORDER BY id DESC LIMIT 1")->fetchColumn() ?: 0);
+            } catch (Exception $e) {
+                $semesterId = 0;
+            }
+        }
+        $from = $filters['from'] ?? date('Y-01-01');
+        $to = $filters['to'] ?? date('Y-m-d');
+
+        $stmt = $conn->prepare("SELECT l.id,
+                                       CONCAT(l.first_name,' ',l.last_name) AS staff_name,
+                                       COUNT(DISTINCT ca.course_id) AS courses_assigned,
+                                       COALESCE(SUM(crs.reg_count),0) AS students_registered
                                  FROM lecturers l
                                  LEFT JOIN course_assignments ca ON ca.lecturer_id = l.id AND ca.semester_id = :sid
-                                 GROUP BY l.id");
+                                 LEFT JOIN (
+                                     SELECT course_id, semester_id, COUNT(*) AS reg_count
+                                     FROM course_registrations
+                                     WHERE semester_id = :sid
+                                     GROUP BY course_id, semester_id
+                                 ) crs ON crs.course_id = ca.course_id AND crs.semester_id = ca.semester_id
+                                 GROUP BY l.id, staff_name");
         $stmt->execute(['sid' => $semesterId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $csv .= "Lecturer,Courses Assigned\n";
-        foreach ($rows as $r) $csv .= "{$r['lecturer']},{$r['courses_assigned']}\n";
+
+        $fstmt = $conn->prepare("SELECT u.id,
+                                        COALESCE(NULLIF(TRIM(CONCAT(COALESCE(fs.first_name,''), ' ', COALESCE(fs.last_name,''))), ''), u.username) AS staff_name,
+                                        COUNT(p.id) AS payments_processed,
+                                        COALESCE(SUM(p.amount),0) AS amount_collected
+                                 FROM users u
+                                 LEFT JOIN finance_staff fs ON fs.user_id = u.id
+                                 LEFT JOIN payments p ON p.received_by = u.id
+                                    AND DATE(p.payment_date) BETWEEN :from AND :to
+                                    AND (:sid = 0 OR p.semester_id = :sid)
+                                 WHERE u.role = 'finance' AND u.status = 'active'
+                                 GROUP BY u.id, staff_name
+                                 ORDER BY payments_processed DESC");
+        $fstmt->execute(['from' => $from, 'to' => $to, 'sid' => $semesterId]);
+        $financeRows = $fstmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $astmt = $conn->prepare("SELECT c.course_code,
+                                        c.course_name,
+                                        COUNT(DISTINCT ca.lecturer_id) AS lecturer_count,
+                                        GROUP_CONCAT(DISTINCT CONCAT(l.first_name, ' ', l.last_name) ORDER BY l.last_name SEPARATOR ', ') AS lecturers
+                                 FROM course_assignments ca
+                                 INNER JOIN courses c ON c.id = ca.course_id
+                                 INNER JOIN lecturers l ON l.id = ca.lecturer_id
+                                 WHERE (:sid = 0 OR ca.semester_id = :sid)
+                                 GROUP BY c.id, c.course_code, c.course_name
+                                 ORDER BY c.course_code ASC");
+        $astmt->execute(['sid' => $semesterId]);
+        $assignmentRows = $astmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $csv .= "Staff Type,Name,Primary Metric,Primary Value,Secondary Metric,Secondary Value\n";
+        foreach ($rows as $r) {
+            $csv .= implode(',', [
+                $csvEscape('Lecturer'),
+                $csvEscape($r['staff_name']),
+                $csvEscape('Courses Assigned'),
+                $csvEscape($r['courses_assigned']),
+                $csvEscape('Students Registered'),
+                $csvEscape($r['students_registered'])
+            ]) . "\n";
+        }
+        foreach ($financeRows as $r) {
+            $csv .= implode(',', [
+                $csvEscape('Finance Operator'),
+                $csvEscape($r['staff_name']),
+                $csvEscape('Payments Processed'),
+                $csvEscape($r['payments_processed']),
+                $csvEscape('Amount Collected'),
+                $csvEscape(Helper::formatCurrencyDual((float)$r['amount_collected'], 'UGX'))
+            ]) . "\n";
+        }
+        $csv .= "\nCourse Code,Course Name,Lecturers Assigned,Lecturer Count\n";
+        foreach ($assignmentRows as $r) {
+            $csv .= implode(',', [
+                $csvEscape($r['course_code']),
+                $csvEscape($r['course_name']),
+                $csvEscape($r['lecturers']),
+                $csvEscape($r['lecturer_count'])
+            ]) . "\n";
+        }
     }
 
     // save CSV to downloads
@@ -216,11 +313,86 @@ $schedules = $conn->query("SELECT * FROM scheduled_reports ORDER BY active DESC,
 // Helpers for select options
 $programs = $conn->query("SELECT id, program_name FROM programs ORDER BY program_name")->fetchAll(PDO::FETCH_ASSOC);
 $semesters = $conn->query("SELECT s.id, CONCAT(ay.year_name,' - ', s.semester_name) AS label FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id ORDER BY ay.year_name DESC, s.semester_number DESC")->fetchAll(PDO::FETCH_ASSOC);
+$academicYears = $conn->query("SELECT id, year_name FROM academic_years ORDER BY year_name DESC")->fetchAll(PDO::FETCH_ASSOC);
 
 $pageTitle = 'Scheduled Reports - ' . APP_NAME;
 include '../../../includes/header.php';
 ?>
 <?php include '../../../includes/admin/sidebar.php'; ?>
+<style>
+    html, body {
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+    .main-content, .content-area {
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+    .content-area .card {
+        overflow: hidden;
+    }
+    .content-area .table-responsive {
+        max-width: 100%;
+        overflow-x: auto;
+    }
+    .content-area form.form-inline {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: flex-end;
+    }
+    .content-area form.form-inline .form-control {
+        max-width: 100%;
+    }
+    html[data-theme='dark'] .content-area.container {
+        color: #e2e8f0;
+    }
+    html[data-theme='dark'] .content-area .card {
+        background: #0b1220;
+        border: 1px solid #1e293b;
+        box-shadow: 0 8px 24px rgba(2, 6, 23, 0.45);
+    }
+    html[data-theme='dark'] .content-area .card-body {
+        color: #e2e8f0;
+    }
+    html[data-theme='dark'] .content-area .table {
+        color: #e2e8f0;
+    }
+    html[data-theme='dark'] .content-area .table thead th {
+        background: #152238;
+        border-color: #26354d;
+        color: #cbd5e1;
+    }
+    html[data-theme='dark'] .content-area .table td {
+        border-color: #223047;
+    }
+    html[data-theme='dark'] .content-area .table-hover tbody tr:hover,
+    html[data-theme='dark'] .content-area .table tbody tr:hover {
+        background: rgba(59, 130, 246, 0.14);
+    }
+    html[data-theme='dark'] .content-area a {
+        color: #93c5fd;
+    }
+    html[data-theme='dark'] .content-area a:hover {
+        color: #bfdbfe;
+    }
+    html[data-theme='dark'] .content-area .btn-outline-secondary {
+        color: #cbd5e1;
+        border-color: #334155;
+    }
+    html[data-theme='dark'] .content-area .btn-outline-secondary:hover {
+        background: #1f2937;
+        color: #f8fafc;
+    }
+    html[data-theme='dark'] .content-area .badge-success {
+        background: #166534;
+        color: #dcfce7;
+    }
+    html[data-theme='dark'] .content-area .badge-secondary {
+        background: #334155;
+        color: #e2e8f0;
+    }
+</style>
 <div class="main-content" id="mainContent">
     <div class="topbar"><div class="topbar-left"><h4>Scheduled Reports</h4></div></div>
     <div class="content-area container p-4">

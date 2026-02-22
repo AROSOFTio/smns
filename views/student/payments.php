@@ -1334,8 +1334,8 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
         <span class="chip gray">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span>
-        <span class="chip gray">TOTAL FEES BAL DUE: <?php echo number_format($outstandingBalance); ?>/=</span>
-        <span class="chip blue">BALANCE ON ACCOUNT: <?php echo number_format((float)($studentProfile['account_balance'] ?? 0)); ?>/=</span>
+        <span class="chip gray">TOTAL FEES BAL DUE: <?php echo Helper::formatCurrencyDual((float)$outstandingBalance, 'UGX'); ?></span>
+        <span class="chip blue">BALANCE ON ACCOUNT: <?php echo Helper::formatCurrencyDual((float)($studentProfile['account_balance'] ?? 0), 'UGX'); ?></span>
     </div>
 
     <div class="prn-wrap">
@@ -1358,9 +1358,9 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
 
             <?php if ($section === 'bills'): ?>
                 <div class="summary-grid">
-                    <div class="sum-card"><div class="sum-label">TOTAL INVOICE AMOUNT</div><div class="sum-value"><?php echo number_format($invoiceTotals['total']); ?> UGX</div></div>
-                    <div class="sum-card"><div class="sum-label">TOTAL INVOICE AMOUNT PAID</div><div class="sum-value"><?php echo number_format($invoiceTotals['paid']); ?> UGX</div></div>
-                    <div class="sum-card"><div class="sum-label">TOTAL INVOICE AMOUNT DUE</div><div class="sum-value due"><?php echo number_format($invoiceTotals['due']); ?> UGX</div></div>
+                    <div class="sum-card"><div class="sum-label">TOTAL INVOICE AMOUNT</div><div class="sum-value"><?php echo Helper::formatCurrencyDual((float)$invoiceTotals['total'], 'UGX'); ?></div></div>
+                    <div class="sum-card"><div class="sum-label">TOTAL INVOICE AMOUNT PAID</div><div class="sum-value"><?php echo Helper::formatCurrencyDual((float)$invoiceTotals['paid'], 'UGX'); ?></div></div>
+                    <div class="sum-card"><div class="sum-label">TOTAL INVOICE AMOUNT DUE</div><div class="sum-value due"><?php echo Helper::formatCurrencyDual((float)$invoiceTotals['due'], 'UGX'); ?></div></div>
                     <div class="sum-card"><div class="sum-label">PERCENTAGE COMPLETION</div><div class="sum-value"><?php echo number_format($invoiceTotals['pct'], 2); ?> %</div></div>
                 </div>
 
@@ -1397,10 +1397,10 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                                 <td><?php echo $sn++; ?></td>
                                                 <td><?php echo e($row['invoice_number'] ?? '-'); ?></td>
                                                 <td><?php echo e($category); ?></td>
-                                                <td style="text-align:right;"><?php echo number_format((float)($row['total_amount'] ?? 0)); ?></td>
-                                                <td style="text-align:right;"><?php echo number_format((float)($row['amount_paid'] ?? 0)); ?></td>
-                                                <td style="text-align:right;"><?php echo number_format($dueVal); ?></td>
-                                                <td>UGX</td>
+                                                <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($row['total_amount'] ?? 0), 'UGX'); ?></td>
+                                                <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($row['amount_paid'] ?? 0), 'UGX'); ?></td>
+                                                <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)$dueVal, 'UGX'); ?></td>
+                                                <td>USD/UGX</td>
                                                 <td><?php echo e($category); ?></td>
                                                 <td><?php echo $dueVal <= 0 ? '<span class="badge-cleared"><i class="fas fa-check-circle"></i> Cleared</span>' : '<span class="badge-pending"><i class="fas fa-clock"></i> Pending</span>'; ?></td>
                                             </tr>
@@ -1408,9 +1408,9 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                     </tbody>
                                 </table>
                                 <div class="group-total">
-                                    <div>TOTAL AMOUNT: <span style="color:#059669;"><?php echo number_format($group['total']); ?></span></div>
-                                    <div>TOTAL AMOUNT PAID: <span style="color:#059669;"><?php echo number_format($group['paid']); ?></span></div>
-                                    <div>TOTAL AMOUNT DUE: <span style="color:#dc2626;"><?php echo number_format($group['due']); ?></span></div>
+                                    <div>TOTAL AMOUNT: <span style="color:#059669;"><?php echo Helper::formatCurrencyDual((float)$group['total'], 'UGX'); ?></span></div>
+                                    <div>TOTAL AMOUNT PAID: <span style="color:#059669;"><?php echo Helper::formatCurrencyDual((float)$group['paid'], 'UGX'); ?></span></div>
+                                    <div>TOTAL AMOUNT DUE: <span style="color:#dc2626;"><?php echo Helper::formatCurrencyDual((float)$group['due'], 'UGX'); ?></span></div>
                                     <div>COMPLETION: <span style="color:#059669;"><?php echo number_format($pct, 2); ?> %</span></div>
                                 </div>
                             </div>
@@ -1430,7 +1430,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                 <div class="alert alert-info mb-0">No invoice payment transactions found.</div>
                             <?php else: ?>
                                 <table class="tbl">
-                                    <thead><tr><th>Payment ID</th><th>Invoice No.</th><th>Reference</th><th>Method</th><th>Date</th><th>Amount (UGX)</th></tr></thead>
+                                    <thead><tr><th>Payment ID</th><th>Invoice No.</th><th>Reference</th><th>Method</th><th>Date</th><th>Amount (USD/UGX)</th></tr></thead>
                                     <tbody>
                                         <?php foreach ($invoiceTransactions as $tx): ?>
                                             <tr>
@@ -1439,7 +1439,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                                 <td><?php echo e($tx['reference_number'] ?: ($tx['receipt_number'] ?: '-')); ?></td>
                                                 <td><?php echo e(ucwords(str_replace('_', ' ', (string)($tx['payment_method'] ?? '-')))); ?></td>
                                                 <td><?php echo !empty($tx['payment_date']) ? e(date('d M Y', strtotime($tx['payment_date']))) : '-'; ?></td>
-                                                <td style="text-align:right;"><?php echo number_format((float)($tx['amount'] ?? 0)); ?></td>
+                                                <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($tx['amount'] ?? 0), 'UGX'); ?></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -1450,7 +1450,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                 <div class="alert alert-info mb-0">No fee deposit transactions found.</div>
                             <?php else: ?>
                                 <table class="tbl">
-                                    <thead><tr><th>Payment ID</th><th>Reference</th><th>Method</th><th>Date</th><th>Narration</th><th>Amount (UGX)</th></tr></thead>
+                                    <thead><tr><th>Payment ID</th><th>Reference</th><th>Method</th><th>Date</th><th>Narration</th><th>Amount (USD/UGX)</th></tr></thead>
                                     <tbody>
                                         <?php foreach ($depositTransactions as $tx): ?>
                                             <tr>
@@ -1459,7 +1459,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                                 <td><?php echo e(ucwords(str_replace('_', ' ', (string)($tx['payment_method'] ?? '-')))); ?></td>
                                                 <td><?php echo !empty($tx['payment_date']) ? e(date('d M Y', strtotime($tx['payment_date']))) : '-'; ?></td>
                                                 <td><?php echo e($tx['notes'] ?? '-'); ?></td>
-                                                <td style="text-align:right;"><?php echo number_format((float)($tx['amount'] ?? 0)); ?></td>
+                                                <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($tx['amount'] ?? 0), 'UGX'); ?></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -1479,7 +1479,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                     <div class="alert alert-success mt-2 mb-0">
                                         <strong>Status:</strong> Paid |
                                         <strong>Payment ID:</strong> <?php echo e($prnStatusRow['payment_id'] ?? '-'); ?> |
-                                        <strong>Amount:</strong> <?php echo number_format((float)($prnStatusRow['amount'] ?? 0)); ?> UGX |
+                                        <strong>Amount:</strong> <?php echo Helper::formatCurrencyDual((float)($prnStatusRow['amount'] ?? 0), 'UGX'); ?> |
                                         <strong>Date:</strong> <?php echo !empty($prnStatusRow['payment_date']) ? e(date('d M Y', strtotime($prnStatusRow['payment_date']))) : '-'; ?>
                                     </div>
                                 <?php else: ?>
@@ -1501,7 +1501,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                 <div class="alert alert-info mb-0">No migrated invoice payments available.</div>
                             <?php else: ?>
                                 <table class="tbl">
-                                    <thead><tr><th>Payment ID</th><th>Invoice No.</th><th>Reference</th><th>Method</th><th>Date</th><th>Narration</th><th>Amount (UGX)</th></tr></thead>
+                                    <thead><tr><th>Payment ID</th><th>Invoice No.</th><th>Reference</th><th>Method</th><th>Date</th><th>Narration</th><th>Amount (USD/UGX)</th></tr></thead>
                                     <tbody>
                                         <?php foreach ($migratedInvoiceTransactions as $tx): ?>
                                             <tr>
@@ -1511,7 +1511,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                                 <td><?php echo e(ucwords(str_replace('_', ' ', (string)($tx['payment_method'] ?? '-')))); ?></td>
                                                 <td><?php echo !empty($tx['payment_date']) ? e(date('d M Y', strtotime($tx['payment_date']))) : '-'; ?></td>
                                                 <td><?php echo e($tx['notes'] ?? '-'); ?></td>
-                                                <td style="text-align:right;"><?php echo number_format((float)($tx['amount'] ?? 0)); ?></td>
+                                                <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($tx['amount'] ?? 0), 'UGX'); ?></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -1522,7 +1522,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                 <div class="alert alert-info mb-0">No migrated fee deposits available.</div>
                             <?php else: ?>
                                 <table class="tbl">
-                                    <thead><tr><th>Payment ID</th><th>Reference</th><th>Method</th><th>Date</th><th>Narration</th><th>Amount (UGX)</th></tr></thead>
+                                    <thead><tr><th>Payment ID</th><th>Reference</th><th>Method</th><th>Date</th><th>Narration</th><th>Amount (USD/UGX)</th></tr></thead>
                                     <tbody>
                                         <?php foreach ($migratedDepositTransactions as $tx): ?>
                                             <tr>
@@ -1531,7 +1531,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                                 <td><?php echo e(ucwords(str_replace('_', ' ', (string)($tx['payment_method'] ?? '-')))); ?></td>
                                                 <td><?php echo !empty($tx['payment_date']) ? e(date('d M Y', strtotime($tx['payment_date']))) : '-'; ?></td>
                                                 <td><?php echo e($tx['notes'] ?? '-'); ?></td>
-                                                <td style="text-align:right;"><?php echo number_format((float)($tx['amount'] ?? 0)); ?></td>
+                                                <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($tx['amount'] ?? 0), 'UGX'); ?></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>

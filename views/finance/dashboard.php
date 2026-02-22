@@ -147,7 +147,7 @@ include '../../includes/header.php';
             <div class="stat-card">
                 <div class="stat-icon">💰</div>
                 <div class="stat-details">
-                    <h3><?php echo Helper::formatCurrency($paymentsToday); ?></h3>
+                    <h3><?php echo Helper::formatCurrencyDual((float)$paymentsToday, 'UGX'); ?></h3>
                     <p>Today's Collections</p>
                 </div>
             </div>
@@ -155,7 +155,7 @@ include '../../includes/header.php';
             <div class="stat-card">
                 <div class="stat-icon">📈</div>
                 <div class="stat-details">
-                    <h3><?php echo Helper::formatCurrency($totalCollections); ?></h3>
+                    <h3><?php echo Helper::formatCurrencyDual((float)$totalCollections, 'UGX'); ?></h3>
                     <p>Semester Collections</p>
                     <small style="color:#6b7280;font-weight:600;">CURRENT YR. <?php echo e($currentAcademicYearLabel); ?></small>
                 </div>
@@ -164,7 +164,7 @@ include '../../includes/header.php';
             <div class="stat-card">
                 <div class="stat-icon">⏰</div>
                 <div class="stat-details">
-                    <h3><?php echo Helper::formatCurrency($outstandingBalance); ?></h3>
+                    <h3><?php echo Helper::formatCurrencyDual((float)$outstandingBalance, 'UGX'); ?></h3>
                     <p>Outstanding Balances</p>
                 </div>
             </div>
@@ -255,7 +255,7 @@ include '../../includes/header.php';
                                             <?php echo e($academicStatusLabel); ?>
                                         </span>
                                     </td>
-                                    <td><strong><?php echo Helper::formatCurrency($payment['amount']); ?></strong></td>
+                                    <td><strong><?php echo Helper::formatCurrencyDual((float)$payment['amount'], 'UGX'); ?></strong></td>
                                     <td><?php echo ucfirst(str_replace('_', ' ', $payment['payment_method'])); ?></td>
                                     <td><?php echo Helper::formatDate($payment['payment_date']); ?></td>
                                     <td>

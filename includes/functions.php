@@ -642,6 +642,42 @@ function getStudentCurrentSemesterContext($conn, $studentId) {
  */
 function auto_assign_courses(PDO $conn, int $studentId, int $semesterId, $adminId = null, $programId = null, $levelYear = null) {
     try {
+        $studentId = (int)$studentId;
+        $semesterId = (int)$semesterId;
+        $programId = (int)$programId;
+        $levelYear = (int)$levelYear;
+        if ($studentId <= 0 || $semesterId <= 0) {
+            return false;
+        }
+
+        // Resolve missing routing metadata to avoid cross-year/course mixing.
+        if ($programId <= 0) {
+            $pstmt = $conn->prepare("SELECT program_id FROM students WHERE id = :id LIMIT 1");
+            $pstmt->execute(['id' => $studentId]);
+            $programId = (int)$pstmt->fetchColumn();
+        }
+        if ($levelYear <= 0) {
+            $ystmt = $conn->prepare("
+                SELECT year_of_study
+                FROM semester_registrations
+                WHERE student_id = :student_id
+                  AND semester_id = :semester_id
+                  AND status = 'approved'
+                ORDER BY id DESC
+                LIMIT 1
+            ");
+            $ystmt->execute([
+                'student_id' => $studentId,
+                'semester_id' => $semesterId
+            ]);
+            $levelYear = (int)$ystmt->fetchColumn();
+        }
+        if ($levelYear <= 0) {
+            $ystmt = $conn->prepare("SELECT COALESCE(level_year, year_of_study, 1) FROM students WHERE id = :id LIMIT 1");
+            $ystmt->execute(['id' => $studentId]);
+            $levelYear = max(1, (int)$ystmt->fetchColumn());
+        }
+
         // Resolve available columns to support mixed schema versions safely.
         $availableCols = [];
         $colStmt = $conn->query("SHOW COLUMNS FROM course_registrations");
@@ -665,7 +701,14 @@ function auto_assign_courses(PDO $conn, int $studentId, int $semesterId, $adminI
         $selectColSql = implode(', ', $selectCols);
         $baseParams = ['student_id' => $studentId, 'semester_id' => $semesterId, 'approved_by' => $adminId];
 
+        // Resolve semester number once so every path stays semester-accurate.
+        $semNum = null;
+        $sstmt = $conn->prepare('SELECT semester_number FROM semesters WHERE id = :id LIMIT 1');
+        $sstmt->execute(['id' => $semesterId]);
+        $semNum = (int)$sstmt->fetchColumn();
+
         // Insert from course_assignments (if table exists) for the exact semester.
+        // Apply filters through courses table so we do not mix year/program/semester.
         $hasCourseAssignments = false;
         try {
             $tableCheck = $conn->prepare("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'course_assignments'");
@@ -675,36 +718,41 @@ function auto_assign_courses(PDO $conn, int $studentId, int $semesterId, $adminI
             $hasCourseAssignments = false;
         }
 
-        if ($hasCourseAssignments) {
+        if ($hasCourseAssignments && $semNum > 0) {
+            $assignWhere = "ca.semester_id = :semester_id
+                AND ca.status = 'active'
+                AND c.status = 'active'
+                AND (c.semester_offered = :sem_num OR c.semester_offered = 3)";
+            $assignParams = $baseParams + ['sem_num' => $semNum];
+            $assignWhere .= " AND c.level_year = :level_year";
+            $assignParams['level_year'] = (int)$levelYear;
+            if ((int)$programId > 0) {
+                $assignWhere .= " AND (c.program_id = :program_id OR c.program_id IS NULL OR c.program_id = 0)";
+                $assignParams['program_id'] = (int)$programId;
+            }
             $assignSql = "INSERT INTO course_registrations ($insertColSql)
                 SELECT $selectColSql
                 FROM course_assignments ca
                 JOIN courses c ON ca.course_id = c.id
-                WHERE ca.semester_id = :semester_id AND ca.status = 'active' AND c.status = 'active'
+                WHERE $assignWhere
                 AND NOT EXISTS (
                     SELECT 1 FROM course_registrations cr
                     WHERE cr.student_id = :student_id AND cr.course_id = c.id AND cr.semester_id = :semester_id
                 )";
             $insAssign = $conn->prepare($assignSql);
-            $insAssign->execute($baseParams);
+            $insAssign->execute($assignParams);
         }
 
-        // Resolve semester number for sem_num parameter
-        $semNum = null;
-        $sstmt = $conn->prepare('SELECT semester_number FROM semesters WHERE id = :id LIMIT 1');
-        $sstmt->execute(['id' => $semesterId]);
-        $semNum = $sstmt->fetchColumn();
+        if ($semNum <= 0) {
+            return true;
+        }
 
-        // Fallback chain from strict to broad so courses still assign from Admin->Courses
-        // even when program/year mappings are incomplete.
+        // Fallback chain from strict to broad while keeping semester isolation.
         $fallbackWhereClauses = [];
-        if ($programId && $levelYear) {
+        if ($programId > 0) {
             $fallbackWhereClauses[] = "c.status = 'active' AND c.program_id = :program_id AND c.level_year = :level_year AND (c.semester_offered = :sem_num OR c.semester_offered = 3)";
         }
-        if ($levelYear) {
-            $fallbackWhereClauses[] = "c.status = 'active' AND c.level_year = :level_year AND (c.semester_offered = :sem_num OR c.semester_offered = 3)";
-        }
-        $fallbackWhereClauses[] = "c.status = 'active' AND (c.semester_offered = :sem_num OR c.semester_offered = 3)";
+        $fallbackWhereClauses[] = "c.status = 'active' AND c.level_year = :level_year AND (c.semester_offered = :sem_num OR c.semester_offered = 3)";
 
         foreach ($fallbackWhereClauses as $whereSql) {
             $insFallback = "INSERT INTO course_registrations ($insertColSql)
@@ -719,29 +767,9 @@ function auto_assign_courses(PDO $conn, int $studentId, int $semesterId, $adminI
             if (strpos($whereSql, ':program_id') !== false) {
                 $params['program_id'] = $programId;
             }
-            if (strpos($whereSql, ':level_year') !== false) {
-                $params['level_year'] = $levelYear;
-            }
+            $params['level_year'] = $levelYear;
             $insStmt = $conn->prepare($insFallback);
             $insStmt->execute($params);
-        }
-
-        // Final safety net: if still none assigned for this semester, assign all active courses.
-        $countStmt = $conn->prepare("SELECT COUNT(*) FROM course_registrations WHERE student_id = :student_id AND semester_id = :semester_id");
-        $countStmt->execute(['student_id' => $studentId, 'semester_id' => $semesterId]);
-        $assignedCount = (int)$countStmt->fetchColumn();
-        if ($assignedCount === 0) {
-            $insAny = "INSERT INTO course_registrations ($insertColSql)
-                SELECT $selectColSql
-                FROM courses c
-                WHERE c.status = 'active'
-                AND NOT EXISTS (
-                    SELECT 1 FROM course_registrations cr
-                    WHERE cr.student_id = :student_id AND cr.course_id = c.id AND cr.semester_id = :semester_id
-                )";
-            $paramsAny = ['student_id' => $studentId, 'semester_id' => $semesterId, 'approved_by' => $adminId];
-            $insAnyStmt = $conn->prepare($insAny);
-            $insAnyStmt->execute($paramsAny);
         }
 
         return true;

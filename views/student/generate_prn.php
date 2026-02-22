@@ -167,7 +167,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gener
             $prnError = 'Enter a valid deposit amount.';
         } else {
             $generatedPrn = 'PRN' . date('YmdHis') . rand(100, 999);
-            $generatedAmount = number_format((float)$amountRaw, 0);
+            $generatedAmount = (float)$amountRaw;
             try {
                 $session->setFlash('success', 'PRN generated successfully: ' . $generatedPrn);
             } catch (Exception $e) {
@@ -741,8 +741,8 @@ html[data-theme='dark'] .dial-code {
         <span class="chip gray">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span>
-        <span class="chip gray">TOTAL FEES BAL DUE: <?php echo number_format($outstandingBalance); ?>/=</span>
-        <span class="chip blue">BALANCE ON ACCOUNT: <?php echo number_format((float)($studentProfile['account_balance'] ?? 0)); ?>/=</span>
+        <span class="chip gray">TOTAL FEES BAL DUE: <?php echo Helper::formatCurrencyDual((float)$outstandingBalance, 'UGX'); ?></span>
+        <span class="chip blue">BALANCE ON ACCOUNT: <?php echo Helper::formatCurrencyDual((float)($studentProfile['account_balance'] ?? 0), 'UGX'); ?></span>
     </div>
 
     <div class="prn-wrap">
@@ -765,7 +765,7 @@ html[data-theme='dark'] .dial-code {
                     <div class="alert alert-warning mb-2"><?php echo e($invoiceDataError); ?></div>
                 <?php elseif (!empty($unpaidInvoices)): ?>
                     <div class="notice" style="background:#ecfdf3; border-color:#86efac; color:#166534;">
-                        You have <?php echo count($unpaidInvoices); ?> unpaid invoice(s). Total outstanding: <?php echo number_format($unpaidInvoicesTotal); ?>/=
+                        You have <?php echo count($unpaidInvoices); ?> unpaid invoice(s). Total outstanding: <?php echo Helper::formatCurrencyDual((float)$unpaidInvoicesTotal, 'UGX'); ?>
                     </div>
                 <?php endif; ?>
 
@@ -774,7 +774,7 @@ html[data-theme='dark'] .dial-code {
                     <div class="acc-body" id="acc_all_pending">
                         <?php if (!empty($unpaidInvoices)): ?>
                             <div style="font-size:0.86rem; margin-bottom:8px; color:#334155;">
-                                All pending invoices selected. Total amount: <strong><?php echo number_format($unpaidInvoicesTotal); ?>/=</strong>
+                                All pending invoices selected. Total amount: <strong><?php echo Helper::formatCurrencyDual((float)$unpaidInvoicesTotal, 'UGX'); ?></strong>
                             </div>
                             <table class="prn-list-table">
                                 <thead>
@@ -794,7 +794,7 @@ html[data-theme='dark'] .dial-code {
                                             <td><?php echo e(trim((string)($invoice['academic_year'] ?? '-') . ' ' . (string)($invoice['semester_name'] ?? ''))); ?></td>
                                             <td><?php echo !empty($invoice['due_date']) ? e(date('d M Y', strtotime($invoice['due_date']))) : '-'; ?></td>
                                             <td><span class="status-pill <?php echo e($invStatus); ?>"><?php echo e(strtoupper($invStatus)); ?></span></td>
-                                            <td style="text-align:right;"><?php echo number_format((float)($invoice['balance'] ?? 0)); ?>/=</td>
+                                            <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($invoice['balance'] ?? 0), 'UGX'); ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -820,7 +820,7 @@ html[data-theme='dark'] .dial-code {
                                     <?php foreach ($unpaidInvoices as $invoice): ?>
                                         <tr>
                                             <td><?php echo e($invoice['invoice_number'] ?? '-'); ?></td>
-                                            <td style="text-align:right;"><?php echo number_format((float)($invoice['balance'] ?? 0)); ?>/=</td>
+                                            <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($invoice['balance'] ?? 0), 'UGX'); ?></td>
                                             <td><?php echo e($invoice['invoice_number'] ?? '-'); ?></td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -848,7 +848,7 @@ html[data-theme='dark'] .dial-code {
                             <button type="submit" class="prn-generate-btn">GENERATE PRN</button>
                         </form>
                         <?php if (!empty($generatedPrn)): ?>
-                            <div class="prn-generated">Generated PRN: <?php echo e($generatedPrn); ?> | Amount: <?php echo e($generatedAmount); ?>/=</div>
+                            <div class="prn-generated">Generated PRN: <?php echo e($generatedPrn); ?> | Amount: <?php echo Helper::formatCurrencyDual((float)$generatedAmount, 'UGX'); ?></div>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -869,7 +869,7 @@ html[data-theme='dark'] .dial-code {
                             <?php $refNumber = $ref['reference_number'] ?: ($ref['receipt_number'] ?: ($ref['payment_id'] ?? '-')); ?>
                             <div class="ref-line">
                                 REFERENCE: <span class="red"><?php echo e($refNumber); ?></span>,
-                                AMOUNT TO PAY: <span class="red"><?php echo number_format((float)($ref['amount'] ?? 0)); ?></span> UGX,
+                                AMOUNT TO PAY: <span class="red"><?php echo Helper::formatCurrencyDual((float)($ref['amount'] ?? 0), 'UGX'); ?></span>,
                                 EXPIRY DATE: <span class="red"><?php echo e(date('Y.m.d', strtotime($ref['expiry_date']))); ?></span>,
                                 GENERATED BY: <span class="red">SELF</span>
                             </div>
@@ -885,7 +885,7 @@ html[data-theme='dark'] .dial-code {
                             <?php $refNumber = $ref['reference_number'] ?: ($ref['receipt_number'] ?: ($ref['payment_id'] ?? '-')); ?>
                             <div class="ref-line" style="opacity:0.85;">
                                 REFERENCE: <span class="red"><?php echo e($refNumber); ?></span>,
-                                AMOUNT TO PAY: <span class="red"><?php echo number_format((float)($ref['amount'] ?? 0)); ?></span> UGX,
+                                AMOUNT TO PAY: <span class="red"><?php echo Helper::formatCurrencyDual((float)($ref['amount'] ?? 0), 'UGX'); ?></span>,
                                 EXPIRY DATE: <span class="red"><?php echo e(date('Y.m.d', strtotime($ref['expiry_date']))); ?></span>,
                                 GENERATED BY: <span class="red">SELF</span>
                             </div>

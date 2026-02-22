@@ -31,14 +31,16 @@ try {
     }
 
 
-    // 3. Add missing course registrations for all students in program 7 for the 7 required courses
+    // 3. Add missing course registrations for all students in BTH program for Year 4 Semester 1 courses
     $requiredCourses = [
-        'TBB4119', 'TDT4129', 'TJC4137', 'TDT4137', 'TLI4167', 'TPT4187', 'TST4157'
+        'THE4101', 'MIN4102', 'PST4103', 'MIS4104', 'RES4105', 'BIB4106'
     ];
-    $program_id = 7;
+    $program_id = (int)($conn->query("SELECT id FROM programs WHERE UPPER(program_code) = 'BTH' LIMIT 1")->fetchColumn() ?: 1);
     $added = 0;
-    // Get all students in program 7
-    $students = $conn->query("SELECT id FROM students WHERE program_id=7")->fetchAll(PDO::FETCH_ASSOC);
+    // Get all students in the selected program
+    $studentsStmt = $conn->prepare("SELECT id FROM students WHERE program_id = ?");
+    $studentsStmt->execute([$program_id]);
+    $students = $studentsStmt->fetchAll(PDO::FETCH_ASSOC);
     foreach ($students as $s) {
         foreach ($requiredCourses as $cc) {
             $course = $conn->prepare("SELECT id FROM courses WHERE course_code=? AND program_id=? AND level_year=4 AND semester_offered=1 LIMIT 1");
@@ -56,7 +58,7 @@ try {
             }
         }
     }
-    echo "Added $added course registrations for Year 4 Semester 1 for program 7.<br>\n";
+    echo "Added $added course registrations for Year 4 Semester 1 for program {$program_id}.<br>\n";
 
 } catch (Exception $e) {
     echo '<b>Error:</b> ' . $e->getMessage();

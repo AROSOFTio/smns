@@ -10,17 +10,16 @@ try {
     $db   = new Database();
     $conn = $db->getConnection();
 
-    // Define the required Year 4 Semester 1 courses for program_id=7
+    // Define the required Year 4 Semester 1 courses for BTH program
     $requiredCourses = [
-        ['course_code' => 'TBB4119', 'course_name' => 'NT: Book of Revelation'],
-        ['course_code' => 'TDT4129', 'course_name' => 'Dogmatic Theology: Mariology'],
-        ['course_code' => 'TJC4137', 'course_name' => 'Canon Law: Sanctifying Office of the Church'],
-        ['course_code' => 'TDT4137', 'course_name' => 'Dogmatic Theology: Sacraments II'],
-        ['course_code' => 'TLI4167', 'course_name' => 'Liturgy: Sacraments of healing: Reconciliation and Anointing of the Sick'],
-        ['course_code' => 'TPT4187', 'course_name' => 'PastoralTheology: Human Promotion and Self - reliance'],
-        ['course_code' => 'TST4157', 'course_name' => 'Spiritual of the Laity, Consecrated Life and some Challenges in life'],
+        ['course_code' => 'THE4101', 'course_name' => 'Advanced Systematic Theology'],
+        ['course_code' => 'MIN4102', 'course_name' => 'Church Planting and Growth Strategy'],
+        ['course_code' => 'PST4103', 'course_name' => 'Advanced Pastoral Counseling'],
+        ['course_code' => 'MIS4104', 'course_name' => 'Global Mission Strategy and Leadership'],
+        ['course_code' => 'RES4105', 'course_name' => 'Theological Research Methods'],
+        ['course_code' => 'BIB4106', 'course_name' => 'Biblical Hermeneutics and Application'],
     ];
-    $program_id = 7;
+    $program_id = (int)($conn->query("SELECT id FROM programs WHERE UPPER(program_code) = 'BTH' LIMIT 1")->fetchColumn() ?: 1);
     $level_year = 4;
     $semester_offered = 1;
 
@@ -38,7 +37,7 @@ try {
         }
     }
 
-    echo '<br>All required Year 4 Semester 1 courses for program 7 are now present.';
+    echo '<br>All required Year 4 Semester 1 courses for program ' . (int)$program_id . ' are now present.';
 
 } catch (Exception $e) {
     echo '<b>Error:</b> ' . $e->getMessage();

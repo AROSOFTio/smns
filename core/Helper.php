@@ -458,8 +458,63 @@ class Helper {
     /**
      * Format currency
      */
-    public static function formatCurrency($amount, $currency = 'USD') {
-        return '$' . number_format($amount, 2);
+    public static function formatCurrency($amount, $currency = 'UGX', $decimals = null) {
+        $value = (float)$amount;
+        $curr = strtoupper(trim((string)$currency));
+
+        if ($curr === 'USD') {
+            $places = $decimals === null ? 2 : (int)$decimals;
+            return '$' . number_format($value, $places);
+        }
+
+        if ($curr === 'UGX') {
+            $places = $decimals === null ? 0 : (int)$decimals;
+            return 'UGX ' . number_format($value, $places);
+        }
+
+        $places = $decimals === null ? 2 : (int)$decimals;
+        return $curr . ' ' . number_format($value, $places);
+    }
+
+    /**
+     * Resolve USD -> UGX exchange rate from settings.
+     */
+    public static function getUsdUgxRate($fallback = 3700.0) {
+        $rate = (float)$fallback;
+        if (function_exists('getSetting')) {
+            $configured = (float)getSetting('usd_to_ugx_rate', $fallback);
+            if ($configured > 0) {
+                $rate = $configured;
+            }
+        }
+        if ($rate <= 0) {
+            $rate = 3700.0;
+        }
+        return $rate;
+    }
+
+    /**
+     * Format an amount as both USD and UGX.
+     * Assumes UGX base amount unless base currency is explicitly USD.
+     */
+    public static function formatCurrencyDual($amount, $baseCurrency = 'UGX', $usdUgxRate = null) {
+        $rate = $usdUgxRate === null ? self::getUsdUgxRate() : (float)$usdUgxRate;
+        if ($rate <= 0) {
+            $rate = 3700.0;
+        }
+
+        $base = strtoupper(trim((string)$baseCurrency));
+        $numericAmount = (float)$amount;
+
+        if ($base === 'USD') {
+            $usd = $numericAmount;
+            $ugx = $numericAmount * $rate;
+        } else {
+            $ugx = $numericAmount;
+            $usd = $numericAmount / $rate;
+        }
+
+        return self::formatCurrency($usd, 'USD', 2) . ' / ' . self::formatCurrency($ugx, 'UGX', 0);
     }
     
     /**

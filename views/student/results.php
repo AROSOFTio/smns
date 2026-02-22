@@ -134,6 +134,25 @@ if ($studentId > 0) {
             AND r.course_id = cr.course_id
             AND r.semester_id = cr.semester_id
         WHERE cr.student_id = :student_id
+          AND (c.semester_offered = s.semester_number OR c.semester_offered = 3)
+          AND (
+                NOT EXISTS (
+                    SELECT 1
+                    FROM semester_registrations srx
+                    WHERE srx.student_id = cr.student_id
+                      AND srx.semester_id = cr.semester_id
+                      AND srx.status = 'approved'
+                )
+                OR c.level_year = (
+                    SELECT sry.year_of_study
+                    FROM semester_registrations sry
+                    WHERE sry.student_id = cr.student_id
+                      AND sry.semester_id = cr.semester_id
+                      AND sry.status = 'approved'
+                    ORDER BY sry.id DESC
+                    LIMIT 1
+                )
+          )
         ORDER BY COALESCE(c.level_year, 1) ASC, course_semester ASC, c.course_code ASC
     ";
 

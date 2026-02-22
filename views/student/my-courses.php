@@ -116,6 +116,25 @@ if ($studentId > 0) {
             AND r.course_id = cr.course_id
             AND r.semester_id = cr.semester_id
         WHERE cr.student_id = :student_id
+          AND (c.semester_offered = s.semester_number OR c.semester_offered = 3)
+          AND (
+                NOT EXISTS (
+                    SELECT 1
+                    FROM semester_registrations srx
+                    WHERE srx.student_id = cr.student_id
+                      AND srx.semester_id = cr.semester_id
+                      AND srx.status = 'approved'
+                )
+                OR c.level_year = (
+                    SELECT sry.year_of_study
+                    FROM semester_registrations sry
+                    WHERE sry.student_id = cr.student_id
+                      AND sry.semester_id = cr.semester_id
+                      AND sry.status = 'approved'
+                    ORDER BY sry.id DESC
+                    LIMIT 1
+                )
+          )
         ORDER BY COALESCE(c.level_year, 1) ASC, course_semester ASC, c.course_code ASC
     ";
     $stmt = $conn->prepare($sql);
@@ -127,9 +146,6 @@ $best = [];
 foreach ($rows as $row) {
     $status = strtolower((string)($row['result_status'] ?? ''));
     $isPublished = ($status === 'published');
-    if ($resultView === 'results' && !$isPublished) {
-        continue;
-    }
     if ($resultView === 'provisional' && $isPublished) {
         continue;
     }
@@ -420,7 +436,7 @@ html[data-theme='dark'] .badge-provisional {
     <div class="wrap">
         <div class="cardx">
             <div class="cardx-head">
-                <h4 class="cardx-title"><?php echo $resultView === 'results' ? 'MY RESULTS (PUBLISHED)' : 'MY PROVISIONAL RESULTS'; ?></h4>
+                <h4 class="cardx-title"><?php echo $resultView === 'results' ? 'MY RESULTS' : 'MY PROVISIONAL RESULTS'; ?></h4>
                 <div class="view-switch">
                     <a class="<?php echo $resultView === 'results' ? 'active' : ''; ?>" href="my-courses.php?view=results">MY RESULTS</a>
                     <a class="<?php echo $resultView === 'provisional' ? 'active' : ''; ?>" href="my-courses.php?view=provisional">MY PROVISIONAL RESULTS</a>
@@ -428,7 +444,7 @@ html[data-theme='dark'] .badge-provisional {
             </div>
             <div style="padding:1rem 1.2rem;">
                 <?php if (empty($organizedResults)): ?>
-                    <div class="alert alert-info mb-0">No <?php echo $resultView === 'results' ? 'published' : 'provisional'; ?> results found.</div>
+                    <div class="alert alert-info mb-0">No <?php echo $resultView === 'results' ? 'results' : 'provisional'; ?> records found.</div>
                 <?php else: ?>
                     <?php foreach ($organizedResults as $year => $semesters): ?>
                         <?php foreach ($semesters as $semNum => $data): ?>

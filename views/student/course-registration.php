@@ -105,6 +105,17 @@ if (isset($_POST['semester_id'])) {
     $semesterId = (int)$_POST['semester_id'];
 }
 
+// Keep query parameters consistent with the resolved semester id.
+if ($semesterId > 0) {
+    $resolvedSem = $conn->prepare("SELECT academic_year_id, semester_number FROM semesters WHERE id = :id LIMIT 1");
+    $resolvedSem->execute(['id' => $semesterId]);
+    $resolvedSemRow = $resolvedSem->fetch(PDO::FETCH_ASSOC);
+    if ($resolvedSemRow) {
+        $selectedAcademicYearId = (int)$resolvedSemRow['academic_year_id'];
+        $selectedSemesterNumber = (int)$resolvedSemRow['semester_number'];
+    }
+}
+
 // Compute Year of study
 // Allow overriding via GET (user-selectable)
 $yearOfStudy = isset($_GET['year_of_study']) ? (int)$_GET['year_of_study'] : (int)($studentProfile['level_year'] ?? 1);
@@ -333,19 +344,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'enro
     try {
         $conn->beginTransaction();
 
-        $upsertReg = $conn->prepare("
-            INSERT INTO semester_registrations (student_id, semester_id, year_of_study, status, request_date, created_at, updated_at)
-            VALUES (:student_id, :semester_id, :year_of_study, 'approved', NOW(), NOW(), NOW())
-            ON DUPLICATE KEY UPDATE
-                year_of_study = VALUES(year_of_study),
-                status = 'approved',
-                updated_at = NOW()
+        $latestRegStmt = $conn->prepare("
+            SELECT id
+            FROM semester_registrations
+            WHERE student_id = :student_id
+              AND semester_id = :semester_id
+            ORDER BY id DESC
+            LIMIT 1
         ");
-        $upsertReg->execute([
+        $latestRegStmt->execute([
             'student_id' => (int)$studentProfile['id'],
-            'semester_id' => $semesterId,
-            'year_of_study' => $yearOfStudy
+            'semester_id' => (int)$semesterId
         ]);
+        $latestRegId = (int)$latestRegStmt->fetchColumn();
+        if ($latestRegId > 0) {
+            $upReg = $conn->prepare("
+                UPDATE semester_registrations
+                SET year_of_study = :year_of_study,
+                    status = 'approved',
+                    request_date = NOW(),
+                    updated_at = NOW()
+                WHERE id = :id
+            ");
+            $upReg->execute([
+                'year_of_study' => (int)$yearOfStudy,
+                'id' => $latestRegId
+            ]);
+        } else {
+            $insertReg = $conn->prepare("
+                INSERT INTO semester_registrations (student_id, semester_id, year_of_study, status, request_date, created_at, updated_at)
+                VALUES (:student_id, :semester_id, :year_of_study, 'approved', NOW(), NOW(), NOW())
+            ");
+            $insertReg->execute([
+                'student_id' => (int)$studentProfile['id'],
+                'semester_id' => (int)$semesterId,
+                'year_of_study' => (int)$yearOfStudy
+            ]);
+        }
 
         $assignedOk = auto_assign_courses(
             $conn,
@@ -355,17 +390,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'enro
             (int)($studentProfile['program_id'] ?? 0),
             $yearOfStudy
         );
-        if (!$assignedOk) {
-            // Silent retry: do not show warning for eligible students.
-            auto_assign_courses(
-                $conn,
-                (int)$studentProfile['id'],
-                $semesterId,
-                null,
-                (int)($studentProfile['program_id'] ?? 0),
-                null
-            );
-        }
 
         // Status columns can differ across deployments; do not fail enrollment if absent.
         try {
@@ -424,6 +448,7 @@ $approvalCheckStmt = $conn->prepare("
     WHERE sr.student_id = :student_id 
     AND sr.semester_id = :semester_id 
     AND sr.status = 'approved'
+    ORDER BY sr.id DESC
     LIMIT 1
 ");
 $approvalCheckStmt->execute([
@@ -431,9 +456,15 @@ $approvalCheckStmt->execute([
     'semester_id' => $semesterId
 ]);
 $semesterApproval = $approvalCheckStmt->fetch();
+if ($semesterApproval && !isset($_GET['year_of_study'])) {
+    $approvedYear = (int)($semesterApproval['year_of_study'] ?? 0);
+    if ($approvedYear > 0) {
+        $yearOfStudy = $approvedYear;
+    }
+}
 
 // If approval exists but year_of_study has changed, reassign courses
-if ($semesterApproval && isset($semesterApproval['year_of_study']) && $semesterApproval['year_of_study'] != $yearOfStudy) {
+if ($semesterApproval && isset($semesterApproval['year_of_study']) && (int)$semesterApproval['year_of_study'] !== (int)$yearOfStudy) {
     try {
         // Update year_of_study in semester_registrations
         $updateYearStmt = $conn->prepare("
@@ -450,7 +481,15 @@ if ($semesterApproval && isset($semesterApproval['year_of_study']) && $semesterA
         // Delete old course registrations for this semester
         $deleteCoursesStmt = $conn->prepare("
             DELETE FROM course_registrations 
-            WHERE student_id = :student_id AND semester_id = :semester_id
+            WHERE student_id = :student_id
+              AND semester_id = :semester_id
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM results r
+                  WHERE r.student_id = course_registrations.student_id
+                    AND r.course_id = course_registrations.course_id
+                    AND r.semester_id = course_registrations.semester_id
+              )
         ");
         $deleteCoursesStmt->execute([
             'student_id' => $studentProfile['id'],
@@ -469,11 +508,22 @@ if ($semesterApproval && isset($semesterApproval['year_of_study']) && $semesterA
         $assignedCountStmt = $conn->prepare("
             SELECT COUNT(*)
             FROM course_registrations
-            WHERE student_id = :student_id AND semester_id = :semester_id AND status = 'approved'
+            WHERE student_id = :student_id
+              AND semester_id = :semester_id
+              AND status = 'approved'
+              AND EXISTS (
+                  SELECT 1
+                  FROM courses c
+                  WHERE c.id = course_registrations.course_id
+                    AND c.level_year = :level_year
+                    AND (c.semester_offered = :semester_offered OR c.semester_offered = 3)
+              )
         ");
         $assignedCountStmt->execute([
             'student_id' => (int)$studentProfile['id'],
-            'semester_id' => (int)$semesterId
+            'semester_id' => (int)$semesterId,
+            'level_year' => (int)$yearOfStudy,
+            'semester_offered' => (int)$selectedSemesterNumber
         ]);
         $assignedCount = (int)$assignedCountStmt->fetchColumn();
         if ($assignedCount > 0) {
@@ -489,8 +539,8 @@ if ($semesterApproval && isset($semesterApproval['year_of_study']) && $semesterA
     }
 }
 
-// Self-heal: if selected semester has no approved courses, fall back to previous/latest semester
-// and auto-assign courses so students are not blocked on an empty page.
+// Self-heal: if selected semester has no approved courses, try assigning only for
+// this selected semester/year/program without switching the semester context.
 try {
     $approvedCountStmt = $conn->prepare("
         SELECT COUNT(*)
@@ -498,125 +548,31 @@ try {
         WHERE student_id = :student_id
           AND semester_id = :semester_id
           AND status = 'approved'
+          AND EXISTS (
+              SELECT 1
+              FROM courses c
+              WHERE c.id = course_registrations.course_id
+                AND c.level_year = :level_year
+                AND (c.semester_offered = :semester_offered OR c.semester_offered = 3)
+          )
     ");
     $approvedCountStmt->execute([
         'student_id' => (int)$studentProfile['id'],
-        'semester_id' => (int)$semesterId
+        'semester_id' => (int)$semesterId,
+        'level_year' => (int)$yearOfStudy,
+        'semester_offered' => (int)$selectedSemesterNumber
     ]);
     $currentApprovedCount = (int)$approvedCountStmt->fetchColumn();
 
     if ($currentApprovedCount === 0) {
-        $fallbackSemester = null;
-
-        // Priority 1: when user is on Semester 2 and no courses exist, drop back to Semester 1 of same academic year.
-        if ((int)$selectedSemesterNumber === 2 && (int)$selectedAcademicYearId > 0) {
-            $prevSemStmt = $conn->prepare("
-                SELECT s.id, s.semester_number, s.semester_name, s.academic_year_id, ay.year_name
-                FROM semesters s
-                INNER JOIN academic_years ay ON ay.id = s.academic_year_id
-                WHERE s.academic_year_id = :academic_year_id
-                  AND s.semester_number = 1
-                LIMIT 1
-            ");
-            $prevSemStmt->execute(['academic_year_id' => (int)$selectedAcademicYearId]);
-            $fallbackSemester = $prevSemStmt->fetch(PDO::FETCH_ASSOC) ?: null;
-        }
-
-        // Priority 2: latest semester where this student already has course registrations.
-        if (!$fallbackSemester) {
-            $latestSemStmt = $conn->prepare("
-                SELECT DISTINCT s.id, s.semester_number, s.semester_name, s.academic_year_id, ay.year_name
-                FROM course_registrations cr
-                INNER JOIN semesters s ON s.id = cr.semester_id
-                INNER JOIN academic_years ay ON ay.id = s.academic_year_id
-                WHERE cr.student_id = :student_id
-                  AND cr.status IN ('approved', 'registered', 'pending', 'submitted')
-                ORDER BY ay.start_date DESC, s.semester_number DESC
-                LIMIT 1
-            ");
-            $latestSemStmt->execute(['student_id' => (int)$studentProfile['id']]);
-            $fallbackSemester = $latestSemStmt->fetch(PDO::FETCH_ASSOC) ?: null;
-        }
-
-        if (!empty($fallbackSemester['id']) && (int)$fallbackSemester['id'] !== (int)$semesterId) {
-            $semesterId = (int)$fallbackSemester['id'];
-            $selectedAcademicYearId = (int)$fallbackSemester['academic_year_id'];
-            $selectedSemesterNumber = (int)$fallbackSemester['semester_number'];
-            $selectedAcademicYearName = (string)($fallbackSemester['year_name'] ?? $selectedAcademicYearName);
-
-            $yosStmt = $conn->prepare("
-                SELECT year_of_study
-                FROM semester_registrations
-                WHERE student_id = :student_id AND semester_id = :semester_id
-                ORDER BY id DESC
-                LIMIT 1
-            ");
-            $yosStmt->execute([
-                'student_id' => (int)$studentProfile['id'],
-                'semester_id' => (int)$semesterId
-            ]);
-            $fallbackYos = (int)$yosStmt->fetchColumn();
-            if ($fallbackYos > 0) {
-                $yearOfStudy = $fallbackYos;
-            }
-
-            // Ensure enrollment row exists and is approved for fallback semester.
-            $existingRegStmt = $conn->prepare("
-                SELECT id
-                FROM semester_registrations
-                WHERE student_id = :student_id AND semester_id = :semester_id
-                ORDER BY id DESC
-                LIMIT 1
-            ");
-            $existingRegStmt->execute([
-                'student_id' => (int)$studentProfile['id'],
-                'semester_id' => (int)$semesterId
-            ]);
-            $existingRegId = (int)$existingRegStmt->fetchColumn();
-
-            if ($existingRegId > 0) {
-                $updateRegStmt = $conn->prepare("
-                    UPDATE semester_registrations
-                    SET status = 'approved', year_of_study = :year_of_study, updated_at = NOW()
-                    WHERE id = :id
-                ");
-                $updateRegStmt->execute([
-                    'year_of_study' => (int)$yearOfStudy,
-                    'id' => $existingRegId
-                ]);
-            } else {
-                $insertRegStmt = $conn->prepare("
-                    INSERT INTO semester_registrations
-                        (student_id, semester_id, year_of_study, status, request_date, created_at, updated_at)
-                    VALUES
-                        (:student_id, :semester_id, :year_of_study, 'approved', NOW(), NOW(), NOW())
-                ");
-                $insertRegStmt->execute([
-                    'student_id' => (int)$studentProfile['id'],
-                    'semester_id' => (int)$semesterId,
-                    'year_of_study' => (int)$yearOfStudy
-                ]);
-            }
-
-            auto_assign_courses(
-                $conn,
-                (int)$studentProfile['id'],
-                (int)$semesterId,
-                null,
-                (int)($studentProfile['program_id'] ?? 0),
-                (int)$yearOfStudy
-            );
-
-            $approvalCheckStmt->execute([
-                'student_id' => (int)$studentProfile['id'],
-                'semester_id' => (int)$semesterId
-            ]);
-            $semesterApproval = $approvalCheckStmt->fetch();
-
-            if (empty($repeatEnforcedNotice)) {
-                $repeatEnforcedNotice = 'You were moved to the previous semester to continue with eligible courses.';
-            }
-        }
+        auto_assign_courses(
+            $conn,
+            (int)$studentProfile['id'],
+            (int)$semesterId,
+            null,
+            (int)($studentProfile['program_id'] ?? 0),
+            (int)$yearOfStudy
+        );
     }
 } catch (Exception $e) {
     error_log('Course-registration fallback warning: ' . $e->getMessage());
@@ -805,13 +761,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $registrationYearOfStudy = (int)$forcedRepeatDecision['year_of_study'];
         }
         
-        // Immediately approve semester registration so students can register for courses
-        $insertStmt = $conn->prepare("INSERT INTO semester_registrations (student_id, semester_id, year_of_study, status, request_date, created_at, updated_at) VALUES (:student_id, :semester_id, :year_of_study, 'approved', NOW(), NOW(), NOW())");
-        $insertStmt->execute([
-            'student_id' => $studentProfile['id'],
-            'semester_id' => $semesterId,
-            'year_of_study' => $registrationYearOfStudy
+        // Immediately approve semester registration so students can register for courses.
+        // Update latest existing row instead of creating duplicates each time.
+        $existingRegStmt = $conn->prepare("
+            SELECT id
+            FROM semester_registrations
+            WHERE student_id = :student_id
+              AND semester_id = :semester_id
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+        $existingRegStmt->execute([
+            'student_id' => (int)$studentProfile['id'],
+            'semester_id' => (int)$semesterId
         ]);
+        $existingRegId = (int)$existingRegStmt->fetchColumn();
+        if ($existingRegId > 0) {
+            $upRegStmt = $conn->prepare("
+                UPDATE semester_registrations
+                SET year_of_study = :year_of_study,
+                    status = 'approved',
+                    request_date = NOW(),
+                    updated_at = NOW()
+                WHERE id = :id
+            ");
+            $upRegStmt->execute([
+                'year_of_study' => (int)$registrationYearOfStudy,
+                'id' => $existingRegId
+            ]);
+        } else {
+            $insertStmt = $conn->prepare("INSERT INTO semester_registrations (student_id, semester_id, year_of_study, status, request_date, created_at, updated_at) VALUES (:student_id, :semester_id, :year_of_study, 'approved', NOW(), NOW(), NOW())");
+            $insertStmt->execute([
+                'student_id' => (int)$studentProfile['id'],
+                'semester_id' => (int)$semesterId,
+                'year_of_study' => (int)$registrationYearOfStudy
+            ]);
+        }
 
         // Auto-assign available courses for this semester to the student so they appear immediately
         $courseIds = [];
@@ -862,34 +847,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 }
             }
 
-            // 3) Third try: Show all active courses (debugging fallback)
-            if (empty($courseIds)) {
-                try {
-                    $allStmt = $conn->prepare("
-                        SELECT id FROM courses 
-                        WHERE status = 'active'
-                        ORDER BY course_code ASC
-                    ");
-                    $allStmt->execute();
-                    $courseIds = $allStmt->fetchAll(PDO::FETCH_COLUMN);
-                    error_log("Course search (all active): found=" . count($courseIds));
-                } catch (Exception $e) {
-                    error_log("Failed to fetch all courses: " . $e->getMessage());
-                }
-            }
-
-            // 4) If still no courses found, check course_assignments table
+            // 3) If still no courses found, check course_assignments table
             if (empty($courseIds)) {
                 try {
                     $caStmt = $conn->prepare("
                         SELECT ca.course_id FROM course_assignments ca 
-                        WHERE ca.semester_id = :semester_id 
-                        AND (ca.program_id = :program_id OR ca.program_id IS NULL) 
-                        AND ca.year_of_study = :year_of_study 
+                        JOIN courses c ON c.id = ca.course_id
+                        WHERE ca.semester_id = :semester_id
                         AND ca.status = 'active'
+                        AND c.status = 'active'
+                        AND (c.semester_offered = :semester_offered OR c.semester_offered = 3)
+                        AND c.level_year = :year_of_study
+                        AND (c.program_id = :program_id OR c.program_id IS NULL OR c.program_id = 0)
                     ");
                     $caStmt->execute([
                         'semester_id' => $semesterId, 
+                        'semester_offered' => $selectedSemesterNumber,
                         'program_id' => $studentProfile['program_id'] ?? 0, 
                         'year_of_study' => $registrationYearOfStudy
                     ]);
@@ -960,8 +933,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // Server-side guard: if courses were already assigned (approved) or admin-managed
         // course_assignments exist for this semester/program/year, disallow manual selection.
         try {
-            $assignedCountStmt = $conn->prepare("SELECT COUNT(*) FROM course_registrations WHERE student_id = :student_id AND semester_id = :semester_id AND status = 'approved'");
-            $assignedCountStmt->execute(['student_id' => $studentProfile['id'], 'semester_id' => $semesterId]);
+            $assignedCountStmt = $conn->prepare("
+                SELECT COUNT(*)
+                FROM course_registrations cr
+                INNER JOIN courses c ON c.id = cr.course_id
+                WHERE cr.student_id = :student_id
+                  AND cr.semester_id = :semester_id
+                  AND cr.status = 'approved'
+                  AND c.level_year = :year_of_study
+                  AND (c.semester_offered = :semester_offered OR c.semester_offered = 3)
+            ");
+            $assignedCountStmt->execute([
+                'student_id' => (int)$studentProfile['id'],
+                'semester_id' => (int)$semesterId,
+                'year_of_study' => (int)$yearOfStudy,
+                'semester_offered' => (int)$selectedSemesterNumber
+            ]);
             if ($assignedCountStmt->fetchColumn() > 0) {
                 $session->setFlash('error', 'Your courses have already been assigned for this semester. Selection is disabled.');
                 header('Location: course-registration.php?semester_id=' . $semesterId);
@@ -972,8 +959,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         try {
-            $caCheck = $conn->prepare("SELECT COUNT(*) FROM course_assignments WHERE semester_id = :semester_id AND (program_id = :program_id OR program_id IS NULL) AND year_of_study = :year_of_study AND status = 'active'");
-            $caCheck->execute(['semester_id' => $semesterId, 'program_id' => $studentProfile['program_id'] ?? 0, 'year_of_study' => $yearOfStudy]);
+            $caCheck = $conn->prepare("
+                SELECT COUNT(*)
+                FROM course_assignments ca
+                INNER JOIN courses c ON c.id = ca.course_id
+                WHERE ca.semester_id = :semester_id
+                  AND ca.status = 'active'
+                  AND c.status = 'active'
+                  AND c.level_year = :year_of_study
+                  AND (c.semester_offered = :semester_offered OR c.semester_offered = 3)
+                  AND (c.program_id = :program_id OR c.program_id IS NULL OR c.program_id = 0)
+            ");
+            $caCheck->execute([
+                'semester_id' => $semesterId,
+                'semester_offered' => $selectedSemesterNumber,
+                'program_id' => $studentProfile['program_id'] ?? 0,
+                'year_of_study' => $yearOfStudy
+            ]);
             if ($caCheck->fetchColumn() > 0) {
                 $session->setFlash('error', 'Courses for this semester are assigned by the administration; manual selection is disabled.');
                 header('Location: course-registration.php?semester_id=' . $semesterId);
@@ -1071,32 +1073,23 @@ if (empty($availableCourses)) {
     $availableCourses = $relaxedStmt->fetchAll();
 }
 
-// 3) Third try: Show all active courses for any year/semester (debugging fallback)
-if (empty($availableCourses)) {
-    $allCoursesStmt = $conn->prepare("
-        SELECT * FROM courses 
-        WHERE status = 'active'
-        ORDER BY level_year ASC, semester_offered ASC, course_code ASC
-    ");
-    $allCoursesStmt->execute();
-    $availableCourses = $allCoursesStmt->fetchAll();
-}
-
-// 4) If still no courses found, check course_assignments
+// 3) If still no courses found, check course_assignments
 if (empty($availableCourses)) {
     try {
         $caStmt = $conn->prepare("
             SELECT c.* FROM course_assignments ca 
             JOIN courses c ON ca.course_id = c.id 
             WHERE ca.semester_id = :semester_id 
-            AND (ca.program_id = :program_id OR ca.program_id IS NULL) 
-            AND ca.year_of_study = :year_of_study 
             AND ca.status = 'active' 
             AND c.status = 'active' 
+            AND c.level_year = :year_of_study
+            AND (c.semester_offered = :semester_offered OR c.semester_offered = 3)
+            AND (c.program_id = :program_id OR c.program_id IS NULL OR c.program_id = 0)
             ORDER BY c.course_code
         ");
         $caStmt->execute([
             'semester_id' => $semesterId, 
+            'semester_offered' => $selectedSemesterNumber,
             'program_id' => $studentProfile['program_id'] ?? 0, 
             'year_of_study' => $yearOfStudy
         ]);
@@ -1109,11 +1102,20 @@ if (empty($availableCourses)) {
 
 // Already registered courses for this student & semester
 $registered = [];
+$approvedRegistered = [];
 if ($semesterId && $semesterApproval) {
     $rstmt = $conn->prepare("SELECT course_id, status FROM course_registrations WHERE student_id = :student_id AND semester_id = :semester_id");
     $rstmt->execute(['student_id' => $studentProfile['id'], 'semester_id' => $semesterId]);
     while ($r = $rstmt->fetch()) {
-        $registered[$r['course_id']] = $r['status'] ?? null; // Ensure 'course_id' exists
+        $courseId = (int)($r['course_id'] ?? 0);
+        if ($courseId <= 0) {
+            continue;
+        }
+        $status = strtolower(trim((string)($r['status'] ?? '')));
+        $registered[$courseId] = $status;
+        if ($status === 'approved') {
+            $approvedRegistered[$courseId] = true;
+        }
     }
 }
 
@@ -1121,7 +1123,96 @@ if ($semesterId && $semesterApproval) {
 $needsSelection = false;
 if (!empty($availableCourses)) {
     foreach ($availableCourses as $c) {
-        if (!isset($registered[$c['id']])) { $needsSelection = true; break; }
+        if (!isset($approvedRegistered[(int)$c['id']])) { $needsSelection = true; break; }
+    }
+}
+
+// If semester is approved but only a partial set is registered, auto-top-up missing
+// courses from the resolved semester/year course list so enrollment reflects the
+// full academic management course list for that semester.
+if ($semesterApproval && $semesterId > 0 && !empty($availableCourses) && $needsSelection) {
+    try {
+        $insertedTopUp = 0;
+        $updatedTopUp = 0;
+        $checkCourseStmt = $conn->prepare("
+            SELECT id, status
+            FROM course_registrations
+            WHERE student_id = :student_id
+              AND course_id = :course_id
+              AND semester_id = :semester_id
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+        $updateCourseStmt = $conn->prepare("
+            UPDATE course_registrations
+            SET status = 'approved',
+                approved_by = NULL,
+                approved_date = NOW()
+            WHERE id = :id
+        ");
+        $insCourseStmt = $conn->prepare("
+            INSERT INTO course_registrations
+                (student_id, course_id, semester_id, registration_date, status, approved_by, approved_date, created_at)
+            VALUES
+                (:student_id, :course_id, :semester_id, NOW(), 'approved', NULL, NOW(), NOW())
+        ");
+
+        foreach ($availableCourses as $courseRow) {
+            $courseId = (int)($courseRow['id'] ?? 0);
+            if ($courseId <= 0) {
+                continue;
+            }
+            $checkCourseStmt->execute([
+                'student_id' => (int)$studentProfile['id'],
+                'course_id' => $courseId,
+                'semester_id' => (int)$semesterId
+            ]);
+            $existing = $checkCourseStmt->fetch(PDO::FETCH_ASSOC);
+            if ($existing) {
+                $existingStatus = strtolower(trim((string)($existing['status'] ?? '')));
+                if ($existingStatus !== 'approved') {
+                    $updateCourseStmt->execute(['id' => (int)$existing['id']]);
+                    $updatedTopUp++;
+                }
+                continue;
+            }
+
+            $insCourseStmt->execute([
+                'student_id' => (int)$studentProfile['id'],
+                'course_id' => $courseId,
+                'semester_id' => (int)$semesterId
+            ]);
+            $insertedTopUp++;
+        }
+
+        if ($insertedTopUp > 0) {
+            $rstmt = $conn->prepare("
+                SELECT course_id, status
+                FROM course_registrations
+                WHERE student_id = :student_id
+                  AND semester_id = :semester_id
+            ");
+            $rstmt->execute([
+                'student_id' => (int)$studentProfile['id'],
+                'semester_id' => (int)$semesterId
+            ]);
+            $registered = [];
+            $approvedRegistered = [];
+            while ($r = $rstmt->fetch()) {
+                $cid = (int)($r['course_id'] ?? 0);
+                if ($cid <= 0) {
+                    continue;
+                }
+                $st = strtolower(trim((string)($r['status'] ?? '')));
+                $registered[$cid] = $st;
+                if ($st === 'approved') {
+                    $approvedRegistered[$cid] = true;
+                }
+            }
+            $needsSelection = false;
+        }
+    } catch (Exception $e) {
+        error_log('Enrollment top-up warning: ' . $e->getMessage());
     }
 }
 
@@ -1134,10 +1225,14 @@ if ($semesterId) {
                           WHERE cr.student_id = :student_id 
                           AND cr.semester_id = :semester_id 
                           AND cr.status = 'approved'
+                          AND c.level_year = :level_year
+                          AND (c.semester_offered = :semester_offered OR c.semester_offered = 3)
                           ORDER BY c.course_code");
     $ac->execute([
         'student_id' => $studentProfile['id'], 
-        'semester_id' => $semesterId
+        'semester_id' => $semesterId,
+        'level_year' => (int)$yearOfStudy,
+        'semester_offered' => $selectedSemesterNumber
     ]);
     $approvedCourses = $ac->fetchAll();
 }
@@ -1159,10 +1254,14 @@ if ($isRepeatLocked && $semesterId && empty($approvedCourses)) {
                                   WHERE cr.student_id = :student_id
                                   AND cr.semester_id = :semester_id
                                   AND cr.status = 'approved'
+                                  AND c.level_year = :level_year
+                                  AND (c.semester_offered = :semester_offered OR c.semester_offered = 3)
                                   ORDER BY c.course_code");
             $ac->execute([
                 'student_id' => $studentProfile['id'],
-                'semester_id' => $semesterId
+                'semester_id' => $semesterId,
+                'level_year' => (int)$yearOfStudy,
+                'semester_offered' => $selectedSemesterNumber
             ]);
             $approvedCourses = $ac->fetchAll();
         }
