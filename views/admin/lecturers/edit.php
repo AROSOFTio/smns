@@ -53,6 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $date_of_birth = $_POST['date_of_birth'] ?? '';
     $national_id = Security::sanitize($_POST['national_id'] ?? '');
     $phone = Security::sanitize($_POST['phone'] ?? '');
+    $email = trim($_POST['email'] ?? '');
     $office_location = Security::sanitize($_POST['office_location'] ?? '');
     $department = Security::sanitize($_POST['department'] ?? '');
     $designation = Security::sanitize($_POST['designation'] ?? '');
@@ -67,13 +68,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $missing = [];
     if (empty($first_name)) $missing[] = 'First Name';
     if (empty($last_name)) $missing[] = 'Last Name';
+    if (empty($email)) $missing[] = 'Email';
     if (empty($department)) $missing[] = 'Department';
 
+    $validationError = '';
     if ($missing) {
-        $session->setFlash('error', 'Please fill in required fields: ' . implode(', ', $missing));
+        $validationError = 'Please fill in required fields: ' . implode(', ', $missing);
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $validationError = 'Please enter a valid email address';
+    } else {
+        $dupStmt = $conn->prepare("SELECT id FROM users WHERE email = :email AND id != :id LIMIT 1");
+        $dupStmt->execute(['email' => $email, 'id' => $lecturer['user_id']]);
+        if ($dupStmt->fetch()) {
+            $validationError = 'This email address is already used by another account';
+        }
+    }
+
+    if ($validationError !== '') {
+        $session->setFlash('error', $validationError);
     } else {
         try {
             $conn->beginTransaction();
+            $previousEmail = trim((string)($lecturer['user_email'] ?? $lecturer['email'] ?? ''));
+            $emailChanged = strcasecmp($previousEmail, $email) !== 0;
+            $generatedPassword = '';
+            $passwordHash = '';
+            if ($emailChanged) {
+                $generatedPassword = Security::generatePassword(10);
+                $passwordHash = Security::hashPassword($generatedPassword);
+            }
 
             // Update lecturer record
             $lecturerStmt = $conn->prepare("
@@ -86,6 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     date_of_birth = :date_of_birth,
                     national_id = :national_id,
                     phone = :phone,
+                    email = :email,
                     office_location = :office_location,
                     department = :department,
                     designation = :designation,
@@ -107,6 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'date_of_birth' => $date_of_birth ?: null,
                 'national_id' => $national_id,
                 'phone' => $phone,
+                'email' => $email,
                 'office_location' => $office_location,
                 'department' => $department,
                 'designation' => $designation,
@@ -118,9 +143,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'id' => $lecturerId
             ]);
 
-            // Update user status
-            $userStmt = $conn->prepare("UPDATE users SET status = :status WHERE id = :id");
-            $userStmt->execute(['status' => $user_status, 'id' => $lecturer['user_id']]);
+            // Keep users.email in sync and rotate password when email is corrected.
+            $userSql = "UPDATE users SET status = :status, email = :email";
+            $userParams = [
+                'status' => $user_status,
+                'email' => $email,
+                'id' => $lecturer['user_id']
+            ];
+            if ($emailChanged) {
+                $userSql .= ", password_hash = :password_hash, require_password_change = 1";
+                $userParams['password_hash'] = $passwordHash;
+            }
+            $userSql .= " WHERE id = :id";
+            $userStmt = $conn->prepare($userSql);
+            $userStmt->execute($userParams);
 
             // Handle photo upload
             if (!empty($_FILES['photo']['name'])) {
@@ -136,7 +172,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $conn->commit();
-            $session->setFlash('success', 'Lecturer updated successfully');
+
+            $successMessage = 'Lecturer updated successfully';
+            if ($emailChanged) {
+                $mailSent = false;
+                try {
+                    $mailSent = Helper::sendTemplatedEmail('password_reset', $email, [
+                        'recipient_name' => trim(($first_name ?: ($lecturer['first_name'] ?? '')) . ' ' . ($last_name ?: ($lecturer['last_name'] ?? ''))),
+                        'username' => $lecturer['username'],
+                        'temporary_password' => $generatedPassword,
+                        'login_url' => BASE_URL . '/views/lecturer/login.php'
+                    ]);
+                } catch (Exception $mailEx) {
+                    $mailSent = false;
+                }
+
+                if ($mailSent) {
+                    $successMessage .= '. Email updated and new login credentials were sent to the new address.';
+                } else {
+                    $successMessage .= '. Email updated, but credential email failed. Share this temporary password manually: ' . $generatedPassword;
+                }
+            }
+
+            $session->setFlash('success', $successMessage);
             header('Location: view.php?id=' . $lecturerId);
             exit;
 
@@ -239,6 +297,12 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                                     <label>National ID</label>
                                     <input type="text" name="national_id" class="form-control" value="<?php echo e($lecturer['national_id']); ?>">
                                 </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Email *</label>
+                                <input type="email" name="email" class="form-control" value="<?php echo e($lecturer['user_email'] ?? $lecturer['email']); ?>" required>
+                                <small class="form-text text-muted">If changed, a new temporary password will be sent to this address.</small>
                             </div>
                         </div>
                     </div>

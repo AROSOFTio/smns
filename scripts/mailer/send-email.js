@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
+const dns = require('dns');
+const net = require('net');
 const nodemailer = require('nodemailer');
 
 function parseBool(value, defaultValue = false) {
@@ -14,6 +16,43 @@ function fail(message, details) {
   if (details) payload.details = details;
   process.stderr.write(JSON.stringify(payload) + '\n');
   process.exit(1);
+}
+
+async function resolveSmtpHost(hostname) {
+  if (!hostname || net.isIP(hostname)) {
+    return {
+      host: hostname,
+      tlsServername: null,
+      resolvedViaLookup: false,
+      lookupError: ''
+    };
+  }
+
+  try {
+    const record = await dns.promises.lookup(hostname, { family: 4 });
+    if (record && record.address) {
+      return {
+        host: record.address,
+        tlsServername: hostname,
+        resolvedViaLookup: true,
+        lookupError: ''
+      };
+    }
+  } catch (error) {
+    return {
+      host: hostname,
+      tlsServername: null,
+      resolvedViaLookup: false,
+      lookupError: error && error.message ? error.message : String(error)
+    };
+  }
+
+  return {
+    host: hostname,
+    tlsServername: null,
+    resolvedViaLookup: false,
+    lookupError: ''
+  };
 }
 
 async function main() {
@@ -56,11 +95,22 @@ async function main() {
     fail('From email is missing');
   }
 
+  const resolvedHost = await resolveSmtpHost(smtpHost);
+
   const transportOptions = {
-    host: smtpHost,
+    host: resolvedHost.host,
     port: smtpPort,
-    secure: smtpSecure
+    secure: smtpSecure,
+    connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT || 20000),
+    greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT || 15000),
+    socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT || 20000)
   };
+
+  if (resolvedHost.tlsServername) {
+    transportOptions.tls = {
+      servername: resolvedHost.tlsServername
+    };
+  }
 
   if (smtpUser && smtpPass) {
     transportOptions.auth = {
@@ -70,15 +120,30 @@ async function main() {
   }
 
   const transporter = nodemailer.createTransport(transportOptions);
-  const info = await transporter.sendMail({
-    from: `"${fromName}" <${fromEmail}>`,
-    to: recipients.join(','),
-    subject: payload.subject || '(No subject)',
-    text: payload.text || '',
-    html: payload.html || undefined
-  });
 
-  process.stdout.write(JSON.stringify({ ok: true, messageId: info.messageId }) + '\n');
+  try {
+    const info = await transporter.sendMail({
+      from: `"${fromName}" <${fromEmail}>`,
+      to: recipients.join(','),
+      subject: payload.subject || '(No subject)',
+      text: payload.text || '',
+      html: payload.html || undefined
+    });
+
+    process.stdout.write(
+      JSON.stringify({
+        ok: true,
+        messageId: info.messageId,
+        resolvedViaLookup: resolvedHost.resolvedViaLookup
+      }) + '\n'
+    );
+  } catch (error) {
+    let details = error && error.message ? error.message : String(error);
+    if (resolvedHost.lookupError) {
+      details += ' | DNS lookup warning: ' + resolvedHost.lookupError;
+    }
+    fail('Send failed', details);
+  }
 }
 
 main().catch((error) => fail('Send failed', error.message));

@@ -9,6 +9,7 @@
  */
 class Session {
     private $role = null;
+    private $flashCache = [];
     
     public function __construct($role = null) {
         $this->role = $role;
@@ -201,9 +202,14 @@ class Session {
      * Flash message - get and remove
      */
     public function getFlash($key) {
-        if (isset($_SESSION['flash'][$key])) {
+        if (array_key_exists($key, $this->flashCache)) {
+            return $this->flashCache[$key];
+        }
+
+        if (isset($_SESSION['flash']) && array_key_exists($key, $_SESSION['flash'])) {
             $message = $_SESSION['flash'][$key];
             unset($_SESSION['flash'][$key]);
+            $this->flashCache[$key] = $message;
             return $message;
         }
         return null;
@@ -213,6 +219,9 @@ class Session {
      * Check if flash message exists
      */
     public function hasFlash($key) {
+        if (array_key_exists($key, $this->flashCache)) {
+            return true;
+        }
         return isset($_SESSION['flash'][$key]);
     }
 }

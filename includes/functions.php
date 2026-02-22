@@ -48,7 +48,10 @@ function getFlash($key) {
     if (isset($session) && is_object($session)) {
         return $session->getFlash($key);
     }
-    $tempSession = new Session();
+    static $tempSession = null;
+    if (!($tempSession instanceof Session)) {
+        $tempSession = new Session();
+    }
     return $tempSession->getFlash($key);
 }
 

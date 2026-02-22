@@ -30,7 +30,7 @@ $conn = $db->getConnection();
 
 try {
     $stmt = $conn->prepare("
-        SELECT s.*, p.program_code, p.program_name, u.username, u.status as user_status, u.created_at as user_created_at, u.last_login, u.failed_login_attempts as login_attempts
+        SELECT s.*, p.program_code, p.program_name, u.username, u.email as user_email, u.status as user_status, u.created_at as user_created_at, u.last_login, u.failed_login_attempts as login_attempts
         FROM students s
         INNER JOIN programs p ON s.program_id = p.id
         INNER JOIN users u ON s.user_id = u.id
@@ -113,6 +113,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // Ensure email is unique in users table as well
+    if (!empty($email)) {
+        try {
+            $stmt = $conn->prepare("SELECT id FROM users WHERE email = :email AND id != :id");
+            $stmt->execute(['email' => $email, 'id' => $student['user_id']]);
+            if ($stmt->fetch()) {
+                $errors[] = 'Email address is already used by another account';
+            }
+        } catch (Exception $e) {
+            $errors[] = 'Database error checking user email uniqueness';
+        }
+    }
+
     // Handle photo upload
     $photo_path = $student['photo']; // Keep existing photo by default
     if (!empty($_FILES['photo']['name'])) {
@@ -151,6 +164,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($errors)) {
         try {
             $conn->beginTransaction();
+            $previousEmail = trim((string)($student['user_email'] ?? $student['email'] ?? ''));
+            $emailChanged = strcasecmp($previousEmail, $email) !== 0;
+            $generatedPassword = '';
+            $passwordHash = '';
+            if ($emailChanged) {
+                $generatedPassword = Security::generatePassword(10);
+                $passwordHash = Security::hashPassword($generatedPassword);
+            }
 
             // Update student table
             $stmt = $conn->prepare("
@@ -201,14 +222,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'id' => $studentId
             ]);
 
-            // Update user status if changed
+            // Keep users.email in sync and optionally rotate password when email is corrected.
+            $userUpdateSql = "UPDATE users SET email = :email";
+            $userParams = [
+                'email' => $email,
+                'user_id' => $student['user_id']
+            ];
             if ($status !== $student['status']) {
-                $stmt = $conn->prepare("UPDATE users SET status = :status WHERE id = :user_id");
-                $stmt->execute(['status' => $status, 'user_id' => $student['user_id']]);
+                $userUpdateSql .= ", status = :status";
+                $userParams['status'] = $status;
             }
+            if ($emailChanged) {
+                $userUpdateSql .= ", password_hash = :password_hash, require_password_change = 1";
+                $userParams['password_hash'] = $passwordHash;
+            }
+            $userUpdateSql .= " WHERE id = :user_id";
+            $stmt = $conn->prepare($userUpdateSql);
+            $stmt->execute($userParams);
 
             $conn->commit();
-            $session->setFlash('success', 'Student updated successfully');
+            $successMessage = 'Student updated successfully';
+
+            if ($emailChanged) {
+                $mailSent = false;
+                try {
+                    $mailSent = Helper::sendTemplatedEmail('password_reset', $email, [
+                        'recipient_name' => trim(($first_name ?: ($student['first_name'] ?? '')) . ' ' . ($last_name ?: ($student['last_name'] ?? ''))),
+                        'username' => $student['username'],
+                        'temporary_password' => $generatedPassword,
+                        'login_url' => BASE_URL . '/views/student/login.php'
+                    ]);
+                } catch (Exception $mailEx) {
+                    $mailSent = false;
+                }
+
+                if ($mailSent) {
+                    $successMessage .= '. Email updated and new login credentials were sent to the new address.';
+                } else {
+                    $successMessage .= '. Email updated, but credential email failed. Share this temporary password manually: ' . $generatedPassword;
+                }
+            }
+
+            $session->setFlash('success', $successMessage);
             header('Location: view.php?id=' . $studentId);
             exit;
 

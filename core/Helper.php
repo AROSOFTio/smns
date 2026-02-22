@@ -28,6 +28,14 @@ class Helper {
         $notifyAdminOnFailure = !array_key_exists('notify_admin_on_failure', $options) || (bool)$options['notify_admin_on_failure'];
         $transportError = '';
         $transportUsed = '';
+        $retryAttempts = (int)($options['retry_attempts'] ?? (defined('EMAIL_RETRY_ATTEMPTS') ? EMAIL_RETRY_ATTEMPTS : 2));
+        if ($retryAttempts < 1) {
+            $retryAttempts = 1;
+        }
+        $retryDelayMs = (int)($options['retry_delay_ms'] ?? (defined('EMAIL_RETRY_DELAY_MS') ? EMAIL_RETRY_DELAY_MS : 1200));
+        if ($retryDelayMs < 0) {
+            $retryDelayMs = 0;
+        }
 
         $transport = strtolower((string)($options['transport'] ?? (defined('EMAIL_TRANSPORT') ? EMAIL_TRANSPORT : 'php_mail')));
         if ($transport === 'nodemailer') {
@@ -56,16 +64,25 @@ class Helper {
 
                 $encoded = base64_encode((string)json_encode($payload));
                 $cmd = escapeshellarg((string)$nodeBin) . ' ' . escapeshellarg($nodeScript) . ' ' . escapeshellarg($encoded) . ' 2>&1';
-                $output = [];
+                $lastOutput = [];
                 $exitCode = 1;
-                @exec($cmd, $output, $exitCode);
+                for ($attempt = 1; $attempt <= $retryAttempts; $attempt++) {
+                    $output = [];
+                    $exitCode = 1;
+                    @exec($cmd, $output, $exitCode);
+                    $lastOutput = $output;
 
-                if ($exitCode === 0) {
-                    return true;
+                    if ($exitCode === 0) {
+                        return true;
+                    }
+
+                    if ($attempt < $retryAttempts && $retryDelayMs > 0) {
+                        usleep($retryDelayMs * 1000);
+                    }
                 }
 
-                $transportError = self::extractTransportErrorMessage($output, 'Nodemailer send failed');
-                error_log('Nodemailer send failed: ' . $transportError);
+                $transportError = self::extractTransportErrorMessage($lastOutput, 'Nodemailer send failed');
+                error_log('Nodemailer send failed after ' . $retryAttempts . ' attempt(s): ' . $transportError);
             } else {
                 $transportError = 'Nodemailer script missing: ' . $nodeScript;
                 error_log($transportError);
