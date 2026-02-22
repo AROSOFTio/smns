@@ -46,9 +46,68 @@ if (!$studentProfile) {
 // ---------------------------------------------------------------------
 
 $academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_years ORDER BY start_date DESC")->fetchAll();
-$defaultAcademicYearId  = Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0);
+$studentDefaultAcademicYearId = 0;
+$studentDefaultSemesterNumber = 0;
+try {
+    $studentSemCtxStmt = $conn->prepare("
+        SELECT s.academic_year_id, s.semester_number
+        FROM semester_registrations sr
+        INNER JOIN semesters s ON s.id = sr.semester_id
+        INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+        WHERE sr.student_id = :student_id
+          AND sr.status = 'approved'
+        ORDER BY ay.start_date DESC, s.semester_number DESC, sr.id DESC
+        LIMIT 1
+    ");
+    $studentSemCtxStmt->execute(['student_id' => (int)$studentProfile['id']]);
+    $studentSemCtx = $studentSemCtxStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    if (!empty($studentSemCtx)) {
+        $studentDefaultAcademicYearId = (int)($studentSemCtx['academic_year_id'] ?? 0);
+        $studentDefaultSemesterNumber = (int)($studentSemCtx['semester_number'] ?? 0);
+    }
+} catch (Exception $e) {
+    $studentDefaultAcademicYearId = 0;
+    $studentDefaultSemesterNumber = 0;
+}
+
+$defaultAcademicYearId  = $studentDefaultAcademicYearId > 0
+    ? $studentDefaultAcademicYearId
+    : (Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0));
+$defaultSemesterNumber = $studentDefaultSemesterNumber > 0
+    ? $studentDefaultSemesterNumber
+    : (Helper::getCurrentSemester()['semester_number'] ?? 1);
+
+// If no explicit filter is passed, prefer the latest term that actually has
+// aligned course registrations for this student (avoids blank default slips).
+$hasExplicitFilters = isset($_REQUEST['academic_year_id']) || isset($_REQUEST['semester_number']);
+if (!$hasExplicitFilters) {
+    try {
+        $bestTermStmt = $conn->prepare("
+            SELECT
+                s.academic_year_id,
+                s.semester_number
+            FROM course_registrations cr
+            INNER JOIN semesters s ON s.id = cr.semester_id
+            INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+            WHERE cr.student_id = :student_id
+              AND COALESCE(LOWER(cr.status), '') <> 'dropped'
+            GROUP BY s.id, s.academic_year_id, s.semester_number, ay.start_date
+            ORDER BY ay.start_date DESC, s.semester_number DESC
+            LIMIT 1
+        ");
+        $bestTermStmt->execute(['student_id' => (int)$studentProfile['id']]);
+        $bestTerm = $bestTermStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!empty($bestTerm)) {
+            $defaultAcademicYearId = (int)($bestTerm['academic_year_id'] ?? $defaultAcademicYearId);
+            $defaultSemesterNumber = (int)($bestTerm['semester_number'] ?? $defaultSemesterNumber);
+        }
+    } catch (Exception $e) {
+        // Keep existing defaults.
+    }
+}
+
 $selectedAcademicYearId = isset($_REQUEST['academic_year_id']) ? (int) $_REQUEST['academic_year_id'] : $defaultAcademicYearId;
-$selectedSemesterNumber = isset($_REQUEST['semester_number']) ? (int) $_REQUEST['semester_number'] : (Helper::getCurrentSemester()['semester_number'] ?? 1);
+$selectedSemesterNumber = isset($_REQUEST['semester_number']) ? (int) $_REQUEST['semester_number'] : $defaultSemesterNumber;
 
 $mapStmt = $conn->prepare('SELECT id, semester_name FROM semesters WHERE academic_year_id = :ay AND semester_number = :sn LIMIT 1');
 $mapStmt->execute(['ay' => $selectedAcademicYearId, 'sn' => $selectedSemesterNumber]);
@@ -62,6 +121,58 @@ foreach ($academicYears as $ay) {
     if ((int) $ay['id'] === (int) $selectedAcademicYearId) {
         $selectedAcademicYearName = $ay['year_name'];
         break;
+    }
+}
+
+// Resolve latest approved semester registration context for year alignment.
+$semesterRegistration = null;
+$yearOfStudy = (int)($studentProfile['level_year'] ?? 1);
+if ($semesterId) {
+    $srStmt = $conn->prepare("
+        SELECT id, year_of_study, status
+        FROM semester_registrations
+        WHERE student_id = :student_id
+          AND semester_id = :semester_id
+          AND status = 'approved'
+        ORDER BY id DESC
+        LIMIT 1
+    ");
+    $srStmt->execute([
+        'student_id' => (int)$studentProfile['id'],
+        'semester_id' => (int)$semesterId
+    ]);
+    $semesterRegistration = $srStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    if (!empty($semesterRegistration['year_of_study'])) {
+        $yearOfStudy = (int)$semesterRegistration['year_of_study'];
+    }
+}
+
+// If the selected semester has no approved semester_registration row yet,
+// infer a practical year from the student's existing course registrations.
+if ($semesterId && (empty($semesterRegistration) || empty($semesterRegistration['year_of_study']))) {
+    try {
+        $inferYearStmt = $conn->prepare("
+            SELECT
+                COALESCE(c.level_year, 1) AS inferred_year,
+                COUNT(*) AS total_rows
+            FROM course_registrations cr
+            INNER JOIN courses c ON c.id = cr.course_id
+            WHERE cr.student_id = :student_id
+              AND cr.semester_id = :semester_id
+            GROUP BY COALESCE(c.level_year, 1)
+            ORDER BY total_rows DESC, inferred_year ASC
+            LIMIT 1
+        ");
+        $inferYearStmt->execute([
+            'student_id' => (int)$studentProfile['id'],
+            'semester_id' => (int)$semesterId
+        ]);
+        $inferredYear = (int)$inferYearStmt->fetchColumn();
+        if ($inferredYear > 0) {
+            $yearOfStudy = $inferredYear;
+        }
+    } catch (Exception $e) {
+        // Keep fallback year.
     }
 }
 
@@ -104,7 +215,7 @@ $academicStatusMeta = getStudentAcademicStatusMeta(
 $academicStatus = (string)($academicStatusMeta['label'] ?? 'Status Pending');
 
 // ---------------------------------------------------------------------
-// Fetch all registered courses for the semester + any results
+// Fetch full semester course list for this year/program + any student results
 // ---------------------------------------------------------------------
 
 $results = [];
@@ -114,19 +225,125 @@ $gpaCredits             = 0;
 $gpaPoints              = 0.0;
 
 if ($semesterId) {
+    $resultsData = [];
+
+    // Primary path: semester course catalog (program/year filtered) + student marks overlay.
     $sql = "SELECT 
-                cr.course_id, c.course_code, c.course_name, c.credit_hours,
-                r.assignment_marks, r.final_exam_marks, r.total_marks, r.grade, r.grade_points, r.status AS result_status
-            FROM course_registrations cr
-            INNER JOIN courses c ON cr.course_id = c.id
-            LEFT JOIN results r ON r.student_id = cr.student_id AND r.course_id = cr.course_id AND r.semester_id = cr.semester_id
-            WHERE cr.student_id = :sid AND cr.semester_id = :semid AND cr.status = 'approved'
+                c.id AS course_id, c.course_code, c.course_name, c.credit_hours,
+                COALESCE(c.level_year, 1) AS course_year,
+                r.assignment_marks, r.final_exam_marks, r.total_marks, r.grade, r.grade_points, r.status AS result_status,
+                cr.status AS registration_status
+            FROM courses c
+            LEFT JOIN course_registrations cr
+                ON cr.student_id = :sid_reg
+               AND cr.course_id = c.id
+               AND cr.semester_id = :semid_reg
+            LEFT JOIN results r
+                ON r.student_id = :sid_res
+               AND r.course_id = c.id
+               AND r.semester_id = :semid_res
+            INNER JOIN semesters s ON s.id = :semid_ctx
+            WHERE (c.program_id = :program_id OR c.program_id IS NULL OR c.program_id = 0)
+              AND (c.semester_offered = s.semester_number OR c.semester_offered = 3)
+              AND c.level_year = :year_of_study
             ORDER BY c.course_code";
     $stmt = $conn->prepare($sql);
-    $stmt->execute(['sid' => $studentProfile['id'], 'semid' => $semesterId]);
-    $resultsData = $stmt->fetchAll();
+    $stmt->execute([
+        'sid_reg' => (int)$studentProfile['id'],
+        'semid_reg' => (int)$semesterId,
+        'sid_res' => (int)$studentProfile['id'],
+        'semid_res' => (int)$semesterId,
+        'semid_ctx' => (int)$semesterId,
+        'program_id' => (int)($studentProfile['program_id'] ?? 0),
+        'year_of_study' => (int)$yearOfStudy
+    ]);
+    $resultsData = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    // Fallback path: mirror student results source for the selected semester.
+    // This prevents blank admin slips when semester_registration/year metadata is missing
+    // but student course/result rows exist.
+    if (empty($resultsData)) {
+        $fallbackSql = "SELECT 
+                            cr.course_id, c.course_code, c.course_name, c.credit_hours,
+                            COALESCE(c.level_year, 1) AS course_year,
+                            r.assignment_marks, r.final_exam_marks, r.total_marks, r.grade, r.grade_points, r.status AS result_status,
+                            cr.status AS registration_status
+                        FROM course_registrations cr
+                        INNER JOIN courses c ON c.id = cr.course_id
+                        INNER JOIN semesters s ON s.id = cr.semester_id
+                        LEFT JOIN results r
+                            ON r.student_id = cr.student_id
+                           AND r.course_id = cr.course_id
+                           AND r.semester_id = cr.semester_id
+                        WHERE cr.student_id = :sid
+                          AND cr.semester_id = :semid
+                          AND COALESCE(LOWER(cr.status), '') <> 'dropped'
+                          AND (c.semester_offered = s.semester_number OR c.semester_offered = 3)
+                          AND (
+                                NOT EXISTS (
+                                    SELECT 1
+                                    FROM semester_registrations srx
+                                    WHERE srx.student_id = cr.student_id
+                                      AND srx.semester_id = cr.semester_id
+                                      AND srx.status = 'approved'
+                                )
+                                OR c.level_year = (
+                                    SELECT sry.year_of_study
+                                    FROM semester_registrations sry
+                                    WHERE sry.student_id = cr.student_id
+                                      AND sry.semester_id = cr.semester_id
+                                      AND sry.status = 'approved'
+                                    ORDER BY sry.id DESC
+                                    LIMIT 1
+                                )
+                          )
+                        ORDER BY c.course_code";
+        $fallbackStmt = $conn->prepare($fallbackSql);
+        $fallbackStmt->execute([
+            'sid' => (int)$studentProfile['id'],
+            'semid' => (int)$semesterId
+        ]);
+        $resultsData = $fallbackStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    // Deduplicate to a single best row per course (in case of multiple result versions).
+    $bestByCourse = [];
+    foreach ($resultsData as $row) {
+        $courseKey = (int)($row['course_id'] ?? 0);
+        if ($courseKey <= 0) {
+            continue;
+        }
+
+        $status = strtolower(trim((string)($row['result_status'] ?? '')));
+        $score = 0;
+        if ($status === 'published') {
+            $score += 100;
+        } elseif ($status === 'approved') {
+            $score += 70;
+        } elseif ($status === 'submitted') {
+            $score += 40;
+        } elseif ($status === 'draft') {
+            $score += 20;
+        }
+        if ($row['total_marks'] !== null) {
+            $score += 10;
+        }
+        if ($row['grade_points'] !== null) {
+            $score += 10;
+        }
+        $row['_score'] = $score;
+
+        if (!isset($bestByCourse[$courseKey]) || $score > (int)$bestByCourse[$courseKey]['_score']) {
+            $bestByCourse[$courseKey] = $row;
+        }
+    }
+    $resultsData = array_values($bestByCourse);
+    usort($resultsData, static function ($a, $b) {
+        return strcmp((string)($a['course_code'] ?? ''), (string)($b['course_code'] ?? ''));
+    });
 
     foreach ($resultsData as $row) {
+        unset($row['_score']);
         $results[] = $row;
         $totalRegisteredCourses++;
         if ($row['result_status'] === 'published') {
@@ -244,6 +461,12 @@ include '../../../includes/header.php';
                             <th>Semester:</th>
                             <td><?php echo e(strtoupper($semesterName)); ?></td>
                         </tr>
+                        <tr>
+                            <th>Year of Study:</th>
+                            <td><?php echo e((string)$yearOfStudy); ?></td>
+                            <th>Courses Published:</th>
+                            <td><?php echo e($fullyPublishedCourses . '/' . $totalRegisteredCourses); ?></td>
+                        </tr>
                          <tr>
                             <th>Date of Print:</th>
                             <td><?php echo date('d-M-Y'); ?></td>
@@ -255,7 +478,7 @@ include '../../../includes/header.php';
 
                 <!-- Results Table -->
                 <?php if (empty($results)): ?>
-                    <p class="text-center text-muted mt-4">No results found for the selected semester. The student may not have registered for courses or results have not been published.</p>
+                    <p class="text-center text-muted mt-4">No aligned courses found for the selected semester/year context.</p>
                 <?php else: ?>
                     <div class="table-responsive">
                         <table class="table table-sm table-bordered results-table">
@@ -276,16 +499,12 @@ include '../../../includes/header.php';
                                     <tr>
                                         <td><?php echo e($result['course_code']); ?></td>
                                         <td><?php echo e($result['course_name']); ?></td>
-                                        <?php if ($result['result_status'] === 'published'): ?>
-                                            <td class="text-center"><?php echo $result['assignment_marks'] !== null ? round($result['assignment_marks']) : '-'; ?></td>
-                                            <td class="text-center"><?php echo $result['final_exam_marks'] !== null ? round($result['final_exam_marks']) : '-'; ?></td>
-                                            <td class="text-center"><?php echo $result['total_marks'] !== null ? round($result['total_marks']) : '-'; ?></td>
-                                            <td class="text-center"><?php echo e($result['credit_hours']); ?></td>
-                                            <td class="text-center"><?php echo e($result['grade']); ?></td>
-                                            <td class="text-center"><?php echo e(number_format($result['grade_points'], 2)); ?></td>
-                                        <?php else: ?>
-                                            <td colspan="6" class="text-center text-muted"><i>Not Published</i></td>
-                                        <?php endif; ?>
+                                        <td class="text-center"><?php echo $result['assignment_marks'] !== null ? round($result['assignment_marks']) : '-'; ?></td>
+                                        <td class="text-center"><?php echo $result['final_exam_marks'] !== null ? round($result['final_exam_marks']) : '-'; ?></td>
+                                        <td class="text-center"><?php echo $result['total_marks'] !== null ? round($result['total_marks']) : '-'; ?></td>
+                                        <td class="text-center"><?php echo e($result['credit_hours']); ?></td>
+                                        <td class="text-center"><?php echo !empty($result['grade']) ? e($result['grade']) : '-'; ?></td>
+                                        <td class="text-center"><?php echo is_numeric($result['grade_points']) ? e(number_format((float)$result['grade_points'], 2)) : '-'; ?></td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
