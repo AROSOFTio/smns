@@ -53,6 +53,17 @@ $form = [
 ];
 $submitError = '';
 
+if (!isset($_SESSION['communication_submit_tokens']) || !is_array($_SESSION['communication_submit_tokens'])) {
+    $_SESSION['communication_submit_tokens'] = [];
+}
+foreach ($_SESSION['communication_submit_tokens'] as $token => $issuedAt) {
+    if (!is_string($token) || !is_numeric($issuedAt) || (time() - (int)$issuedAt) > 1800) {
+        unset($_SESSION['communication_submit_tokens'][$token]);
+    }
+}
+$formSubmitToken = bin2hex(random_bytes(16));
+$_SESSION['communication_submit_tokens'][$formSubmitToken] = time();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') === 'send_communication') {
     $form['title'] = trim((string)($_POST['title'] ?? ''));
     $form['message'] = trim((string)($_POST['message'] ?? ''));
@@ -63,10 +74,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
     $form['semester_id'] = (string)($_POST['semester_id'] ?? '');
     $form['send_portal'] = isset($_POST['send_portal']) ? '1' : '';
     $form['send_email'] = isset($_POST['send_email']) ? '1' : '';
+    $submittedToken = trim((string)($_POST['submit_token'] ?? ''));
 
-    if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
-        $submitError = 'Invalid CSRF token.';
+    if ($submittedToken === '' || !isset($_SESSION['communication_submit_tokens'][$submittedToken])) {
+        $submitError = 'Duplicate or expired submission detected. Please submit once and wait for completion.';
     } else {
+        unset($_SESSION['communication_submit_tokens'][$submittedToken]);
+    }
+
+    if ($submitError === '' && !Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $submitError = 'Invalid CSRF token.';
+    } elseif ($submitError === '') {
         try {
             $result = $communicationService->sendToStudents(
                 (int)($currentUser['id'] ?? 0),
@@ -241,9 +259,10 @@ include '../../includes/header.php';
         <div class="card mb-4">
             <div class="card-header"><strong>Compose Student Communication</strong></div>
             <div class="card-body">
-                <form method="post">
+                <form method="post" id="communicationForm">
                     <input type="hidden" name="csrf_token" value="<?php echo e(Security::generateCSRFToken()); ?>">
                     <input type="hidden" name="action" value="send_communication">
+                    <input type="hidden" name="submit_token" value="<?php echo e($formSubmitToken); ?>">
 
                     <div class="form-row">
                         <div class="form-group col-md-6">
@@ -324,7 +343,7 @@ include '../../includes/header.php';
                         <div class="form-note mt-1">At least one channel is required. Email sending depends on SMTP configuration.</div>
                     </div>
 
-                    <button type="submit" class="btn btn-primary">
+                    <button type="submit" class="btn btn-primary" id="sendCommunicationBtn">
                         <i class="fas fa-paper-plane"></i> Send Communication
                     </button>
                 </form>
@@ -370,7 +389,18 @@ include '../../includes/header.php';
                                             <?php endif; ?>
                                         </td>
                                         <td>
-                                            <span class="badge badge-<?php echo (($row['status'] ?? '') === 'completed') ? 'success' : ((($row['status'] ?? '') === 'partial') ? 'warning' : 'danger'); ?>">
+                                            <?php
+                                                $rowStatus = (string)($row['status'] ?? '');
+                                                $statusBadge = 'danger';
+                                                if ($rowStatus === 'completed') {
+                                                    $statusBadge = 'success';
+                                                } elseif ($rowStatus === 'partial') {
+                                                    $statusBadge = 'warning';
+                                                } elseif ($rowStatus === 'processing') {
+                                                    $statusBadge = 'info';
+                                                }
+                                            ?>
+                                            <span class="badge badge-<?php echo e($statusBadge); ?>">
                                                 <?php echo e(strtoupper((string)($row['status'] ?? '-'))); ?>
                                             </span>
                                         </td>
@@ -484,6 +514,22 @@ document.addEventListener('DOMContentLoaded', function () {
         audienceSelect.addEventListener('change', toggleAudienceFields);
     }
     toggleAudienceFields();
+
+    var communicationForm = document.getElementById('communicationForm');
+    if (communicationForm) {
+        communicationForm.addEventListener('submit', function (e) {
+            if (communicationForm.dataset.submitting === '1') {
+                e.preventDefault();
+                return;
+            }
+            communicationForm.dataset.submitting = '1';
+            var sendBtn = document.getElementById('sendCommunicationBtn');
+            if (sendBtn) {
+                sendBtn.disabled = true;
+                sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+            }
+        });
+    }
 });
 </script>
 

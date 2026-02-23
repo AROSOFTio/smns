@@ -33,17 +33,33 @@ $semesters = $sstmt->fetchAll();
 // Academic years for dropdown
 $academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_years ORDER BY start_date DESC")->fetchAll();
 
-// Default semester & academic year (student context)
+// Default semester & academic year context.
+// If user did not explicitly request a semester, use active Academic Calendar semester.
 $currentSemester = getStudentCurrentSemesterContext($conn, (int)($studentProfile['id'] ?? 0));
-$defaultSemesterId = $currentSemester['id'] ?? 0;
-$defaultAcademicYearId = (int)($currentSemester['academic_year_id'] ?? 0);
-if ($defaultAcademicYearId <= 0) {
-    $defaultAcademicYearId = Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0);
+$activeCalendarSemester = Helper::getCurrentSemester();
+$hasExplicitSemesterContext = isset($_GET['semester_id']) || isset($_GET['academic_year_id']) || isset($_GET['semester_number']);
+
+$defaultSemesterId = 0;
+$defaultAcademicYearId = 0;
+$defaultSemesterNumber = 1;
+
+if (!$hasExplicitSemesterContext && !empty($activeCalendarSemester['id'])) {
+    $defaultSemesterId = (int)($activeCalendarSemester['id'] ?? 0);
+    $defaultAcademicYearId = (int)($activeCalendarSemester['academic_year_id'] ?? 0);
+    $defaultSemesterNumber = (int)($activeCalendarSemester['semester_number'] ?? 1);
+} else {
+    $defaultSemesterId = (int)($currentSemester['id'] ?? 0);
+    $defaultAcademicYearId = (int)($currentSemester['academic_year_id'] ?? 0);
+    $defaultSemesterNumber = (int)($currentSemester['semester_number'] ?? 1);
 }
 
-// Determine selected academic year & semester number from GET (or fallbacks)
+if ($defaultAcademicYearId <= 0) {
+    $defaultAcademicYearId = (int)(Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0));
+}
+
+// Determine selected academic year & semester number from GET (or defaults above)
 $selectedAcademicYearId = isset($_GET['academic_year_id']) ? (int)$_GET['academic_year_id'] : $defaultAcademicYearId;
-$selectedSemesterNumber = isset($_GET['semester_number']) ? (int)$_GET['semester_number'] : ($currentSemester['semester_number'] ?? 1);
+$selectedSemesterNumber = isset($_GET['semester_number']) ? (int)$_GET['semester_number'] : $defaultSemesterNumber;
 $selectedEnrollingAs = isset($_GET['enrolling_as']) ? trim((string)$_GET['enrolling_as']) : 'normal';
 $selectedHasRetakes = isset($_GET['has_retakes']) ? trim((string)$_GET['has_retakes']) : 'no';
 $regTab = isset($_GET['tab']) ? trim((string)$_GET['tab']) : 'enroll';

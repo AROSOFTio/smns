@@ -153,10 +153,23 @@ class AdminCommunicationService {
             'send_portal' => $sendPortal ? 1 : 0,
             'send_email' => $sendEmail ? 1 : 0,
             'total_recipients' => $totalRecipients,
-            'status' => 'completed',
+            'status' => 'processing',
             'created_by_user_id' => $actorUserId > 0 ? $actorUserId : null
         ]);
         $communicationId = (int)$this->conn->lastInsertId();
+
+        $this->logger->log(
+            $actorUserId,
+            'dispatch',
+            'communications',
+            'Started communication #' . $communicationId
+                . ' [' . $communicationType . ']'
+                . '; audience=' . $scope
+                . '; recipients=' . $totalRecipients
+                . '; portal=' . ($sendPortal ? 'on' : 'off')
+                . '; email=' . ($sendEmail ? 'on' : 'off')
+                . '; source=' . $source
+        );
 
         $portalSuccessCount = 0;
         $emailSuccessCount = 0;
@@ -216,7 +229,9 @@ class AdminCommunicationService {
                         $mailBody,
                         [
                             'context_label' => 'Student Bulk Communication',
-                            'source_page' => '/views/admin/communications.php'
+                            'source_page' => '/views/admin/communications.php',
+                            'retry_attempts' => 1,
+                            'allow_php_fallback' => false
                         ]
                     );
                     if ($mailOk) {

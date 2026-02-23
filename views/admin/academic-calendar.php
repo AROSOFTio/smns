@@ -63,6 +63,17 @@ $getAdminProfileId = function () use ($conn, $currentUser) {
     return (int)($stmt->fetchColumn() ?: 0);
 };
 
+if (!isset($_SESSION['announcement_submit_tokens']) || !is_array($_SESSION['announcement_submit_tokens'])) {
+    $_SESSION['announcement_submit_tokens'] = [];
+}
+foreach ($_SESSION['announcement_submit_tokens'] as $token => $issuedAt) {
+    if (!is_string($token) || !is_numeric($issuedAt) || (time() - (int)$issuedAt) > 1800) {
+        unset($_SESSION['announcement_submit_tokens'][$token]);
+    }
+}
+$announcementSubmitToken = bin2hex(random_bytes(16));
+$_SESSION['announcement_submit_tokens'][$announcementSubmitToken] = time();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $postedTab = $_POST['active_tab'] ?? $activeTab;
     $postedTab = in_array($postedTab, $allowedTabs, true) ? $postedTab : 'semesters';
@@ -231,6 +242,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sendToStudentsNow = isset($_POST['send_to_students_now']) && (string)($_POST['send_to_students_now'] ?? '') === '1';
             $sendChannelPortal = isset($_POST['send_channel_portal']);
             $sendChannelEmail = isset($_POST['send_channel_email']);
+            $submittedToken = trim((string)($_POST['announcement_submit_token'] ?? ''));
+
+            if ($submittedToken === '' || !isset($_SESSION['announcement_submit_tokens'][$submittedToken])) {
+                throw new Exception('Duplicate or expired announcement submission detected. Please submit once and wait for completion.');
+            }
+            unset($_SESSION['announcement_submit_tokens'][$submittedToken]);
 
             if ($title === '' || $content === '' || $startDate === '' || $endDate === null) {
                 throw new Exception('Please fill all required announcement fields.');
@@ -761,11 +778,12 @@ include '../../includes/header.php';
                     <?php endif; ?>
                 </div>
                 <div class="card-body">
-                    <form method="post">
+                    <form method="post" id="announcementForm">
                         <input type="hidden" name="csrf_token" value="<?php echo e(Security::generateCSRFToken()); ?>">
                         <input type="hidden" name="action" value="save_announcement">
                         <input type="hidden" name="active_tab" value="announcements">
                         <input type="hidden" name="announcement_id" value="<?php echo (int)$announcementForm['id']; ?>">
+                        <input type="hidden" name="announcement_submit_token" value="<?php echo e($announcementSubmitToken); ?>">
 
                         <div class="form-row">
                             <div class="form-group col-md-6">
@@ -843,7 +861,7 @@ include '../../includes/header.php';
                             </div>
                         </div>
 
-                        <button type="submit" class="btn btn-primary">
+                        <button type="submit" class="btn btn-primary" id="announcementSubmitBtn">
                             <i class="fas fa-save"></i> <?php echo $announcementForm['id'] > 0 ? 'Update Announcement' : 'Create Announcement'; ?>
                         </button>
                     </form>
@@ -954,5 +972,28 @@ include '../../includes/header.php';
         <?php endif; ?>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var announcementForm = document.getElementById('announcementForm');
+    if (!announcementForm) {
+        return;
+    }
+
+    announcementForm.addEventListener('submit', function (e) {
+        if (announcementForm.dataset.submitting === '1') {
+            e.preventDefault();
+            return;
+        }
+        announcementForm.dataset.submitting = '1';
+
+        var submitBtn = document.getElementById('announcementSubmitBtn');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        }
+    });
+});
+</script>
 
 <?php include '../../includes/footer.php'; ?>

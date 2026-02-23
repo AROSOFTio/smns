@@ -36,6 +36,9 @@ class Helper {
         if ($retryDelayMs < 0) {
             $retryDelayMs = 0;
         }
+        $allowPhpFallback = array_key_exists('allow_php_fallback', $options)
+            ? (bool)$options['allow_php_fallback']
+            : (defined('EMAIL_FALLBACK_PHP_MAIL') && EMAIL_FALLBACK_PHP_MAIL);
 
         $transport = strtolower((string)($options['transport'] ?? (defined('EMAIL_TRANSPORT') ? EMAIL_TRANSPORT : 'php_mail')));
         if ($transport === 'nodemailer') {
@@ -88,7 +91,7 @@ class Helper {
                 error_log($transportError);
             }
 
-            if (!(defined('EMAIL_FALLBACK_PHP_MAIL') && EMAIL_FALLBACK_PHP_MAIL)) {
+            if (!$allowPhpFallback) {
                 self::$lastEmailError = $transportError !== '' ? $transportError : 'Nodemailer transport failed.';
                 if ($notifyAdminOnFailure) {
                     self::recordEmailDeliveryFailure($recipients, (string)$subject, (string)$message, $html, $transportUsed, self::$lastEmailError, $options);
