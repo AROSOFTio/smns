@@ -654,6 +654,71 @@ body { background: #f8fafc; }
     font-weight: 700;
     color: #1e293b;
 }
+html[data-theme='dark'] .profile-lock-overlay {
+    background: rgba(2, 6, 23, 0.84);
+}
+html[data-theme='dark'] .profile-lock-modal {
+    background: #111827;
+    border-color: #334155;
+    box-shadow: 0 24px 48px rgba(2, 6, 23, 0.72);
+}
+html[data-theme='dark'] .profile-lock-title {
+    color: #f8fafc;
+}
+html[data-theme='dark'] .profile-lock-subtitle {
+    color: #cbd5e1;
+}
+html[data-theme='dark'] .profile-lock-section {
+    background: #0f172a;
+    border-color: #334155;
+}
+html[data-theme='dark'] .profile-lock-section h6 {
+    color: #e2e8f0;
+}
+html[data-theme='dark'] .profile-lock-modal label {
+    color: #e5e7eb !important;
+}
+html[data-theme='dark'] .profile-lock-modal .text-danger {
+    color: #fca5a5 !important;
+}
+html[data-theme='dark'] .profile-lock-modal .form-control,
+html[data-theme='dark'] .profile-lock-modal .form-control-sm {
+    background: #1f2937;
+    color: #e5e7eb;
+    border-color: #334155;
+}
+html[data-theme='dark'] .profile-lock-modal .form-control::placeholder,
+html[data-theme='dark'] .profile-lock-modal .form-control-sm::placeholder {
+    color: #94a3b8;
+}
+html[data-theme='dark'] .profile-lock-modal .form-control:focus,
+html[data-theme='dark'] .profile-lock-modal .form-control-sm:focus {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 0.2rem rgba(96, 165, 250, 0.22);
+}
+html[data-theme='dark'] .profile-lock-modal .form-control-file {
+    color: #cbd5e1;
+}
+html[data-theme='dark'] .profile-lock-modal .form-control-file::file-selector-button {
+    color: #e5e7eb;
+    background: #1f2937;
+    border: 1px solid #475569;
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    margin-right: 0.5rem;
+}
+html[data-theme='dark'] .profile-lock-modal .form-control-file::-webkit-file-upload-button {
+    color: #e5e7eb;
+    background: #1f2937;
+    border: 1px solid #475569;
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    margin-right: 0.5rem;
+}
+html[data-theme='dark'] .profile-lock-modal small,
+html[data-theme='dark'] .profile-lock-modal .text-muted {
+    color: #94a3b8 !important;
+}
 </style>
 
 <div class="student-sidebar">
