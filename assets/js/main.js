@@ -313,20 +313,38 @@ $(document).ajaxError(function(event, jqxhr, settings, thrownError) {
     alert('An error occurred. Please try again.');
 });
 
+// Success/error alert element helper
+function createAlertElement(type, message, autoDismiss) {
+    var alert = $("<div></div>").addClass("alert alert-" + type);
+    if (autoDismiss === false) {
+        alert.attr("data-auto-dismiss", "false");
+    }
+
+    var closeBtn = $("<button type=\"button\" class=\"close\" aria-label=\"Close\">&times;</button>");
+    closeBtn.on("click", function() {
+        alert.fadeOut("fast", function() {
+            $(this).remove();
+        });
+    });
+
+    alert.append(closeBtn);
+    alert.append(document.createTextNode(String(message || "")));
+    return alert;
+}
+
 // Success message
 function showSuccess(message) {
-    // persistent success alert — admin must dismiss manually
-    var alert = $('<div class="alert alert-success" data-auto-dismiss="false">' + message + '</div>');
-    $('.content-area').prepend(alert);
-    // do NOT auto-dismiss; user will close when ready
+    // Persistent success alert; admin must dismiss manually.
+    var alert = createAlertElement("success", message, false);
+    $(".content-area").prepend(alert);
 }
 
 // Error message
 function showError(message) {
-    var alert = $('<div class="alert alert-danger">' + message + '</div>');
-    $('.content-area').prepend(alert);
+    var alert = createAlertElement("danger", message, false);
+    $(".content-area").prepend(alert);
     setTimeout(function() {
-        alert.fadeOut('slow', function() {
+        alert.fadeOut("slow", function() {
             $(this).remove();
         });
     }, 20000);

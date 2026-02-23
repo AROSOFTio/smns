@@ -10,7 +10,7 @@
         // Create mobile menu button
         const mobileBtn = document.createElement('button');
         mobileBtn.className = 'mobile-menu-btn';
-        mobileBtn.innerHTML = 'â˜°';
+        mobileBtn.innerHTML = '&#9776;';
         mobileBtn.setAttribute('aria-label', 'Toggle Navigation');
         document.body.appendChild(mobileBtn);
 
@@ -29,13 +29,13 @@
                 sidebar.classList.remove('active');
                 overlay.classList.remove('active');
                 mobileBtn.classList.remove('active');
-                mobileBtn.innerHTML = 'â˜°';
+                mobileBtn.innerHTML = '&#9776;';
                 document.body.style.overflow = '';
             } else {
                 sidebar.classList.add('active');
                 overlay.classList.add('active');
                 mobileBtn.classList.add('active');
-                mobileBtn.innerHTML = 'âœ•';
+                mobileBtn.innerHTML = '&times;';
                 document.body.style.overflow = 'hidden';
             }
         }
@@ -60,7 +60,7 @@
                 sidebar.classList.remove('active');
                 overlay.classList.remove('active');
                 mobileBtn.classList.remove('active');
-                mobileBtn.innerHTML = 'â˜°';
+                mobileBtn.innerHTML = '&#9776;';
                 document.body.style.overflow = '';
             }
         });
@@ -173,7 +173,7 @@
             link.addEventListener('click', function() {
                 // Add loading state
                 const originalHTML = this.innerHTML;
-                this.innerHTML = this.innerHTML.replace(/^.*?(<span.*?>)/, '$1<i style="margin-right: 8px;">â³</i>');
+                this.innerHTML = this.innerHTML.replace(/^.*?(<span.*?>)/, '$1<i style="margin-right: 8px;">...</i>');
                 this.style.opacity = '0.7';
                 
                 // Remove loading state after navigation
@@ -186,27 +186,36 @@
     }
 
     // Notification handling
-        function initNotificationHandling() {
+    function initNotificationHandling() {
         const AUTO_DISMISS_MS = 20000;
-        const allAlerts = document.querySelectorAll('.alert');
+        const dismissAlert = (alert) => {
+            if (!(alert instanceof HTMLElement) || alert.dataset.alertRemoving === '1') {
+                return;
+            }
+            alert.dataset.alertRemoving = '1';
+            alert.style.opacity = '0';
+            setTimeout(() => alert.remove(), 300);
+        };
 
-        allAlerts.forEach((alert) => {
-            if (!alert.dataset.alertBound) {
-                alert.dataset.alertBound = '1';
-                alert.style.transition = alert.style.transition || 'opacity 0.3s ease';
+        const bindAlert = (alert) => {
+            if (!(alert instanceof HTMLElement) || !alert.classList.contains('alert')) {
+                return;
+            }
+            if (alert.dataset.alertBound === '1') {
+                return;
+            }
 
-                if (!alert.querySelector('.close')) {
-                    const closeBtn = document.createElement('button');
-                    closeBtn.type = 'button';
-                    closeBtn.className = 'close';
-                    closeBtn.setAttribute('aria-label', 'Close');
-                    closeBtn.innerHTML = '&times;';
-                    closeBtn.addEventListener('click', () => {
-                        alert.style.opacity = '0';
-                        setTimeout(() => alert.remove(), 300);
-                    });
-                    alert.insertBefore(closeBtn, alert.firstChild);
-                }
+            alert.dataset.alertBound = '1';
+            alert.style.transition = alert.style.transition || 'opacity 0.3s ease';
+
+            if (!alert.querySelector('.close')) {
+                const closeBtn = document.createElement('button');
+                closeBtn.type = 'button';
+                closeBtn.className = 'close';
+                closeBtn.setAttribute('aria-label', 'Close');
+                closeBtn.innerHTML = '&times;';
+                closeBtn.addEventListener('click', () => dismissAlert(alert));
+                alert.insertBefore(closeBtn, alert.firstChild);
             }
 
             if (alert.getAttribute('data-auto-dismiss') === 'false') {
@@ -215,11 +224,10 @@
 
             let timer = null;
             const startTimer = () => {
-                if (timer) clearTimeout(timer);
-                timer = setTimeout(() => {
-                    alert.style.opacity = '0';
-                    setTimeout(() => alert.remove(), 300);
-                }, AUTO_DISMISS_MS);
+                if (timer) {
+                    clearTimeout(timer);
+                }
+                timer = setTimeout(() => dismissAlert(alert), AUTO_DISMISS_MS);
             };
             const stopTimer = () => {
                 if (timer) {
@@ -233,7 +241,27 @@
             alert.addEventListener('mouseleave', startTimer);
             alert.addEventListener('focusin', stopTimer);
             alert.addEventListener('focusout', startTimer);
-        });
+        };
+
+        document.querySelectorAll('.alert').forEach(bindAlert);
+
+        if (typeof MutationObserver === 'function' && document.body) {
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    mutation.addedNodes.forEach((node) => {
+                        if (!(node instanceof HTMLElement)) {
+                            return;
+                        }
+                        if (node.classList.contains('alert')) {
+                            bindAlert(node);
+                        }
+                        node.querySelectorAll('.alert').forEach(bindAlert);
+                    });
+                });
+            });
+
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
     }
 
     // Accessibility improvements

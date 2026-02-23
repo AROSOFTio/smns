@@ -181,16 +181,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Set success message with credentials
             $successMsg = "<strong>Lecturer added successfully!</strong><br><br>";
-            $successMsg .= "<div style='background:#e7f3ff;padding:15px;border-radius:5px;border-left:4px solid #007bff;'>";
+            $successMsg .= "<div class='lecturer-credential-box'>";
             $successMsg .= "<strong>Lecturer ID:</strong> <code>{$lecturerId}</code><br>";
             $successMsg .= "<strong>Username:</strong> <code>{$username}</code><br>";
             $successMsg .= "<strong>Temporary Password:</strong> <code>{$tempPassword}</code><br>";
             $successMsg .= "<strong>Portal:</strong> <a href='" . BASE_URL . "/views/auth/login.php?role=lecturer' target='_blank'>Lecturer Login</a>";
             $successMsg .= "</div>";
             if ($mailSent) {
-                $successMsg .= "<div style='color:#28a745;margin-top:10px;'><i class='fas fa-check-circle'></i> Credentials emailed to lecturer.</div>";
+                $successMsg .= "<div class='lecturer-credential-note success'><i class='fas fa-check-circle'></i> Credentials emailed to lecturer.</div>";
             } else {
-                $successMsg .= "<div style='color:#dc3545;margin-top:10px;'><i class='fas fa-exclamation-triangle'></i> <strong>Could not send email.</strong> Please copy and communicate these credentials to the lecturer.</div>";
+                $successMsg .= "<div class='lecturer-credential-note error'><i class='fas fa-exclamation-triangle'></i> <strong>Could not send email.</strong> Please copy and communicate these credentials to the lecturer.</div>";
             }
             
             $session->setFlash('success', $successMsg);
@@ -301,6 +301,55 @@ form {
 
 .lecturer-create-success a {
     word-break: break-all;
+}
+
+.lecturer-create-success .lecturer-credential-box {
+    background: #e7f3ff;
+    border-left: 4px solid #007bff;
+    border-radius: 5px;
+    color: #0f172a;
+    margin-top: 8px;
+    padding: 15px;
+}
+
+.lecturer-create-success .lecturer-credential-note {
+    margin-top: 10px;
+}
+
+.lecturer-create-success .lecturer-credential-note.success {
+    color: #28a745;
+}
+
+.lecturer-create-success .lecturer-credential-note.error {
+    color: #dc3545;
+}
+
+html[data-theme='dark'] .lecturer-create-success .lecturer-credential-box {
+    background: #0f172a;
+    border-left-color: #60a5fa;
+    color: #e2e8f0;
+}
+
+html[data-theme='dark'] .lecturer-create-success code {
+    background: #1f2937;
+    border: 1px solid #334155;
+    color: #f8fafc;
+}
+
+html[data-theme='dark'] .lecturer-create-success a {
+    color: #93c5fd;
+}
+
+html[data-theme='dark'] .lecturer-create-success a:hover {
+    color: #bfdbfe;
+}
+
+html[data-theme='dark'] .lecturer-create-success .lecturer-credential-note.success {
+    color: #86efac;
+}
+
+html[data-theme='dark'] .lecturer-create-success .lecturer-credential-note.error {
+    color: #fca5a5;
 }
 
 /* Topbar fixes */

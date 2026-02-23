@@ -216,16 +216,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // Set success message with credentials
                 $successMsg = "<strong>Lecturer added successfully!</strong><br><br>";
-                $successMsg .= "<div style='background:#e7f3ff;padding:15px;border-radius:5px;border-left:4px solid #007bff;'>";
+                $successMsg .= "<div class='lecturer-credential-box'>";
                 $successMsg .= "<strong>Lecturer ID:</strong> <code>{$lecturerId}</code><br>";
                 $successMsg .= "<strong>Username:</strong> <code>{$username}</code><br>";
                 $successMsg .= "<strong>Temporary Password:</strong> <code>{$tempPassword}</code><br>";
                 $successMsg .= "<strong>Portal:</strong> <a href='" . BASE_URL . "/views/lecturer/login.php'>Lecturer Login</a>";
                 $successMsg .= "</div>";
                 if ($mailSent) {
-                    $successMsg .= "<div style='color:#28a745;margin-top:10px;'><i class='fas fa-check-circle'></i> Credentials emailed to lecturer</div>";
+                    $successMsg .= "<div class='lecturer-credential-note success'><i class='fas fa-check-circle'></i> Credentials emailed to lecturer</div>";
                 } else {
-                    $successMsg .= "<div style='color:#ffc107;margin-top:10px;'><i class='fas fa-exclamation-triangle'></i> Please communicate these credentials to the lecturer</div>";
+                    $successMsg .= "<div class='lecturer-credential-note warning'><i class='fas fa-exclamation-triangle'></i> Please communicate these credentials to the lecturer</div>";
                 }
                 
                 $session->setFlash('success', $successMsg);

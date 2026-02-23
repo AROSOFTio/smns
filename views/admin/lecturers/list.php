@@ -239,6 +239,63 @@ include dirname(__DIR__, 3) . '/includes/header.php';
         padding: 2px 6px;
         border-radius: 4px;
     }
+
+    .lecturer-success-message .lecturer-credential-box {
+        background: #e7f3ff;
+        border-left: 4px solid #007bff;
+        border-radius: 5px;
+        color: #0f172a;
+        margin-top: 8px;
+        padding: 15px;
+    }
+
+    .lecturer-success-message .lecturer-credential-note {
+        margin-top: 10px;
+    }
+
+    .lecturer-success-message .lecturer-credential-note.success {
+        color: #28a745;
+    }
+
+    .lecturer-success-message .lecturer-credential-note.warning {
+        color: #b45309;
+    }
+
+    .lecturer-success-message .lecturer-credential-note.error {
+        color: #dc3545;
+    }
+
+    html[data-theme='dark'] .lecturer-success-message .lecturer-credential-box {
+        background: #0f172a;
+        border-left-color: #60a5fa;
+        color: #e2e8f0;
+    }
+
+    html[data-theme='dark'] .lecturer-success-message code {
+        background: #1f2937;
+        border: 1px solid #334155;
+        color: #f8fafc;
+    }
+
+    html[data-theme='dark'] .lecturer-success-message a {
+        color: #93c5fd;
+    }
+
+    html[data-theme='dark'] .lecturer-success-message a:hover {
+        color: #bfdbfe;
+    }
+
+    html[data-theme='dark'] .lecturer-success-message .lecturer-credential-note.success {
+        color: #86efac;
+    }
+
+    html[data-theme='dark'] .lecturer-success-message .lecturer-credential-note.warning {
+        color: #fcd34d;
+    }
+
+    html[data-theme='dark'] .lecturer-success-message .lecturer-credential-note.error {
+        color: #fca5a5;
+    }
     
     /* Actions column responsive */
     @media (max-width: 992px) {
