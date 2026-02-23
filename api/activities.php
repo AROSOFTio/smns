@@ -36,6 +36,8 @@ foreach ($recentActivities as $activity) {
         'description' => $activity['description'],
         'module' => $activity['module'],
         'username' => $activity['username'] ?? null,
+        'display_name' => $activity['display_name'] ?? ($activity['username'] ?? null),
+        'user_role' => $activity['user_role'] ?? null,
         'created_at' => $activity['created_at'],
         'formatted_time' => Helper::formatDateTime($activity['created_at'], 'g:i:s A'),
         'formatted_date' => Helper::formatDate($activity['created_at'], 'M d, Y')

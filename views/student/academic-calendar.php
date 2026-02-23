@@ -28,6 +28,8 @@ if (!empty($activeSemester)) {
 
 $selectedAcademicYearId = isset($_GET['academic_year_id']) ? (int)$_GET['academic_year_id'] : (int)($currentSemester['academic_year_id'] ?? 0);
 $selectedAcademicYearName = '-';
+$selectedAcademicYearStart = null;
+$selectedAcademicYearEnd = null;
 $allAcademicYears = [];
 try {
     $yStmt = $conn->query("SELECT id, year_name FROM academic_years ORDER BY start_date DESC, id DESC");
@@ -37,9 +39,14 @@ if ($selectedAcademicYearId <= 0 && !empty($allAcademicYears)) {
     $selectedAcademicYearId = (int)$allAcademicYears[0]['id'];
 }
 if ($selectedAcademicYearId > 0) {
-    $ayStmt = $conn->prepare("SELECT year_name FROM academic_years WHERE id = :id LIMIT 1");
+    $ayStmt = $conn->prepare("SELECT year_name, start_date, end_date FROM academic_years WHERE id = :id LIMIT 1");
     $ayStmt->execute(['id' => $selectedAcademicYearId]);
-    $selectedAcademicYearName = (string)($ayStmt->fetchColumn() ?: '-');
+    $ayRow = $ayStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    if ($ayRow) {
+        $selectedAcademicYearName = (string)($ayRow['year_name'] ?? '-');
+        $selectedAcademicYearStart = !empty($ayRow['start_date']) ? (string)$ayRow['start_date'] : null;
+        $selectedAcademicYearEnd = !empty($ayRow['end_date']) ? (string)$ayRow['end_date'] : null;
+    }
 }
 
 $semesters = [1 => null, 2 => null];
@@ -74,8 +81,26 @@ $semesterTwoCurrent = !empty($semesters[2]['start_date']) && !empty($semesters[2
 
 $otherEvents = [];
 try {
-    $annStmt = $conn->prepare("SELECT title, start_date, end_date FROM announcements WHERE start_date IS NOT NULL AND end_date IS NOT NULL AND target_audience IN ('all','students') ORDER BY start_date ASC LIMIT 20");
-    $annStmt->execute();
+    $annStmt = $conn->prepare("
+        SELECT title, start_date, end_date
+        FROM announcements
+        WHERE status = 'active'
+          AND start_date IS NOT NULL
+          AND end_date IS NOT NULL
+          AND target_audience IN ('all','students')
+          AND (
+                :ay_start_null IS NULL OR :ay_end_null IS NULL
+                OR (start_date <= :ay_end_cmp AND end_date >= :ay_start_cmp)
+              )
+        ORDER BY start_date ASC
+        LIMIT 20
+    ");
+    $annStmt->execute([
+        'ay_start_null' => $selectedAcademicYearStart,
+        'ay_end_null' => $selectedAcademicYearEnd,
+        'ay_start_cmp' => $selectedAcademicYearStart,
+        'ay_end_cmp' => $selectedAcademicYearEnd
+    ]);
     foreach (($annStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) as $a) {
         $t = strtoupper((string)($a['title'] ?? 'EVENT'));
         $ev = 'EVENT';

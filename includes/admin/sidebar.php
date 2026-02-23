@@ -116,6 +116,11 @@ if (!isset($currentUser) || !is_array($currentUser)) {
                     <li><a href="<?php echo BASE_URL; ?>/views/admin/courses/list.php" class="<?php echo $currentDir === 'courses' ? 'active' : ''; ?>">Courses</a></li>
                 </ul>
             </li>
+            <li>
+                <a href="<?php echo BASE_URL; ?>/views/admin/academic-calendar.php" class="<?php echo $currentPage == 'academic-calendar.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-calendar-alt"></i><span>Academic Calendar</span>
+                </a>
+            </li>
             <li class="<?php echo $currentDir === 'results' ? 'open' : ''; ?>">
                 <a href="#" class="has-submenu"><i class="fas fa-poll"></i><span>Results Management</span></a>
                 <ul class="submenu">
@@ -130,6 +135,11 @@ if (!isset($currentUser) || !is_array($currentUser)) {
             <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/student_requests.php" class="<?php echo $currentPage == 'student_requests.php' ? 'active' : ''; ?>">
                     <i class="fas fa-inbox"></i><span>Student Requests</span>
+                </a>
+            </li>
+            <li>
+                <a href="<?php echo BASE_URL; ?>/views/admin/communications.php" class="<?php echo $currentPage == 'communications.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-bullhorn"></i><span>Communications</span>
                 </a>
             </li>
             <li class="<?php echo $currentDir == 'reports' ? 'open' : ''; ?>">

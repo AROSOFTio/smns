@@ -60,9 +60,23 @@ class Logger {
      */
     public function getRecentActivities($limit = 100) {
         try {
-            $sql = "SELECT al.*, u.username 
+            $sql = "SELECT 
+                        al.*, 
+                        u.username,
+                        u.role AS user_role,
+                        COALESCE(
+                            NULLIF(TRIM(CONCAT_WS(' ', a.first_name, a.last_name)), ''),
+                            NULLIF(TRIM(CONCAT_WS(' ', l.first_name, l.last_name)), ''),
+                            NULLIF(TRIM(CONCAT_WS(' ', f.first_name, f.last_name)), ''),
+                            NULLIF(TRIM(CONCAT_WS(' ', s.first_name, s.middle_name, s.last_name)), ''),
+                            u.username
+                        ) AS display_name
                     FROM activity_logs al
                     LEFT JOIN users u ON al.user_id = u.id
+                    LEFT JOIN admins a ON u.id = a.user_id
+                    LEFT JOIN lecturers l ON u.id = l.user_id
+                    LEFT JOIN finance_staff f ON u.id = f.user_id
+                    LEFT JOIN students s ON u.id = s.user_id
                     ORDER BY al.created_at DESC 
                     LIMIT :limit";
             $stmt = $this->db->prepare($sql);
@@ -89,6 +103,14 @@ class Logger {
                         login.description AS login_description,
                         login.created_at AS login_time,
                         u.username,
+                        u.role AS user_role,
+                        COALESCE(
+                            NULLIF(TRIM(CONCAT_WS(' ', a.first_name, a.last_name)), ''),
+                            NULLIF(TRIM(CONCAT_WS(' ', l.first_name, l.last_name)), ''),
+                            NULLIF(TRIM(CONCAT_WS(' ', f.first_name, f.last_name)), ''),
+                            NULLIF(TRIM(CONCAT_WS(' ', s.first_name, s.middle_name, s.last_name)), ''),
+                            u.username
+                        ) AS display_name,
                         (
                             SELECT MIN(next_login.created_at)
                             FROM activity_logs next_login
@@ -121,6 +143,10 @@ class Logger {
                         ) AS logout_time
                     FROM activity_logs login
                     LEFT JOIN users u ON login.user_id = u.id
+                    LEFT JOIN admins a ON u.id = a.user_id
+                    LEFT JOIN lecturers l ON u.id = l.user_id
+                    LEFT JOIN finance_staff f ON u.id = f.user_id
+                    LEFT JOIN students s ON u.id = s.user_id
                     WHERE login.action = 'login'
                     ORDER BY login.created_at DESC
                     LIMIT :limit";

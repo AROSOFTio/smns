@@ -34,6 +34,8 @@ foreach ($sessions as $s) {
         'id' => (int)($s['id'] ?? 0),
         'user_id' => isset($s['user_id']) ? (int)$s['user_id'] : null,
         'username' => $s['username'] ?? 'Unknown',
+        'display_name' => $s['display_name'] ?? ($s['username'] ?? 'Unknown'),
+        'user_role' => $s['user_role'] ?? null,
         'login_time' => $s['login_time'] ?? null,
         'logout_time' => $s['logout_time'] ?? null,
         'session_end_time' => $s['session_end_time'] ?? null,
@@ -48,4 +50,3 @@ echo json_encode([
     'success' => true,
     'sessions' => $formatted
 ]);
-

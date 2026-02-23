@@ -116,6 +116,59 @@ if ($semesterId > 0) {
     }
 }
 
+/**
+ * Registration window guard for student self-enrollment actions.
+ * Admin flows are intentionally not restricted by this guard.
+ */
+$getSemesterRegistrationWindow = function (int $targetSemesterId) use ($conn) {
+    $data = [
+        'semester_id' => $targetSemesterId,
+        'configured' => false,
+        'open' => false,
+        'registration_start_date' => null,
+        'registration_end_date' => null,
+        'semester_label' => 'selected semester'
+    ];
+
+    if ($targetSemesterId <= 0) {
+        return $data;
+    }
+
+    try {
+        $stmt = $conn->prepare("
+            SELECT s.registration_start_date, s.registration_end_date, s.semester_name, ay.year_name
+            FROM semesters s
+            LEFT JOIN academic_years ay ON ay.id = s.academic_year_id
+            WHERE s.id = :id
+            LIMIT 1
+        ");
+        $stmt->execute(['id' => $targetSemesterId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return $data;
+        }
+
+        $start = !empty($row['registration_start_date']) ? (string)$row['registration_start_date'] : null;
+        $end = !empty($row['registration_end_date']) ? (string)$row['registration_end_date'] : null;
+        $data['registration_start_date'] = $start;
+        $data['registration_end_date'] = $end;
+        $data['configured'] = ($start !== null && $end !== null);
+        $data['semester_label'] = trim((string)($row['year_name'] ?? '') . ' - ' . (string)($row['semester_name'] ?? ''));
+
+        if ($data['configured']) {
+            $today = date('Y-m-d');
+            $data['open'] = ($today >= $start && $today <= $end);
+        }
+    } catch (Exception $e) {
+        // keep defaults if lookup fails
+    }
+
+    return $data;
+};
+
+$currentSemesterWindow = $getSemesterRegistrationWindow((int)$semesterId);
+$isEnrollmentWindowOpen = (bool)$currentSemesterWindow['open'];
+
 // Compute Year of study
 // Allow overriding via GET (user-selectable)
 $yearOfStudy = isset($_GET['year_of_study']) ? (int)$_GET['year_of_study'] : (int)($studentProfile['level_year'] ?? 1);
@@ -339,6 +392,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'enro
             ($repeatDecision['year_name'] ?: 'selected year') . ' - ' . ($repeatDecision['semester_name'] ?: 'semester') .
             ' (SGPA: ' . number_format((float)$repeatDecision['semester_gpa'], 2) . ').'
         );
+    }
+
+    // Strict lock: students cannot self-enroll outside registration window.
+    $postWindow = $getSemesterRegistrationWindow((int)$semesterId);
+    if (!$postWindow['configured'] || !$postWindow['open']) {
+        $period = ($postWindow['registration_start_date'] && $postWindow['registration_end_date'])
+            ? ($postWindow['registration_start_date'] . ' to ' . $postWindow['registration_end_date'])
+            : 'not configured';
+        $session->setFlash(
+            'error',
+            'Enrollment window is closed for ' . (($postWindow['semester_label'] ?: 'this semester')) .
+            '. Allowed period: ' . $period . '. Please contact admin for manual enrollment.'
+        );
+        header('Location: course-registration.php?semester_id=' . $semesterId . '&academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber . '&year_of_study=' . $yearOfStudy);
+        exit;
     }
 
     try {
@@ -742,6 +810,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $session->setFlash('error', 'Invalid CSRF token.');
         header('Location: course-registration.php?semester_id=' . $semesterId);
+        exit;
+    }
+
+    // Strict lock: students cannot create/update semester registration outside configured window.
+    $requestWindow = $getSemesterRegistrationWindow((int)$semesterId);
+    if (!$requestWindow['configured'] || !$requestWindow['open']) {
+        $period = ($requestWindow['registration_start_date'] && $requestWindow['registration_end_date'])
+            ? ($requestWindow['registration_start_date'] . ' to ' . $requestWindow['registration_end_date'])
+            : 'not configured';
+        $session->setFlash(
+            'error',
+            'Registration window is closed for ' . (($requestWindow['semester_label'] ?: 'this semester')) .
+            '. Allowed period: ' . $period . '. Please contact admin for manual enrollment.'
+        );
+        header('Location: course-registration.php?semester_id=' . $semesterId . '&academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber . '&year_of_study=' . $yearOfStudy);
         exit;
     }
 
@@ -1924,6 +2007,18 @@ include '../../includes/header.php';
                 <i class="fas fa-redo"></i> <?php echo e($repeatEnforcedNotice); ?>
             </div>
         <?php endif; ?>
+        <?php if (!$isEnrollmentWindowOpen): ?>
+            <div class="alert alert-warning" role="alert" style="border-left:4px solid #ffc107;">
+                <i class="fas fa-lock"></i>
+                Enrollment window is currently closed for student self-service.
+                <?php if (!empty($currentSemesterWindow['registration_start_date']) && !empty($currentSemesterWindow['registration_end_date'])): ?>
+                    Allowed period: <strong><?php echo e($currentSemesterWindow['registration_start_date']); ?></strong> to <strong><?php echo e($currentSemesterWindow['registration_end_date']); ?></strong>.
+                <?php else: ?>
+                    Registration period is not configured for this semester.
+                <?php endif; ?>
+                Please contact admin for manual enrollment support.
+            </div>
+        <?php endif; ?>
 
         <?php if ($regTab === 'enrollment_history'): ?>
             <div class="history-shell mb-3">
@@ -2059,7 +2154,9 @@ include '../../includes/header.php';
                             <input type="hidden" name="academic_year_id" value="<?php echo (int)$selectedAcademicYearId; ?>">
                         </div>
                         <div class="enroll-action-row">
-                            <button type="submit" class="enroll-now-btn">ENROLL NOW</button>
+                            <button type="submit" class="enroll-now-btn" <?php echo !$isEnrollmentWindowOpen ? 'disabled title="Enrollment window closed. Contact admin."' : ''; ?>>
+                                <?php echo $isEnrollmentWindowOpen ? 'ENROLL NOW' : 'ENROLLMENT CLOSED'; ?>
+                            </button>
                         </div>
                     </div>
                 </form>

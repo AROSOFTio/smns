@@ -916,7 +916,7 @@ include '../../../includes/header.php';
                                         <?php foreach ($logs as $row): ?>
                                             <tr>
                                                 <td><?php echo e(date('Y-m-d H:i', strtotime($row['created_at']))); ?></td>
-                                                <td><?php echo e($row['username'] ?? 'system'); ?></td>
+                                                <td><?php echo e($row['display_name'] ?? ($row['username'] ?? 'system')); ?></td>
                                                 <td><?php echo e($row['action']); ?></td>
                                                 <td><?php echo e($row['module']); ?></td>
                                                 <td><?php echo e($row['description']); ?></td>

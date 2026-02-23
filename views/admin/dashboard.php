@@ -502,8 +502,17 @@ include '../../includes/header.php';
                                                 </span>
                                                 <span class="activity-date"><?php echo Helper::formatDate($activity['created_at'], 'M d, Y'); ?></span>
                                                 <span class="activity-module"><?php echo e($activity['module']); ?></span>
-                                                <?php if (isset($activity['username'])): ?>
-                                                    <span class="activity-user"><i class="fas fa-user"></i> <?php echo e($activity['username']); ?></span>
+                                                <?php 
+                                                    $activityActor = $activity['display_name'] ?? ($activity['username'] ?? null);
+                                                    $activityRole = $activity['user_role'] ?? null;
+                                                ?>
+                                                <?php if (!empty($activityActor)): ?>
+                                                    <span class="activity-user">
+                                                        <i class="fas fa-user"></i> <?php echo e($activityActor); ?>
+                                                        <?php if (!empty($activityRole)): ?>
+                                                            <small class="text-muted">(<?php echo e(ucfirst((string)$activityRole)); ?>)</small>
+                                                        <?php endif; ?>
+                                                    </span>
                                                 <?php endif; ?>
                                             </p>
                                         </div>
@@ -547,8 +556,15 @@ include '../../includes/header.php';
                                     <?php foreach ($loginSessions as $session): ?>
                                         <tr>
                                             <td>
+                                                <?php
+                                                    $sessionActor = $session['display_name'] ?? ($session['username'] ?? 'Unknown');
+                                                    $sessionRole = $session['user_role'] ?? null;
+                                                ?>
                                                 <span class="session-user">
-                                                    <i class="fas fa-user"></i> <?php echo e($session['username'] ?? 'Unknown'); ?>
+                                                    <i class="fas fa-user"></i> <?php echo e($sessionActor); ?>
+                                                    <?php if (!empty($sessionRole)): ?>
+                                                        <small class="text-muted">(<?php echo e(ucfirst((string)$sessionRole)); ?>)</small>
+                                                    <?php endif; ?>
                                                 </span>
                                             </td>
                                             <td>
@@ -1035,6 +1051,7 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
 .activity-item {
     display: flex;
     align-items: flex-start;
+    gap: 12px;
     padding: 10px 0;
     border-bottom: 1px solid #eee;
 }
@@ -1052,9 +1069,13 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-right: 12px;
     flex-shrink: 0;
     font-size: 12px;
+}
+
+.activity-details {
+    min-width: 0;
+    flex: 1 1 auto;
 }
 
 .activity-details h5 {
@@ -1062,6 +1083,9 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
     font-size: 13px;
     font-weight: 600;
     color: #1a1a2e;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .activity-details p {
@@ -1070,8 +1094,10 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
     color: #6c757d;
     display: flex;
     align-items: center;
-    gap: 10px;
+    column-gap: 10px;
+    row-gap: 6px;
     flex-wrap: wrap;
+    min-width: 0;
 }
 
 .activity-module {
@@ -1080,11 +1106,27 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
     border-radius: 12px;
     font-size: 11px;
     font-weight: 500;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .activity-user {
     color: #e4102f;
     font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.3;
+}
+
+.activity-user small {
+    font-size: 10px;
+    line-height: 1.2;
 }
 
 .activity-time {
@@ -1161,6 +1203,7 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
     overflow-wrap: anywhere;
     word-break: break-word;
     vertical-align: top;
+    line-height: 1.35;
 }
 
 .sessions-table th {
@@ -1172,24 +1215,38 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
 }
 
 .sessions-table th:nth-child(1),
-.sessions-table td:nth-child(1) { width: 20%; }
+.sessions-table td:nth-child(1) { width: 30%; }
 
 .sessions-table th:nth-child(2),
-.sessions-table td:nth-child(2) { width: 30%; }
+.sessions-table td:nth-child(2) { width: 24%; }
 
 .sessions-table th:nth-child(3),
-.sessions-table td:nth-child(3) { width: 30%; }
+.sessions-table td:nth-child(3) { width: 24%; }
 
 .sessions-table th:nth-child(4),
-.sessions-table td:nth-child(4) { width: 20%; }
+.sessions-table td:nth-child(4) { width: 22%; }
 
 .session-user {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     flex-wrap: wrap;
     gap: 8px;
     color: #1a1a2e;
     font-weight: 500;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.3;
+}
+
+.session-user i {
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.session-user small {
+    font-size: 10px;
+    line-height: 1.2;
 }
 
 .session-time {
@@ -1345,6 +1402,11 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
         flex: 0 0 100%;
         max-width: 100%;
     }
+
+    .col-md-7, .col-md-5 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
     
     .stats-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -1445,7 +1507,8 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
 }
 
 .user-sessions-card .table-responsive {
-    overflow-x: hidden !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
 }
 
 .user-sessions-card .foldable-body::-webkit-scrollbar {
@@ -1618,13 +1681,13 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
     }
 
     .sessions-table th:nth-child(1),
-    .sessions-table td:nth-child(1) { width: 22%; }
+    .sessions-table td:nth-child(1) { width: 32%; }
 
     .sessions-table th:nth-child(2),
-    .sessions-table td:nth-child(2) { width: 31%; }
+    .sessions-table td:nth-child(2) { width: 26%; }
 
     .sessions-table th:nth-child(3),
-    .sessions-table td:nth-child(3) { width: 31%; }
+    .sessions-table td:nth-child(3) { width: 26%; }
 
     .sessions-table th:nth-child(4),
     .sessions-table td:nth-child(4) { width: 16%; }
@@ -2270,7 +2333,11 @@ function renderAdminNotificationBell() {
                         const module = activity.module || 'system';
                         const time = activity.formatted_time || '';
                         const date = activity.formatted_date || '';
-                        const username = activity.username || '';
+                        const actorName = activity.display_name || activity.username || '';
+                        const actorRole = activity.user_role || '';
+                        const roleLabel = actorRole ? (actorRole.charAt(0).toUpperCase() + actorRole.slice(1)) : '';
+                        const safeActorName = actorName.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                        const safeRoleLabel = roleLabel.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
                         html += `
                             <div class="activity-item">
@@ -2286,7 +2353,7 @@ function renderAdminNotificationBell() {
                                         </span>
                                         <span class="activity-date">${date}</span>
                                         <span class="activity-module">${module}</span>
-                                        ${username ? `<span class="activity-user"><i class="fas fa-user"></i> ${username.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>` : ''}
+                                        ${safeActorName ? `<span class="activity-user"><i class="fas fa-user"></i> ${safeActorName}${safeRoleLabel ? ` <small class="text-muted">(${safeRoleLabel})</small>` : ''}</span>` : ''}
                                     </p>
                                 </div>
                             </div>
@@ -2331,7 +2398,9 @@ function renderAdminNotificationBell() {
 
                 let html = '';
                 sessions.forEach(row => {
-                    const username = (row.username || 'Unknown').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const actorName = (row.display_name || row.username || 'Unknown').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const actorRole = (row.user_role || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const actorRoleLabel = actorRole ? (actorRole.charAt(0).toUpperCase() + actorRole.slice(1)) : '';
                     const loginTime = (row.formatted_login_time || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                     const endTime = (row.formatted_end_time || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                     const endType = row.end_type || 'active';
@@ -2359,7 +2428,7 @@ function renderAdminNotificationBell() {
                     }
 
                     html += '<tr>' +
-                        '<td><span class="session-user"><i class="fas fa-user"></i> ' + username + '</span></td>' +
+                        '<td><span class="session-user"><i class="fas fa-user"></i> ' + actorName + (actorRoleLabel ? ' <small class="text-muted">(' + actorRoleLabel + ')</small>' : '') + '</span></td>' +
                         '<td><span class="session-time login"><i class="fas fa-sign-in-alt"></i> ' + loginTime + '</span></td>' +
                         '<td>' + endCell + '</td>' +
                         '<td>' + durationCell + '</td>' +
