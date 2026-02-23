@@ -136,6 +136,75 @@ class EmailTemplate {
                         $footer
                 ];
 
+            case 'security_new_device_login':
+                $moduleLabel = (string)($data['module_label'] ?? 'Portal');
+                $deviceLabel = (string)($data['device_label'] ?? 'Unknown device');
+                $ipAddress = (string)($data['ip_address'] ?? 'Unknown');
+                $usedCount = (int)($data['used_count'] ?? 1);
+                if ($usedCount < 1) {
+                    $usedCount = 1;
+                }
+                $loginTime = (string)($data['login_time'] ?? date('M j, Y, g:i A'));
+                $accountLabel = (string)($data['account_label'] ?? 'Username');
+                $accountValue = (string)($data['account_value'] ?? '-');
+                $serviceDeskLabel = (string)($data['service_desk_label'] ?? 'ICT Service Desk');
+                $resetUrl = trim((string)($data['reset_url'] ?? ''));
+                $greetingName = trim((string)($data['greeting_name'] ?? $recipient));
+                $botName = defined('APP_SHORT_NAME') ? APP_SHORT_NAME . ' Bot' : $appName . ' Bot';
+
+                $subject = "Security alert: New device sign-in to your {$moduleLabel} account detected!";
+
+                $text = "Dear {$greetingName},\n\n" .
+                    "A new device has just logged in to your account.\n" .
+                    "The following device was detected:\n\n" .
+                    "- Device: {$deviceLabel}\n" .
+                    "- IP: {$ipAddress}\n" .
+                    "- Used: {$usedCount} " . ($usedCount === 1 ? 'time' : 'times') . "\n" .
+                    "- Last login: {$loginTime}\n" .
+                    "- Module: {$moduleLabel}\n" .
+                    "- {$accountLabel}: {$accountValue}\n\n" .
+                    "If this was you, no action is required. If you do not recognize this activity, please reset your password immediately and contact the {$serviceDeskLabel} for assistance." .
+                    ($resetUrl !== '' ? "\nReset password: {$resetUrl}" : '') .
+                    "\n\nStay secure,\n" .
+                    $botName;
+
+                $esc = function ($value) {
+                    return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+                };
+                $html = '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f3f4f6;font-family:Segoe UI,Arial,sans-serif;color:#1f2937;">' .
+                    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">' .
+                    '<tr><td align="center">' .
+                    '<table role="presentation" width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">' .
+                    '<tr><td style="padding:18px 22px;background:#0f172a;color:#f8fafc;font-size:22px;font-weight:700;line-height:1.35;">' .
+                    $esc($subject) .
+                    '</td></tr>' .
+                    '<tr><td style="padding:22px;font-size:16px;line-height:1.65;color:#1f2937;">' .
+                    '<p style="margin:0 0 12px;">Dear ' . $esc($greetingName) . ',</p>' .
+                    '<p style="margin:0 0 6px;">A new device has just logged in to your account.</p>' .
+                    '<p style="margin:0 0 14px;">The following device was detected:</p>' .
+                    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:8px;background:#f8fafc;">' .
+                    '<tr><td style="padding:12px 14px;border-bottom:1px solid #e5e7eb;"><strong>Device:</strong> ' . $esc($deviceLabel) . '</td></tr>' .
+                    '<tr><td style="padding:12px 14px;border-bottom:1px solid #e5e7eb;"><strong>IP:</strong> ' . $esc($ipAddress) . '</td></tr>' .
+                    '<tr><td style="padding:12px 14px;border-bottom:1px solid #e5e7eb;"><strong>Used:</strong> ' . $esc($usedCount . ' ' . ($usedCount === 1 ? 'time' : 'times')) . '</td></tr>' .
+                    '<tr><td style="padding:12px 14px;border-bottom:1px solid #e5e7eb;"><strong>Last login:</strong> ' . $esc($loginTime) . '</td></tr>' .
+                    '<tr><td style="padding:12px 14px;border-bottom:1px solid #e5e7eb;"><strong>Module:</strong> ' . $esc($moduleLabel) . '</td></tr>' .
+                    '<tr><td style="padding:12px 14px;"><strong>' . $esc($accountLabel) . ':</strong> ' . $esc($accountValue) . '</td></tr>' .
+                    '</table>' .
+                    '<p style="margin:16px 0 0;">If this was you, no action is required. If you do not recognize this activity, please reset your password immediately and contact the ' . $esc($serviceDeskLabel) . ' for assistance.</p>' .
+                    ($resetUrl !== '' ? '<p style="margin:12px 0 0;"><a href="' . $esc($resetUrl) . '" style="color:#2563eb;text-decoration:underline;">Reset password</a></p>' : '') .
+                    '<p style="margin:20px 0 0;">Stay secure,<br>' . $esc($botName) . '</p>' .
+                    '</td></tr>' .
+                    '</table>' .
+                    '</td></tr>' .
+                    '</table>' .
+                    '</body></html>';
+
+                return [
+                    'subject' => $subject,
+                    'text' => $text,
+                    'html' => $html
+                ];
+
             default:
                 return [
                     'subject' => (string)($data['subject'] ?? ($appName . ' - Notification')),

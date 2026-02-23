@@ -192,8 +192,10 @@ class Auth {
 
             // Log successful login so admin can see it in Recent Activity / Login Sessions
             $moduleName = $this->module ?: $user['role'];
+            $deviceAlertMeta = $this->buildDeviceAlertMeta((int)$user['id'], $moduleName);
             $description = 'User logged in as ' . $user['role'] . ' (' . $user['username'] . ')';
             $this->logActivity($user['id'], 'login', $moduleName, $description);
+            $this->sendNewDeviceLoginAlert($user, $profile, $moduleName, $deviceAlertMeta);
 
             // Return success with user's role
             return ['success' => true, 'role' => $user['role']];
@@ -361,7 +363,246 @@ class Auth {
         
         return null;
     }
-    
+
+    /**
+     * Build device metadata used for new-device login alerts.
+     * This is evaluated before writing the current login activity row.
+     */
+    private function buildDeviceAlertMeta($userId, $moduleName) {
+        $userAgentRaw = trim((string)($_SERVER['HTTP_USER_AGENT'] ?? ''));
+        if ($userAgentRaw === '') {
+            $userAgentRaw = 'unknown';
+        }
+
+        $ipAddress = $this->extractClientIp();
+        $loginTime = date('M j, Y, g:i A');
+        $defaultMeta = [
+            'is_new_device' => false,
+            'used_count' => 1,
+            'login_time' => $loginTime,
+            'ip_address' => $ipAddress,
+            'device_label' => $this->describeUserAgent($userAgentRaw),
+            'module_label' => $this->resolveModuleLabel($moduleName)
+        ];
+
+        try {
+            $countStmt = $this->db->prepare("
+                SELECT COUNT(*) 
+                FROM activity_logs
+                WHERE user_id = :user_id
+                  AND action = 'login'
+                  AND user_agent = :user_agent
+            ");
+            $countStmt->execute([
+                'user_id' => (int)$userId,
+                'user_agent' => $userAgentRaw
+            ]);
+            $priorCount = (int)$countStmt->fetchColumn();
+
+            $defaultMeta['used_count'] = $priorCount + 1;
+            $defaultMeta['is_new_device'] = ($priorCount === 0);
+        } catch (Exception $e) {
+            error_log('Device alert metadata error: ' . $e->getMessage());
+        }
+
+        return $defaultMeta;
+    }
+
+    /**
+     * Send a per-user security alert for first-time device sign-ins.
+     */
+    private function sendNewDeviceLoginAlert($user, $profile, $moduleName, $deviceAlertMeta) {
+        if (empty($deviceAlertMeta['is_new_device']) || !class_exists('Helper')) {
+            return;
+        }
+
+        $email = trim((string)($user['email'] ?? ''));
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return;
+        }
+
+        $recipientName = $this->resolveRecipientName($user, $profile);
+        $accountRef = $this->resolveAccountReference($user, $profile, $moduleName);
+
+        $payload = [
+            'recipient_name' => $recipientName,
+            'greeting_name' => $recipientName,
+            'module_label' => (string)($deviceAlertMeta['module_label'] ?? $this->resolveModuleLabel($moduleName)),
+            'device_label' => (string)($deviceAlertMeta['device_label'] ?? 'Unknown device'),
+            'ip_address' => (string)($deviceAlertMeta['ip_address'] ?? $this->extractClientIp()),
+            'used_count' => (int)($deviceAlertMeta['used_count'] ?? 1),
+            'login_time' => (string)($deviceAlertMeta['login_time'] ?? date('M j, Y, g:i A')),
+            'account_label' => (string)$accountRef['label'],
+            'account_value' => (string)$accountRef['value'],
+            'service_desk_label' => 'ICT Service Desk',
+            'reset_url' => $this->resolveSecurityResetUrl($moduleName),
+            'support_email' => defined('SMTP_FROM_EMAIL') ? SMTP_FROM_EMAIL : ''
+        ];
+
+        try {
+            Helper::sendTemplatedEmail(
+                'security_new_device_login',
+                $email,
+                $payload,
+                [
+                    'context_label' => 'Login Security Alert',
+                    'source_page' => $_SERVER['REQUEST_URI'] ?? ''
+                ]
+            );
+        } catch (Exception $e) {
+            error_log('New-device login alert send error: ' . $e->getMessage());
+        }
+    }
+
+    private function resolveRecipientName($user, $profile) {
+        $firstName = trim((string)($profile['first_name'] ?? ''));
+        $lastName = trim((string)($profile['last_name'] ?? ''));
+        if ($firstName !== '' || $lastName !== '') {
+            return trim($firstName . ' ' . $lastName);
+        }
+
+        $fullName = trim((string)($profile['fullname'] ?? ($user['fullname'] ?? '')));
+        if ($fullName !== '') {
+            return $fullName;
+        }
+
+        $username = trim((string)($user['username'] ?? ''));
+        return $username !== '' ? $username : 'User';
+    }
+
+    private function resolveAccountReference($user, $profile, $moduleName) {
+        $module = strtolower((string)$moduleName);
+        if ($module === 'student' && !empty($profile['student_id'])) {
+            return ['label' => 'Student ID', 'value' => (string)$profile['student_id']];
+        }
+        if ($module === 'lecturer' && !empty($profile['lecturer_id'])) {
+            return ['label' => 'Lecturer ID', 'value' => (string)$profile['lecturer_id']];
+        }
+        if ($module === 'finance') {
+            if (!empty($profile['staff_id'])) {
+                return ['label' => 'Staff ID', 'value' => (string)$profile['staff_id']];
+            }
+            if (!empty($profile['finance_id'])) {
+                return ['label' => 'Staff ID', 'value' => (string)$profile['finance_id']];
+            }
+        }
+        if ($module === 'admin' && !empty($profile['admin_id'])) {
+            return ['label' => 'Admin ID', 'value' => (string)$profile['admin_id']];
+        }
+
+        return [
+            'label' => 'Username',
+            'value' => (string)($user['username'] ?? '-')
+        ];
+    }
+
+    private function resolveSecurityResetUrl($moduleName) {
+        $baseUrl = defined('BASE_URL') ? rtrim((string)BASE_URL, '/') : '';
+        $module = strtolower((string)$moduleName);
+        $allowed = ['admin', 'student', 'lecturer', 'finance'];
+        if (!in_array($module, $allowed, true)) {
+            $module = 'auth';
+        }
+
+        if ($module === 'student') {
+            $studentResetPath = defined('BASE_PATH') ? BASE_PATH . '/views/student/reset-password.php' : '';
+            if ($studentResetPath !== '' && file_exists($studentResetPath)) {
+                return $baseUrl . '/views/student/reset-password.php';
+            }
+        }
+
+        if ($module !== 'auth') {
+            $moduleLoginPath = defined('BASE_PATH') ? BASE_PATH . '/views/' . $module . '/login.php' : '';
+            if ($moduleLoginPath !== '' && file_exists($moduleLoginPath)) {
+                return $baseUrl . '/views/' . $module . '/login.php';
+            }
+        }
+
+        return $baseUrl . '/views/auth/login.php';
+    }
+
+    private function resolveModuleLabel($moduleName) {
+        $module = strtolower((string)$moduleName);
+        switch ($module) {
+            case 'admin':
+                return 'Admin Portal';
+            case 'student':
+                return 'Student Portal';
+            case 'lecturer':
+                return 'Lecturer Portal';
+            case 'finance':
+                return 'Finance Portal';
+            default:
+                return 'Portal';
+        }
+    }
+
+    private function extractClientIp() {
+        $rawIp = (string)(class_exists('Security') ? Security::getClientIP() : ($_SERVER['REMOTE_ADDR'] ?? 'UNKNOWN'));
+        if (strpos($rawIp, ',') !== false) {
+            $parts = explode(',', $rawIp);
+            $rawIp = (string)($parts[0] ?? '');
+        }
+        $rawIp = trim($rawIp);
+        return $rawIp !== '' ? $rawIp : 'UNKNOWN';
+    }
+
+    private function describeUserAgent($userAgentRaw) {
+        $ua = trim((string)$userAgentRaw);
+        if ($ua === '' || strtolower($ua) === 'unknown') {
+            return 'unknown device';
+        }
+
+        $deviceType = 'desktop';
+        if (preg_match('/ipad|tablet/i', $ua)) {
+            $deviceType = 'tablet';
+        } elseif (preg_match('/mobile|android|iphone/i', $ua)) {
+            $deviceType = 'mobile';
+        }
+
+        $os = 'Unknown OS';
+        $osMap = [
+            'Windows NT 10.0' => 'Windows 10',
+            'Windows NT 6.3' => 'Windows 8.1',
+            'Windows NT 6.2' => 'Windows 8',
+            'Windows NT 6.1' => 'Windows 7',
+            'Windows NT 6.0' => 'Windows Vista',
+            'Windows NT 5.1' => 'Windows XP',
+            'Android' => 'Android',
+            'iPhone OS' => 'iOS',
+            'iPad; CPU OS' => 'iPadOS',
+            'Mac OS X' => 'macOS',
+            'Linux' => 'Linux'
+        ];
+        foreach ($osMap as $needle => $label) {
+            if (stripos($ua, $needle) !== false) {
+                $os = $label;
+                break;
+            }
+        }
+
+        $browser = 'Unknown';
+        $version = '';
+        $browserPatterns = [
+            'Edge' => '/Edg\/([0-9\.]+)/i',
+            'Opera' => '/OPR\/([0-9\.]+)/i',
+            'Chrome' => '/Chrome\/([0-9\.]+)/i',
+            'Firefox' => '/Firefox\/([0-9\.]+)/i',
+            'Safari' => '/Version\/([0-9\.]+).*Safari/i',
+            'Internet Explorer' => '/(?:MSIE\s|rv:)([0-9\.]+)/i'
+        ];
+        foreach ($browserPatterns as $label => $pattern) {
+            if (preg_match($pattern, $ua, $m)) {
+                $browser = $label;
+                $version = (string)($m[1] ?? '');
+                break;
+            }
+        }
+
+        $browserPart = strtolower($deviceType) . ' ' . $browser . ' browser' . ($version !== '' ? ' ' . $version : '');
+        return trim($browserPart) . ' (' . $os . ')';
+    }
+     
     /**
      * Increment failed login attempts
      */

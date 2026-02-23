@@ -233,7 +233,8 @@ class Helper {
             'request_response' => 'Request Response',
             'finance_alert' => 'Finance Alert',
             'invite_notice' => 'Invitation Notice',
-            'scheduled_report' => 'Scheduled Report'
+            'scheduled_report' => 'Scheduled Report',
+            'security_new_device_login' => 'Login Security Alert'
         ];
         return $map[$templateType] ?? ucwords(str_replace('_', ' ', (string)$templateType));
     }
