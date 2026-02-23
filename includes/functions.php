@@ -190,36 +190,49 @@ function getSetting($key, $default = null) {
  */
 function resolvePhpExecBinary($preferWindowless = true) {
     $candidates = [];
+    $normalizeCandidate = static function ($path) {
+        $p = trim((string)$path);
+        if ($p === '') {
+            return '';
+        }
+        // Normalize malformed Windows drive prefix like "R:xxxamp\php\php.exe" -> "R:\xxxamp\php\php.exe"
+        if (DIRECTORY_SEPARATOR === '\\' && preg_match('/^[A-Za-z]:[^\\\\\\/]/', $p)) {
+            $p = substr($p, 0, 2) . DIRECTORY_SEPARATOR . substr($p, 2);
+        }
+        // Normalize slashes to current platform separator.
+        $p = str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $p);
+        return $p;
+    };
 
     // Optional hard override from config/environment.
     if (defined('PHP_EXEC_BINARY') && PHP_EXEC_BINARY) {
-        $candidates[] = (string)PHP_EXEC_BINARY;
+        $candidates[] = $normalizeCandidate((string)PHP_EXEC_BINARY);
     }
     $envPhp = getenv('PHP_EXEC_BINARY');
     if (is_string($envPhp) && $envPhp !== '') {
-        $candidates[] = $envPhp;
+        $candidates[] = $normalizeCandidate($envPhp);
     }
 
-    // Runtime binary detected by PHP.
-    if (defined('PHP_BINARY') && PHP_BINARY) {
-        $candidates[] = (string)PHP_BINARY;
-    }
-
-    // Common local server layout relative to BASE_PATH (e.g. R:\xxxamp\htdocs\smns).
+    // Prefer local server layout relative to BASE_PATH first.
     if (defined('BASE_PATH')) {
         $baseRoot = dirname(dirname((string)BASE_PATH));
-        $candidates[] = $baseRoot . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'php.exe';
         if ($preferWindowless && DIRECTORY_SEPARATOR === '\\') {
-            $candidates[] = $baseRoot . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'php-win.exe';
+            $candidates[] = $normalizeCandidate($baseRoot . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'php-win.exe');
         }
+        $candidates[] = $normalizeCandidate($baseRoot . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'php.exe');
+    }
+
+    // Runtime binary detected by PHP (fallback, because it can be stale in some environments).
+    if (defined('PHP_BINARY') && PHP_BINARY) {
+        $candidates[] = $normalizeCandidate((string)PHP_BINARY);
     }
 
     // Generic PATH fallback.
-    $candidates[] = 'php';
+    $candidates[] = $normalizeCandidate('php');
 
     $normalized = [];
     foreach ($candidates as $cand) {
-        $cand = trim((string)$cand);
+        $cand = $normalizeCandidate($cand);
         if ($cand === '') {
             continue;
         }

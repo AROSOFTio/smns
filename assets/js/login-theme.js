@@ -26,9 +26,40 @@
         return (saved === 'dark' || saved === 'light') ? saved : 'light';
     }
 
+    function createThemeFooter() {
+        var footer = document.getElementById('loginThemeFooter');
+        if (footer) {
+            footer.style.position = 'fixed';
+            footer.style.left = 'auto';
+            footer.style.right = '12px';
+            footer.style.bottom = '12px';
+            footer.style.display = 'flex';
+            footer.style.justifyContent = 'flex-end';
+            footer.style.pointerEvents = 'none';
+            return footer;
+        }
+
+        footer = document.createElement('div');
+        footer.id = 'loginThemeFooter';
+        footer.className = 'login-theme-footer';
+        footer.style.position = 'fixed';
+        footer.style.left = 'auto';
+        footer.style.right = '12px';
+        footer.style.bottom = '12px';
+        footer.style.display = 'flex';
+        footer.style.justifyContent = 'flex-end';
+        footer.style.pointerEvents = 'none';
+        document.body.appendChild(footer);
+        return footer;
+    }
+
     function createThemeButton() {
+        var footer = createThemeFooter();
         var existing = document.getElementById('loginThemeToggleBtn');
         if (existing) {
+            if (existing.parentElement !== footer) {
+                footer.appendChild(existing);
+            }
             return existing;
         }
 
@@ -37,7 +68,14 @@
         btn.type = 'button';
         btn.className = 'login-theme-toggle';
         btn.setAttribute('aria-live', 'polite');
-        document.body.appendChild(btn);
+        btn.style.position = 'relative';
+        btn.style.top = 'auto';
+        btn.style.right = 'auto';
+        btn.style.bottom = 'auto';
+        btn.style.left = 'auto';
+        btn.style.width = '36px';
+        btn.style.height = '36px';
+        footer.appendChild(btn);
         return btn;
     }
 

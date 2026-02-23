@@ -353,12 +353,12 @@
     /* Global Theme Toggle */
     #themeToggleBtn {
         position: fixed;
-        right: 22px;
-        bottom: 22px;
-        width: 48px;
-        height: 48px;
+        right: 16px;
+        bottom: 16px;
+        width: 40px;
+        height: 40px;
         border: 1px solid #e5e7eb;
-        border-radius: 12px;
+        border-radius: 10px;
         background: #ffffff;
         color: #222;
         box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
@@ -367,7 +367,7 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 18px;
+        font-size: 15px;
     }
     #themeToggleBtn:hover {
         transform: translateY(-1px);
