@@ -86,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
         $submitError = 'Invalid CSRF token.';
     } elseif ($submitError === '') {
         try {
-            $result = $communicationService->sendToStudents(
+            $result = $communicationService->queueToStudents(
                 (int)($currentUser['id'] ?? 0),
                 $form['title'],
                 $form['message'],
@@ -100,21 +100,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
                     'send_portal' => !empty($form['send_portal']),
                     'send_email' => !empty($form['send_email']),
                     'link' => BASE_URL . '/views/student/notifications.php',
-                    'notification_type' => 'info'
+                    'notification_type' => 'info',
+                    'email_source_page' => '/views/admin/communications.php'
                 ]
             );
 
+            $workerState = !empty($result['worker_triggered']) ? 'worker started' : 'worker pending (will run on next worker trigger)';
             $session->setFlash(
                 'success',
-                'Communication sent. Recipients: ' . (int)$result['total_recipients']
+                'Communication queued as job #' . (int)($result['queue_job_id'] ?? 0)
+                    . ' for communication #' . (int)($result['communication_id'] ?? 0)
+                    . '. Recipients: ' . (int)$result['total_recipients']
                     . ', Portal Delivered: ' . (int)$result['portal_success_count']
                     . ', Email Sent: ' . (int)$result['email_success_count']
                     . ', Email Failed: ' . (int)$result['email_fail_count']
                     . ', Status: ' . strtoupper((string)$result['status'])
+                    . ', ' . $workerState
             );
-            header('Location: communications.php?view_comm=' . (int)$result['communication_id']);
+            header('Location: communications.php?view_comm=' . (int)($result['communication_id'] ?? 0));
             exit;
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $submitError = $e->getMessage();
         }
     }
@@ -398,6 +403,8 @@ include '../../includes/header.php';
                                                     $statusBadge = 'warning';
                                                 } elseif ($rowStatus === 'processing') {
                                                     $statusBadge = 'info';
+                                                } elseif ($rowStatus === 'queued') {
+                                                    $statusBadge = 'secondary';
                                                 }
                                             ?>
                                             <span class="badge badge-<?php echo e($statusBadge); ?>">

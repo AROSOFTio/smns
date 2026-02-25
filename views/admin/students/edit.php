@@ -30,7 +30,7 @@ $conn = $db->getConnection();
 
 try {
     $stmt = $conn->prepare("
-        SELECT s.*, p.program_code, p.program_name, u.username, u.email as user_email, u.status as user_status, u.created_at as user_created_at, u.last_login, u.failed_login_attempts as login_attempts
+        SELECT s.*, p.program_code, p.program_name, u.username, u.email as user_email, u.status as user_status, u.created_at as user_created_at, u.last_login, u.failed_login_attempts
         FROM students s
         INNER JOIN programs p ON s.program_id = p.id
         INNER JOIN users u ON s.user_id = u.id

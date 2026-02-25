@@ -357,6 +357,12 @@ if ($semesterId) {
 }
 
 $gpa = ($gpaCredits > 0) ? round($gpaPoints / $gpaCredits, 2) : 0.0;
+$viewSlipSummary = [
+    'courses_total' => (int)$totalRegisteredCourses,
+    'courses_published' => (int)$fullyPublishedCourses,
+    'semester_gpa' => number_format((float)$gpa, 2),
+    'cgpa' => '0.00'
+];
 
 // ---------------------------------------------------------------------
 // CGPA Calculation
@@ -378,12 +384,48 @@ foreach ($allResults as $res) {
     }
 }
 $cgpa = ($cgpaCredits > 0) ? round($cgpaPoints / $cgpaCredits, 2) : 0.0;
+$viewSlipSummary['cgpa'] = number_format((float)$cgpa, 2);
 
 
 $unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
 $pageTitle = 'Student Results Slip - ' . APP_NAME;
 include '../../../includes/header.php';
 ?>
+<style>
+.results-slip-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.results-slip-card {
+    background: #fff;
+    border: 1px solid #dbe2ea;
+    border-radius: 10px;
+    padding: 10px;
+}
+.results-slip-label {
+    font-size: 0.72rem;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.results-slip-value {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+@media (max-width: 992px) {
+    .results-slip-stats {
+        grid-template-columns: repeat(2, minmax(140px, 1fr));
+    }
+}
+@media (max-width: 576px) {
+    .results-slip-stats {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
 
 <?php include '../../../includes/admin/sidebar.php'; ?>
 
@@ -398,9 +440,31 @@ include '../../../includes/header.php';
     </div>
 
     <div class="content-area">
+        <?php $resultsWorkflowActive = 'student_result'; include __DIR__ . '/_workflow_nav.php'; ?>
         <div class="d-flex justify-content-between align-items-center mb-3">
             <a href="student-results.php" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back to Student List</a>
             <button onclick="window.print();" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Print Results</button>
+        </div>
+        <div class="results-slip-stats no-print">
+            <div class="results-slip-card">
+                <div class="results-slip-label">Courses Loaded</div>
+                <div class="results-slip-value"><?php echo (int)$viewSlipSummary['courses_total']; ?></div>
+            </div>
+            <div class="results-slip-card">
+                <div class="results-slip-label">Published Courses</div>
+                <div class="results-slip-value"><?php echo (int)$viewSlipSummary['courses_published']; ?></div>
+            </div>
+            <div class="results-slip-card">
+                <div class="results-slip-label">Semester GPA</div>
+                <div class="results-slip-value"><?php echo e($viewSlipSummary['semester_gpa']); ?></div>
+            </div>
+            <div class="results-slip-card">
+                <div class="results-slip-label">Cumulative GPA</div>
+                <div class="results-slip-value"><?php echo e($viewSlipSummary['cgpa']); ?></div>
+            </div>
+        </div>
+        <div class="results-helper-note mb-3 no-print">
+            <strong>Workflow:</strong> Use filters to change term view, verify course-by-course published marks, then print the final student result slip.
         </div>
 
         <!-- Filter Form -->

@@ -18,6 +18,20 @@ $currentUser  = $auth->getCurrentUser();
 $db   = new Database();
 $conn = $db->getConnection();
 
+$academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_years ORDER BY start_date DESC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$defaultAcademicYearId  = Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0);
+$selectedAcademicYearId = isset($_GET['academic_year_id']) ? (int)$_GET['academic_year_id'] : (int)$defaultAcademicYearId;
+$selectedSemesterNumber = isset($_GET['semester_number']) ? (int)$_GET['semester_number'] : (int)(Helper::getCurrentSemester()['semester_number'] ?? 1);
+$programs = $conn->query("SELECT id, program_name FROM programs ORDER BY program_name ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$selectedProgramId = isset($_GET['program_id']) ? (int)$_GET['program_id'] : (int)($programs[0]['id'] ?? 0);
+$selectedLevelYear = isset($_GET['level_year']) ? (int)$_GET['level_year'] : 1;
+if (!empty($programs)) {
+    $programIds = array_map('intval', array_column($programs, 'id'));
+    if (!in_array((int)$selectedProgramId, $programIds, true)) {
+        $selectedProgramId = (int)$programs[0]['id'];
+    }
+}
+
 // Ensure results_audit table exists
 $conn->exec("CREATE TABLE IF NOT EXISTS `results_audit` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -46,7 +60,7 @@ $dateTo = $_GET['date_to'] ?? '';
 // Build query
 $sql = "SELECT ra.*, 
                s.student_id AS reg_no, s.first_name AS student_first, s.last_name AS student_last,
-               c.course_code, c.course_name,
+               c.course_code, c.course_name, c.level_year AS course_level_year, c.program_id AS course_program_id,
                u.username AS changed_by_username,
                COALESCE(a.first_name, '') AS admin_first, COALESCE(a.last_name, '') AS admin_last,
                r.semester_id,
@@ -92,6 +106,22 @@ if ($dateTo) {
     $sql .= " AND DATE(ra.changed_at) <= :date_to";
     $params['date_to'] = $dateTo;
 }
+if ($selectedAcademicYearId > 0) {
+    $sql .= " AND sem.academic_year_id = :filter_ay";
+    $params['filter_ay'] = (int)$selectedAcademicYearId;
+}
+if ($selectedSemesterNumber > 0) {
+    $sql .= " AND sem.semester_number = :filter_sem_no";
+    $params['filter_sem_no'] = (int)$selectedSemesterNumber;
+}
+if ($selectedProgramId > 0) {
+    $sql .= " AND c.program_id = :filter_program";
+    $params['filter_program'] = (int)$selectedProgramId;
+}
+if ($selectedLevelYear > 0) {
+    $sql .= " AND c.level_year = :filter_level_year";
+    $params['filter_level_year'] = (int)$selectedLevelYear;
+}
 
 $sql .= " ORDER BY ra.changed_at DESC LIMIT 500";
 
@@ -116,7 +146,7 @@ if ($publishedSearch || $publishedCourse) {
     $pubSql = "SELECT r.id AS result_id, r.student_id, r.course_id, r.semester_id,
                       r.assignment_marks, r.final_exam_marks, r.total_marks, r.grade, r.status,
                       s.student_id AS reg_no, s.first_name AS student_first, s.last_name AS student_last,
-                      c.course_code, c.course_name,
+                      c.course_code, c.course_name, c.level_year AS course_level_year, c.program_id AS course_program_id,
                       sem.semester_number, sem.academic_year_id,
                       ay.year_name AS academic_year_name
                FROM results r
@@ -142,6 +172,22 @@ if ($publishedSearch || $publishedCourse) {
         $pubParams['pc1'] = "%{$publishedCourse}%";
         $pubParams['pc2'] = "%{$publishedCourse}%";
     }
+    if ($selectedAcademicYearId > 0) {
+        $pubSql .= " AND sem.academic_year_id = :pub_ay";
+        $pubParams['pub_ay'] = (int)$selectedAcademicYearId;
+    }
+    if ($selectedSemesterNumber > 0) {
+        $pubSql .= " AND sem.semester_number = :pub_sem_no";
+        $pubParams['pub_sem_no'] = (int)$selectedSemesterNumber;
+    }
+    if ($selectedProgramId > 0) {
+        $pubSql .= " AND c.program_id = :pub_program";
+        $pubParams['pub_program'] = (int)$selectedProgramId;
+    }
+    if ($selectedLevelYear > 0) {
+        $pubSql .= " AND c.level_year = :pub_level_year";
+        $pubParams['pub_level_year'] = (int)$selectedLevelYear;
+    }
     
     $pubSql .= " ORDER BY r.updated_at DESC LIMIT 200";
     
@@ -155,6 +201,18 @@ if ($publishedSearch || $publishedCourse) {
 }
 
 $activeTab = isset($_GET['tab']) ? $_GET['tab'] : (($publishedSearch || $publishedCourse) ? 'published' : 'audit');
+$auditUiSummary = [
+    'total' => count($auditRecords),
+    'edit' => 0,
+    'publish' => 0,
+    'published_search_hits' => count($publishedResults)
+];
+foreach ($auditRecords as $row) {
+    $changeTypeKey = strtolower((string)($row['change_type'] ?? ''));
+    if (isset($auditUiSummary[$changeTypeKey])) {
+        $auditUiSummary[$changeTypeKey]++;
+    }
+}
 
 $unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
 
@@ -351,6 +409,41 @@ include '../../../includes/header.php';
         }
     }
 </style>
+<style>
+.results-quick-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.results-stat-card {
+    background: #fff;
+    border: 1px solid #dbe2ea;
+    border-radius: 10px;
+    padding: 10px;
+}
+.results-stat-label {
+    font-size: 0.72rem;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.results-stat-value {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+@media (max-width: 992px) {
+    .results-quick-stats {
+        grid-template-columns: repeat(2, minmax(130px, 1fr));
+    }
+}
+@media (max-width: 576px) {
+    .results-quick-stats {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
 
 <?php include '../../../includes/admin/sidebar.php'; ?>
 
@@ -371,16 +464,38 @@ include '../../../includes/header.php';
         <?php if ($session->getFlash('error')): ?>
             <div class="alert alert-danger"><?php echo e($session->getFlash('error')); ?></div>
         <?php endif; ?>
+        <?php $resultsWorkflowActive = 'marks_audit'; include __DIR__ . '/_workflow_nav.php'; ?>
+        <div class="results-quick-stats">
+            <div class="results-stat-card">
+                <div class="results-stat-label">Audit Records</div>
+                <div class="results-stat-value"><?php echo (int)$auditUiSummary['total']; ?></div>
+            </div>
+            <div class="results-stat-card">
+                <div class="results-stat-label">Edit Changes</div>
+                <div class="results-stat-value"><?php echo (int)$auditUiSummary['edit']; ?></div>
+            </div>
+            <div class="results-stat-card">
+                <div class="results-stat-label">Publish Actions</div>
+                <div class="results-stat-value"><?php echo (int)$auditUiSummary['publish']; ?></div>
+            </div>
+            <div class="results-stat-card">
+                <div class="results-stat-label">Published Search Hits</div>
+                <div class="results-stat-value"><?php echo (int)$auditUiSummary['published_search_hits']; ?></div>
+            </div>
+        </div>
+        <div class="results-helper-note mb-3">
+            <strong>Workflow:</strong> Filter by Academic Year, Semester, Program, and Year of Study, then review mark changes or locate published rows for correction.
+        </div>
 
         <!-- Tabs -->
         <ul class="nav nav-tabs mb-3">
             <li class="nav-item">
-                <a class="nav-link <?php echo $activeTab === 'published' ? 'active' : ''; ?>" href="?tab=published">
+                <a class="nav-link <?php echo $activeTab === 'published' ? 'active' : ''; ?>" href="?tab=published&academic_year_id=<?php echo (int)$selectedAcademicYearId; ?>&semester_number=<?php echo (int)$selectedSemesterNumber; ?>&program_id=<?php echo (int)$selectedProgramId; ?>&level_year=<?php echo (int)$selectedLevelYear; ?>">
                     <i class="fas fa-search"></i> Search Published Results
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link <?php echo $activeTab === 'audit' ? 'active' : ''; ?>" href="?tab=audit">
+                <a class="nav-link <?php echo $activeTab === 'audit' ? 'active' : ''; ?>" href="?tab=audit&academic_year_id=<?php echo (int)$selectedAcademicYearId; ?>&semester_number=<?php echo (int)$selectedSemesterNumber; ?>&program_id=<?php echo (int)$selectedProgramId; ?>&level_year=<?php echo (int)$selectedLevelYear; ?>">
                     <i class="fas fa-history"></i> Audit Trail
                 </a>
             </li>
@@ -396,6 +511,42 @@ include '../../../includes/header.php';
                 <p class="text-muted mb-3">Search for any published student results to make corrections. Changes will be logged in the audit trail.</p>
                 <form method="GET" class="row">
                     <input type="hidden" name="tab" value="published">
+                    <div class="col-md-3 col-sm-6 mb-2">
+                        <label>Academic Year</label>
+                        <select name="academic_year_id" class="form-control">
+                            <?php foreach ($academicYears as $ay): ?>
+                                <option value="<?php echo (int)$ay['id']; ?>" <?php echo ((int)$selectedAcademicYearId === (int)$ay['id']) ? 'selected' : ''; ?>>
+                                    <?php echo e($ay['year_name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-2 col-sm-6 mb-2">
+                        <label>Semester</label>
+                        <select name="semester_number" class="form-control">
+                            <?php for ($i = 1; $i <= 4; $i++): ?>
+                                <option value="<?php echo (int)$i; ?>" <?php echo ((int)$selectedSemesterNumber === (int)$i) ? 'selected' : ''; ?>>Semester <?php echo (int)$i; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-3 col-sm-6 mb-2">
+                        <label>Program</label>
+                        <select name="program_id" class="form-control">
+                            <?php foreach ($programs as $program): ?>
+                                <option value="<?php echo (int)$program['id']; ?>" <?php echo ((int)$selectedProgramId === (int)$program['id']) ? 'selected' : ''; ?>>
+                                    <?php echo e($program['program_name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-2 col-sm-6 mb-2">
+                        <label>Year</label>
+                        <select name="level_year" class="form-control">
+                            <?php for ($y = 1; $y <= 4; $y++): ?>
+                                <option value="<?php echo (int)$y; ?>" <?php echo ((int)$selectedLevelYear === (int)$y) ? 'selected' : ''; ?>>Year <?php echo (int)$y; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
                     <div class="col-md-4 col-sm-12 mb-2">
                         <label>Student (Name or Reg#)</label>
                         <input type="text" name="published_student" class="form-control" value="<?php echo e($publishedSearch); ?>" placeholder="e.g. Kevin Birungi or 2024/U/001">
@@ -406,7 +557,7 @@ include '../../../includes/header.php';
                     </div>
                     <div class="col-md-4 col-sm-12 mb-2 d-flex align-items-end">
                         <button type="submit" class="btn btn-primary mr-2"><i class="fas fa-search"></i> Search</button>
-                        <a href="?tab=published" class="btn btn-secondary">Reset</a>
+                        <a href="?tab=published&academic_year_id=<?php echo (int)$selectedAcademicYearId; ?>&semester_number=<?php echo (int)$selectedSemesterNumber; ?>&program_id=<?php echo (int)$selectedProgramId; ?>&level_year=<?php echo (int)$selectedLevelYear; ?>" class="btn btn-secondary">Reset</a>
                     </div>
                 </form>
             </div>
@@ -455,7 +606,7 @@ include '../../../includes/header.php';
                                         <td class="text-center"><strong><?php echo $pr['total_marks'] !== null ? round($pr['total_marks']) : '-'; ?></strong></td>
                                         <td class="text-center"><span class="badge badge-info"><?php echo e($pr['grade']); ?></span></td>
                                         <td style="white-space: nowrap; min-width: 100px;">
-                                            <a href="submitted.php?academic_year_id=<?php echo $pr['academic_year_id']; ?>&semester_number=<?php echo $pr['semester_number']; ?>&course_id=<?php echo $pr['course_id']; ?>" class="btn btn-sm btn-warning" title="Edit Marks">
+                                            <a href="submitted.php?academic_year_id=<?php echo $pr['academic_year_id']; ?>&semester_number=<?php echo $pr['semester_number']; ?>&level_year=<?php echo (int)($pr['course_level_year'] ?? 0); ?>&program_id=<?php echo (int)($pr['course_program_id'] ?? 0); ?>&course_id=<?php echo $pr['course_id']; ?>" class="btn btn-sm btn-warning" title="Edit Marks">
                                                 <i class="fas fa-edit"></i> Edit
                                             </a>
                                             <a href="view-slip.php?student_id=<?php echo $pr['student_id']; ?>&academic_year_id=<?php echo $pr['academic_year_id']; ?>&semester_number=<?php echo $pr['semester_number']; ?>" class="btn btn-sm btn-info" title="View Full Results">
@@ -483,6 +634,42 @@ include '../../../includes/header.php';
                 <form method="GET" class="row">
                     <input type="hidden" name="tab" value="audit">
                     <div class="col-md-2 col-sm-6 mb-2">
+                        <label>Academic Year</label>
+                        <select name="academic_year_id" class="form-control form-control-sm">
+                            <?php foreach ($academicYears as $ay): ?>
+                                <option value="<?php echo (int)$ay['id']; ?>" <?php echo ((int)$selectedAcademicYearId === (int)$ay['id']) ? 'selected' : ''; ?>>
+                                    <?php echo e($ay['year_name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-2 col-sm-6 mb-2">
+                        <label>Semester</label>
+                        <select name="semester_number" class="form-control form-control-sm">
+                            <?php for ($i = 1; $i <= 4; $i++): ?>
+                                <option value="<?php echo (int)$i; ?>" <?php echo ((int)$selectedSemesterNumber === (int)$i) ? 'selected' : ''; ?>>Semester <?php echo (int)$i; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-2 col-sm-6 mb-2">
+                        <label>Program</label>
+                        <select name="program_id" class="form-control form-control-sm">
+                            <?php foreach ($programs as $program): ?>
+                                <option value="<?php echo (int)$program['id']; ?>" <?php echo ((int)$selectedProgramId === (int)$program['id']) ? 'selected' : ''; ?>>
+                                    <?php echo e($program['program_name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-2 col-sm-6 mb-2">
+                        <label>Year</label>
+                        <select name="level_year" class="form-control form-control-sm">
+                            <?php for ($y = 1; $y <= 4; $y++): ?>
+                                <option value="<?php echo (int)$y; ?>" <?php echo ((int)$selectedLevelYear === (int)$y) ? 'selected' : ''; ?>>Year <?php echo (int)$y; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-2 col-sm-6 mb-2">
                         <label>Student (Name/Reg#)</label>
                         <input type="text" name="student" class="form-control form-control-sm" value="<?php echo e($studentSearch); ?>" placeholder="Search student...">
                     </div>
@@ -508,7 +695,7 @@ include '../../../includes/header.php';
                     </div>
                     <div class="col-md-2 col-sm-6 mb-2 d-flex align-items-end">
                         <button type="submit" class="btn btn-primary btn-sm mr-2">Filter</button>
-                        <a href="audit.php?tab=audit" class="btn btn-secondary btn-sm">Reset</a>
+                        <a href="audit.php?tab=audit&academic_year_id=<?php echo (int)$selectedAcademicYearId; ?>&semester_number=<?php echo (int)$selectedSemesterNumber; ?>&program_id=<?php echo (int)$selectedProgramId; ?>&level_year=<?php echo (int)$selectedLevelYear; ?>" class="btn btn-secondary btn-sm">Reset</a>
                     </div>
                 </form>
             </div>
@@ -588,7 +775,7 @@ include '../../../includes/header.php';
                                             <?php echo e($record['reason'] ?? '-'); ?>
                                         </td>
                                         <td style="white-space: nowrap; min-width: 100px;">
-                                            <a href="submitted.php?academic_year_id=<?php echo $record['academic_year_id']; ?>&semester_number=<?php echo $record['semester_number']; ?>&course_id=<?php echo $record['course_id']; ?>" class="btn btn-sm btn-primary" title="Edit Marks for this Course">
+                                            <a href="submitted.php?academic_year_id=<?php echo $record['academic_year_id']; ?>&semester_number=<?php echo $record['semester_number']; ?>&level_year=<?php echo (int)($record['course_level_year'] ?? 0); ?>&program_id=<?php echo (int)($record['course_program_id'] ?? 0); ?>&course_id=<?php echo $record['course_id']; ?>" class="btn btn-sm btn-primary" title="Edit Marks for this Course">
                                                 <i class="fas fa-edit"></i>
                                             </a>
                                             <a href="view-slip.php?student_id=<?php echo $record['student_id']; ?>&academic_year_id=<?php echo $record['academic_year_id']; ?>&semester_number=<?php echo $record['semester_number']; ?>" class="btn btn-sm btn-info" title="View Student Results">

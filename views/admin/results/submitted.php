@@ -35,6 +35,10 @@ $academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_ye
 $defaultAcademicYearId  = Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0);
 $selectedAcademicYearId = isset($_REQUEST['academic_year_id']) ? (int) $_REQUEST['academic_year_id'] : $defaultAcademicYearId;
 $selectedSemesterNumber = isset($_REQUEST['semester_number']) ? (int) $_REQUEST['semester_number'] : (Helper::getCurrentSemester()['semester_number'] ?? 1);
+$requestedCourseId      = isset($_REQUEST['course_id']) ? (int) $_REQUEST['course_id'] : 0;
+$requestedLevelYear     = isset($_REQUEST['level_year']) ? (int) $_REQUEST['level_year'] : 0;
+$requestedProgramId     = isset($_REQUEST['program_id']) ? (int) $_REQUEST['program_id'] : 0;
+$programs               = $conn->query("SELECT id, program_name FROM programs ORDER BY program_name ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 // Map AY + semester number to semester row
 $mapStmt = $conn->prepare('SELECT id, semester_name FROM semesters WHERE academic_year_id = :ay AND semester_number = :sn LIMIT 1');
@@ -43,21 +47,96 @@ $semesterRow  = $mapStmt->fetch();
 $semesterId   = $semesterRow['id'] ?? (Helper::getCurrentSemester()['id'] ?? 0);
 $semesterName = $semesterRow['semester_name'] ?? (Helper::getCurrentSemester()['semester_name'] ?? 'Current Semester');
 
-// Courses that have submitted/draft/published results in this semester
+$selectedProgramId = $requestedProgramId;
+if ($selectedProgramId <= 0 && $requestedCourseId > 0) {
+    try {
+        $courseProgramStmt = $conn->prepare("SELECT program_id FROM courses WHERE id = :id LIMIT 1");
+        $courseProgramStmt->execute(['id' => $requestedCourseId]);
+        $selectedProgramId = (int)($courseProgramStmt->fetchColumn() ?: 0);
+    } catch (Exception $e) {
+        $selectedProgramId = 0;
+    }
+}
+if ($selectedProgramId <= 0) {
+    $selectedProgramId = (int)($programs[0]['id'] ?? 0);
+}
+if (!empty($programs)) {
+    $programIds = array_map('intval', array_column($programs, 'id'));
+    if (!in_array((int)$selectedProgramId, $programIds, true)) {
+        $selectedProgramId = (int)$programs[0]['id'];
+    }
+}
+
+$availableLevelYears = [];
+try {
+    $levelStmt = $conn->prepare("SELECT DISTINCT level_year
+                                 FROM courses
+                                 WHERE status = 'active'
+                                   AND (semester_offered = :semester_number OR semester_offered = 3)
+                                   AND program_id = :program_id
+                                 ORDER BY level_year ASC");
+    $levelStmt->execute([
+        'semester_number' => (int)$selectedSemesterNumber,
+        'program_id' => (int)$selectedProgramId,
+    ]);
+    $availableLevelYears = array_map('intval', $levelStmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
+} catch (Exception $e) {
+    $availableLevelYears = [];
+}
+
+$selectedLevelYear = $requestedLevelYear;
+if ($selectedLevelYear <= 0 && $requestedCourseId > 0) {
+    try {
+        $courseYearStmt = $conn->prepare("SELECT level_year FROM courses WHERE id = :id LIMIT 1");
+        $courseYearStmt->execute(['id' => $requestedCourseId]);
+        $selectedLevelYear = (int)($courseYearStmt->fetchColumn() ?: 0);
+    } catch (Exception $e) {
+        $selectedLevelYear = 0;
+    }
+}
+if ($selectedLevelYear <= 0) {
+    $selectedLevelYear = !empty($availableLevelYears) ? (int)$availableLevelYears[0] : 1;
+}
+if (!empty($availableLevelYears) && !in_array((int)$selectedLevelYear, $availableLevelYears, true)) {
+    $selectedLevelYear = (int)$availableLevelYears[0];
+}
+if (empty($availableLevelYears)) {
+    $availableLevelYears = [1, 2, 3, 4];
+}
+
+// Courses offered in the selected semester + year with progress counters
 $coursesWithResults = [];
 if ($semesterId) {
-    $sql = "SELECT DISTINCT c.id, c.course_code, c.course_name
-            FROM results r
-            INNER JOIN courses c ON r.course_id = c.id
-            WHERE r.semester_id = :semester_id
-              AND r.status IN ('submitted', 'approved', 'published')
+    $sql = "SELECT
+                c.id,
+                c.course_code,
+                c.course_name,
+                SUM(CASE WHEN r.status = 'submitted' THEN 1 ELSE 0 END) AS submitted_count,
+                SUM(CASE WHEN r.status = 'approved' THEN 1 ELSE 0 END) AS approved_count,
+                SUM(CASE WHEN r.status = 'published' THEN 1 ELSE 0 END) AS published_count,
+                SUM(CASE WHEN r.final_exam_marks IS NOT NULL THEN 1 ELSE 0 END) AS with_exam_count
+            FROM courses c
+            LEFT JOIN results r
+                   ON r.course_id = c.id
+                  AND r.semester_id = :semester_id
+                  AND r.status IN ('submitted', 'approved', 'published')
+            WHERE c.status = 'active'
+              AND (c.semester_offered = :semester_number OR c.semester_offered = 3)
+              AND c.level_year = :level_year
+              AND c.program_id = :program_id
+            GROUP BY c.id, c.course_code, c.course_name
             ORDER BY c.course_code";
     $stmt = $conn->prepare($sql);
-    $stmt->execute(['semester_id' => $semesterId]);
+    $stmt->execute([
+        'semester_id' => (int)$semesterId,
+        'semester_number' => (int)$selectedSemesterNumber,
+        'level_year' => (int)$selectedLevelYear,
+        'program_id' => (int)$selectedProgramId,
+    ]);
     $coursesWithResults = $stmt->fetchAll();
 }
 
-$selectedCourseId = isset($_REQUEST['course_id']) ? (int) $_REQUEST['course_id'] : 0;
+$selectedCourseId = $requestedCourseId;
 
 // Ensure selected course is valid
 if ($selectedCourseId && !empty($coursesWithResults)) {
@@ -65,6 +144,33 @@ if ($selectedCourseId && !empty($coursesWithResults)) {
     if (!in_array($selectedCourseId, $validIds, true)) {
         $selectedCourseId = 0;
     }
+}
+$hasResultRowsInSemester = false;
+foreach ($coursesWithResults as $courseSummary) {
+    $rowsForCourse = (int)($courseSummary['submitted_count'] ?? 0)
+        + (int)($courseSummary['approved_count'] ?? 0)
+        + (int)($courseSummary['published_count'] ?? 0);
+    if ($rowsForCourse > 0) {
+        $hasResultRowsInSemester = true;
+        break;
+    }
+}
+
+$autoSelectedCourse = false;
+if ($selectedCourseId <= 0 && !empty($coursesWithResults)) {
+    foreach ($coursesWithResults as $courseSummary) {
+        $rowsForCourse = (int)($courseSummary['submitted_count'] ?? 0)
+            + (int)($courseSummary['approved_count'] ?? 0)
+            + (int)($courseSummary['published_count'] ?? 0);
+        if ($rowsForCourse > 0) {
+            $selectedCourseId = (int)($courseSummary['id'] ?? 0);
+            break;
+        }
+    }
+    if ($selectedCourseId <= 0) {
+        $selectedCourseId = (int)($coursesWithResults[0]['id'] ?? 0);
+    }
+    $autoSelectedCourse = $selectedCourseId > 0;
 }
 
 // ---------------------------------------------------------------------
@@ -87,8 +193,14 @@ $conn->exec("CREATE TABLE IF NOT EXISTS `results_audit` (
   KEY `course_id` (`course_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
-$redirectSubmitted = function($ayId, $semNo, $courseId = 0) {
+$redirectSubmitted = function($ayId, $semNo, $courseId = 0, $levelYear = 0, $programId = 0) {
     $url = 'submitted.php?academic_year_id=' . (int)$ayId . '&semester_number=' . (int)$semNo;
+    if ((int)$programId > 0) {
+        $url .= '&program_id=' . (int)$programId;
+    }
+    if ((int)$levelYear > 0) {
+        $url .= '&level_year=' . (int)$levelYear;
+    }
     if ((int)$courseId > 0) {
         $url .= '&course_id=' . (int)$courseId;
     }
@@ -106,13 +218,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['bulk_approve_course'
 
     if (!$adminId) {
         $session->setFlash('error', 'Admin profile not found. Cannot bulk approve results.');
-        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $scopeCourseId));
+        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $scopeCourseId, $selectedLevelYear, $selectedProgramId));
         exit;
     }
 
     if (isset($_POST['bulk_approve_course']) && $scopeCourseId <= 0) {
         $session->setFlash('error', 'Please select a course before bulk approval.');
-        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber));
+        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, 0, $selectedLevelYear, $selectedProgramId));
         exit;
     }
 
@@ -134,7 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['bulk_approve_course'
         if (empty($rows)) {
             $conn->rollBack();
             $session->setFlash('info', 'No submitted results with exam marks were found for bulk approval.');
-            header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $scopeCourseId));
+            header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $scopeCourseId, $selectedLevelYear, $selectedProgramId));
             exit;
         }
 
@@ -172,14 +284,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['bulk_approve_course'
 
         $conn->commit();
         $session->setFlash('success', 'Bulk approval completed. ' . $approvedCount . ' result(s) moved to Approved status.');
-        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $scopeCourseId));
+        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $scopeCourseId, $selectedLevelYear, $selectedProgramId));
         exit;
     } catch (Exception $e) {
         if ($conn->inTransaction()) {
             $conn->rollBack();
         }
         $session->setFlash('error', 'Bulk approval failed: ' . $e->getMessage());
-        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $scopeCourseId));
+        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $scopeCourseId, $selectedLevelYear, $selectedProgramId));
         exit;
     }
 }
@@ -193,7 +305,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam']) && $semesterI
 
     if ($selectedCourseId <= 0) {
         $session->setFlash('error', 'Invalid course selection.');
-        header('Location: submitted.php?academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber);
+        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, 0, $selectedLevelYear, $selectedProgramId));
         exit;
     }
 
@@ -205,13 +317,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam']) && $semesterI
 
     if (!$adminId) {
         $session->setFlash('error', 'Admin profile not found. Cannot save results.');
-        header('Location: submitted.php?academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber . '&course_id=' . $selectedCourseId);
+        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $selectedCourseId, $selectedLevelYear, $selectedProgramId));
         exit;
     }
 
     $conn->beginTransaction();
 
     try {
+        $updatedCount = 0;
+        $revertedPublishedCount = 0;
         foreach ($examData as $resultId => $examRaw) {
             $resultId = (int) $resultId;
             if ($resultId <= 0) {
@@ -236,14 +350,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam']) && $semesterI
             $oldStmt->execute(['id' => $resultId]);
             $oldResult = $oldStmt->fetch(PDO::FETCH_ASSOC);
 
-            // Preserve published status if already published; otherwise keep as approved
-            $newStatus = ($oldResult['status'] === 'published') ? 'published' : 'approved';
+            if (!$oldResult) {
+                continue;
+            }
+            $wasPublished = ((string)($oldResult['status'] ?? '') === 'published');
+            // Any exam-mark edit must return to submitted so it is re-audited
+            // before being published on the student portal.
+            $newStatus = 'submitted';
 
             // Update only exam mark; triggers handle total + grade.
             $updateSql = "UPDATE results
                           SET final_exam_marks = :exam,
-                              approved_by      = :admin_id,
-                              approved_date    = :approved_date,
+                              approved_by      = NULL,
+                              approved_date    = NULL,
+                              published_date   = NULL,
                               status           = :status,
                               updated_at       = :updated_at
                           WHERE id = :id
@@ -252,14 +372,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam']) && $semesterI
             $u = $conn->prepare($updateSql);
             $u->execute([
                 'exam'         => $examMark,
-                'admin_id'     => $adminId,
-                'approved_date'=> $now,
                 'status'       => $newStatus,
                 'updated_at'   => $now,
                 'id'           => $resultId,
                 'semester_id'  => $semesterId,
                 'course_id'    => $selectedCourseId,
             ]);
+            if ($u->rowCount() > 0) {
+                $updatedCount++;
+                if ($wasPublished) {
+                    $revertedPublishedCount++;
+                }
+            }
 
             // Fetch new marks after update
             $newStmt = $conn->prepare("SELECT assignment_marks, final_exam_marks, total_marks, grade, status FROM results WHERE id = :id");
@@ -280,9 +404,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam']) && $semesterI
         }
 
     $conn->commit();
-    $session->setFlash('success', 'Exam marks saved provisionally. Changes have been logged for audit. Review and publish from Provisional Results.');
+    $successMsg = 'Exam marks saved to Submitted (audit pending). Updated rows: ' . (int)$updatedCount . '. Review and bulk approve before publishing from Provisional Results.';
+    if ($revertedPublishedCount > 0) {
+        $successMsg .= ' Any edited published rows are automatically removed from student portal until re-approved and re-published.';
+    }
+    $session->setFlash('success', $successMsg);
 
-        header('Location: submitted.php?academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber . '&course_id=' . $selectedCourseId);
+        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $selectedCourseId, $selectedLevelYear, $selectedProgramId));
         exit;
     } catch (Exception $e) {
         $conn->rollBack();
@@ -324,6 +452,23 @@ if ($semesterId && $selectedCourseId) {
     ]);
     $results = $stmt->fetchAll();
 }
+$submittedUiSummary = [
+    'total' => 0,
+    'with_exam' => 0,
+    'submitted' => 0,
+    'approved' => 0,
+    'published' => 0
+];
+foreach ($results as $row) {
+    $submittedUiSummary['total']++;
+    if ($row['final_exam_marks'] !== null) {
+        $submittedUiSummary['with_exam']++;
+    }
+    $statusKey = strtolower((string)($row['status'] ?? ''));
+    if (isset($submittedUiSummary[$statusKey])) {
+        $submittedUiSummary[$statusKey]++;
+    }
+}
 
 // Notifications for header bell
 $unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
@@ -331,6 +476,41 @@ $unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
 $pageTitle = 'Results - Submitted / Exam Entry - ' . APP_NAME;
 include '../../../includes/header.php';
 ?>
+<style>
+.results-quick-stats {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(130px, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.results-stat-card {
+    background: #fff;
+    border: 1px solid #dbe2ea;
+    border-radius: 10px;
+    padding: 10px;
+}
+.results-stat-label {
+    font-size: 0.72rem;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.results-stat-value {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+@media (max-width: 992px) {
+    .results-quick-stats {
+        grid-template-columns: repeat(2, minmax(130px, 1fr));
+    }
+}
+@media (max-width: 576px) {
+    .results-quick-stats {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
 
 <?php include '../../../includes/admin/sidebar.php'; ?>
 
@@ -360,6 +540,33 @@ include '../../../includes/header.php';
         <?php if ($session->getFlash('info')): ?>
             <div class="alert alert-info"><?php echo e($session->getFlash('info')); ?></div>
         <?php endif; ?>
+        <?php $resultsWorkflowActive = 'enter_approval'; include __DIR__ . '/_workflow_nav.php'; ?>
+
+        <div class="results-quick-stats">
+            <div class="results-stat-card">
+                <div class="results-stat-label">Rows Loaded</div>
+                <div class="results-stat-value"><?php echo (int)$submittedUiSummary['total']; ?></div>
+            </div>
+            <div class="results-stat-card">
+                <div class="results-stat-label">With Exam Marks</div>
+                <div class="results-stat-value"><?php echo (int)$submittedUiSummary['with_exam']; ?></div>
+            </div>
+            <div class="results-stat-card">
+                <div class="results-stat-label">Submitted</div>
+                <div class="results-stat-value"><?php echo (int)$submittedUiSummary['submitted']; ?></div>
+            </div>
+            <div class="results-stat-card">
+                <div class="results-stat-label">Approved</div>
+                <div class="results-stat-value"><?php echo (int)$submittedUiSummary['approved']; ?></div>
+            </div>
+            <div class="results-stat-card">
+                <div class="results-stat-label">Published</div>
+                <div class="results-stat-value"><?php echo (int)$submittedUiSummary['published']; ?></div>
+            </div>
+        </div>
+        <div class="results-helper-note mb-3">
+            <strong>Workflow:</strong> Select Academic Year, Semester, Program, Year of Study, and Course. Enter exam marks, save changes, then use bulk approval to move rows to <strong>Approved</strong> for publishing.
+        </div>
 
         <div class="card mb-3">
             <div class="card-body">
@@ -378,21 +585,82 @@ include '../../../includes/header.php';
                         <?php endfor; ?>
                     </select>
 
+                    <label class="mr-2">Program:</label>
+                    <select name="program_id" class="form-control mr-2" onchange="this.form.submit();">
+                        <?php foreach ($programs as $program): ?>
+                            <option value="<?php echo (int)$program['id']; ?>" <?php echo ((int)$selectedProgramId === (int)$program['id']) ? 'selected' : ''; ?>>
+                                <?php echo e($program['program_name']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+
+                    <label class="mr-2">Year:</label>
+                    <select name="level_year" class="form-control mr-2" onchange="this.form.submit();">
+                        <?php foreach ($availableLevelYears as $yearOption): ?>
+                            <option value="<?php echo (int)$yearOption; ?>" <?php echo ((int)$selectedLevelYear === (int)$yearOption) ? 'selected' : ''; ?>>
+                                Year <?php echo (int)$yearOption; ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+
                     <label class="ml-3 mr-2">Course:</label>
                     <select name="course_id" class="form-control mr-2" onchange="this.form.submit();">
                         <option value="">-- Select Course --</option>
                         <?php foreach ($coursesWithResults as $c): ?>
                             <option value="<?php echo $c['id']; ?>" <?php echo $selectedCourseId == $c['id'] ? 'selected' : ''; ?>>
                                 <?php echo e($c['course_code'] . ' - ' . $c['course_name']); ?>
+                                <?php echo e(' [Sub ' . (int)($c['submitted_count'] ?? 0) . ' | Apr ' . (int)($c['approved_count'] ?? 0) . ' | Pub ' . (int)($c['published_count'] ?? 0) . ']'); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
                 </form>
+                <?php if ($autoSelectedCourse): ?>
+                    <div class="alert alert-info mb-3">
+                        Course auto-selected for convenience. You can switch to another course using the selector or the table below.
+                    </div>
+                <?php endif; ?>
+                <?php if (!empty($coursesWithResults)): ?>
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm table-bordered mb-0 results-course-table">
+                            <thead class="thead-light">
+                                <tr>
+                                    <th>Course</th>
+                                    <th class="text-center">Submitted</th>
+                                    <th class="text-center">Approved</th>
+                                    <th class="text-center">Published</th>
+                                    <th class="text-center">With Exam</th>
+                                    <th class="text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($coursesWithResults as $courseRow): ?>
+                                    <tr class="<?php echo ((int)$selectedCourseId === (int)$courseRow['id']) ? 'table-primary' : ''; ?>">
+                                        <td>
+                                            <strong><?php echo e($courseRow['course_code']); ?></strong>
+                                            <small class="text-muted d-block"><?php echo e($courseRow['course_name']); ?></small>
+                                        </td>
+                                        <td class="text-center"><?php echo (int)($courseRow['submitted_count'] ?? 0); ?></td>
+                                        <td class="text-center"><?php echo (int)($courseRow['approved_count'] ?? 0); ?></td>
+                                        <td class="text-center"><?php echo (int)($courseRow['published_count'] ?? 0); ?></td>
+                                        <td class="text-center"><?php echo (int)($courseRow['with_exam_count'] ?? 0); ?></td>
+                                        <td class="text-center">
+                                            <a href="submitted.php?academic_year_id=<?php echo (int)$selectedAcademicYearId; ?>&semester_number=<?php echo (int)$selectedSemesterNumber; ?>&program_id=<?php echo (int)$selectedProgramId; ?>&level_year=<?php echo (int)$selectedLevelYear; ?>&course_id=<?php echo (int)$courseRow['id']; ?>" class="btn btn-outline-primary btn-sm">
+                                                Open
+                                            </a>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
 
                 <?php if ($semesterId): ?>
                     <form method="POST" class="mb-3">
                         <input type="hidden" name="academic_year_id" value="<?php echo (int)$selectedAcademicYearId; ?>">
                         <input type="hidden" name="semester_number" value="<?php echo (int)$selectedSemesterNumber; ?>">
+                        <input type="hidden" name="program_id" value="<?php echo (int)$selectedProgramId; ?>">
+                        <input type="hidden" name="level_year" value="<?php echo (int)$selectedLevelYear; ?>">
                         <button type="submit" name="bulk_approve_semester" value="1" class="btn btn-outline-success btn-sm" onclick="return confirm('Bulk approve all submitted results with exam marks for this semester?');">
                             <i class="fas fa-check-double"></i> Bulk Approve Semester
                         </button>
@@ -403,7 +671,9 @@ include '../../../includes/header.php';
                 <?php if (!$semesterId): ?>
                     <p class="text-muted mb-0">No semester configured for the selected academic year / semester number.</p>
                 <?php elseif (empty($coursesWithResults)): ?>
-                    <p class="text-muted mb-0">No submitted results found for this semester yet.</p>
+                    <p class="text-muted mb-0">No active offered courses found for the selected Program / Year in this semester.</p>
+                <?php elseif (!$hasResultRowsInSemester): ?>
+                    <p class="text-muted mb-0">Courses are listed in the selected Program / Year scope, but no submitted/approved/published result rows exist for this semester yet.</p>
                 <?php elseif (!$selectedCourseId): ?>
                     <p class="text-muted mb-0">Please select a course to enter exam marks and approve results.</p>
                 <?php else: ?>
@@ -424,14 +694,16 @@ include '../../../includes/header.php';
                         if ($hasPublished): ?>
                             <div class="alert alert-warning mb-3">
                                 <i class="fas fa-exclamation-triangle"></i> <strong>Notice:</strong> 
-                                Some or all of these results are already published and visible to students. 
-                                Any changes you make will be immediately reflected on the student portal and saved to the audit trail.
+                                Some or all of these results are already published and visible to students.
+                                If you edit exam marks here, those rows will move back to <strong>Submitted</strong> and be hidden from the student portal until re-approved and re-published.
                             </div>
                         <?php endif; ?>
 
                         <form method="POST">
                             <input type="hidden" name="academic_year_id" value="<?php echo $selectedAcademicYearId; ?>">
                             <input type="hidden" name="semester_number" value="<?php echo $selectedSemesterNumber; ?>">
+                            <input type="hidden" name="program_id" value="<?php echo (int)$selectedProgramId; ?>">
+                            <input type="hidden" name="level_year" value="<?php echo (int)$selectedLevelYear; ?>">
                             <input type="hidden" name="course_id" value="<?php echo $selectedCourseId; ?>">
 
                             <div class="table-responsive">
@@ -500,8 +772,8 @@ include '../../../includes/header.php';
                                 </button>
                                 <p class="text-muted mt-2" style="font-size:12px;">
                                     <strong>Policy:</strong> Lecturers provide coursework (40%). Admins enter exam marks (60%) here.<br>
-                                    <strong>Status:</strong> Results marked as "Approved" are not yet visible to students. Results marked as "Published" are visible to students.<br>
-                                    <strong>Editing Published Results:</strong> Changes to published results are immediately visible to students and logged in the audit trail for record-keeping.
+                                    <strong>Status:</strong> Submitted = pending audit, Approved = audit completed, Published = visible on student portal.<br>
+                                    <strong>Editing Published Results:</strong> Any exam-mark edit moves the row back to Submitted for re-audit and removes it from student portal until re-published.
                                 </p>
                             </div>
                         </form>

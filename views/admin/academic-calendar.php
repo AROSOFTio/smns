@@ -19,6 +19,13 @@ $conn = $db->getConnection();
 $logger = new Logger();
 $communicationService = new AdminCommunicationService($conn, $logger);
 
+// Keep academic years/semesters normalized (Aug/Jan intake model) and extend future years.
+try {
+    AcademicCalendarManager::ensureStandardCalendar($conn, 2025, 5);
+} catch (Exception $e) {
+    // Non-fatal: manual semester operations below remain available.
+}
+
 $allowedTabs = ['semesters', 'announcements', 'audit'];
 $activeTab = isset($_GET['tab']) && in_array($_GET['tab'], $allowedTabs, true) ? $_GET['tab'] : 'semesters';
 
@@ -320,14 +327,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'send_portal' => $sendChannelPortal,
                             'send_email' => $sendChannelEmail,
                             'communication_type' => 'academic_announcement',
-                            'notification_type' => $priority === 'urgent' ? 'warning' : 'info'
+                            'notification_type' => $priority === 'urgent' ? 'warning' : 'info',
+                            'email_source_page' => '/views/admin/academic-calendar.php',
+                            'queue_delivery' => true
                         ]
                     );
-                    $successMessage .= ' Student communication queued: recipients '
-                        . (int)($sendResult['total_recipients'] ?? 0)
-                        . ', portal ' . (int)($sendResult['portal_success_count'] ?? 0)
-                        . ', email sent ' . (int)($sendResult['email_success_count'] ?? 0)
-                        . ', email failed ' . (int)($sendResult['email_fail_count'] ?? 0) . '.';
+                    $successMessage .= ' Student communication queued as job #'
+                        . (int)($sendResult['queue_job_id'] ?? 0)
+                        . ' (communication #' . (int)($sendResult['communication_id'] ?? 0) . ')'
+                        . ' for ' . (int)($sendResult['total_recipients'] ?? 0) . ' recipient(s).';
                 }
                 $session->setFlash('success', $successMessage);
             } else {
@@ -374,14 +382,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'send_portal' => $sendChannelPortal,
                             'send_email' => $sendChannelEmail,
                             'communication_type' => 'academic_announcement',
-                            'notification_type' => $priority === 'urgent' ? 'warning' : 'info'
+                            'notification_type' => $priority === 'urgent' ? 'warning' : 'info',
+                            'email_source_page' => '/views/admin/academic-calendar.php',
+                            'queue_delivery' => true
                         ]
                     );
-                    $successMessage .= ' Student communication queued: recipients '
-                        . (int)($sendResult['total_recipients'] ?? 0)
-                        . ', portal ' . (int)($sendResult['portal_success_count'] ?? 0)
-                        . ', email sent ' . (int)($sendResult['email_success_count'] ?? 0)
-                        . ', email failed ' . (int)($sendResult['email_fail_count'] ?? 0) . '.';
+                    $successMessage .= ' Student communication queued as job #'
+                        . (int)($sendResult['queue_job_id'] ?? 0)
+                        . ' (communication #' . (int)($sendResult['communication_id'] ?? 0) . ')'
+                        . ' for ' . (int)($sendResult['total_recipients'] ?? 0) . ' recipient(s).';
                 }
                 $session->setFlash('success', $successMessage);
             }

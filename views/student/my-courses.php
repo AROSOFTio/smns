@@ -458,15 +458,16 @@ html[data-theme='dark'] .badge-provisional {
                                 <tbody>
                                     <?php foreach ($data['courses'] as $c): ?>
                                         <?php $status = strtolower((string)($c['result_status'] ?? '')); ?>
+                                        <?php $isPublished = ($status === 'published'); ?>
                                         <tr>
                                             <td><?php echo e($c['course_code'] ?? '-'); ?></td>
                                             <td><?php echo e($c['course_name'] ?? '-'); ?></td>
-                                            <td><?php echo $c['total_marks'] !== null ? number_format((float)$c['total_marks'], 0) : '-'; ?></td>
+                                            <td><?php echo $isPublished && $c['total_marks'] !== null ? number_format((float)$c['total_marks'], 0) : '-'; ?></td>
                                             <td><?php echo e($c['credit_hours'] ?? '-'); ?></td>
-                                            <td><?php echo !empty($c['grade']) ? e($c['grade']) : '-'; ?></td>
-                                            <td><?php echo $c['grade_points'] !== null ? number_format((float)$c['grade_points'], 2) : '-'; ?></td>
-                                            <td><?php echo $status === 'published' ? 'FINAL' : 'PROVISIONAL'; ?></td>
-                                            <td><?php echo $status === 'published' ? '<span class="badge-published">Published</span>' : '<span class="badge-provisional">' . e(ucfirst($status !== '' ? $status : 'provisional')) . '</span>'; ?></td>
+                                            <td><?php echo $isPublished && !empty($c['grade']) ? e($c['grade']) : '-'; ?></td>
+                                            <td><?php echo $isPublished && $c['grade_points'] !== null ? number_format((float)$c['grade_points'], 2) : '-'; ?></td>
+                                            <td><?php echo $isPublished ? 'FINAL' : 'PROVISIONAL'; ?></td>
+                                            <td><?php echo $isPublished ? '<span class="badge-published">Published</span>' : '<span class="badge-provisional">' . e(ucfirst($status !== '' ? $status : 'provisional')) . '</span>'; ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>

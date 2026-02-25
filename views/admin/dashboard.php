@@ -21,6 +21,13 @@ $currentUser = $auth->getCurrentUser();
 $db = new Database();
 $conn = $db->getConnection();
 
+// Keep academic years/semesters normalized (Aug/Jan intake model) and extend future years.
+try {
+    AcademicCalendarManager::ensureStandardCalendar($conn, 2025, 5);
+} catch (Exception $e) {
+    // Non-fatal: dashboard can still render if sync is temporarily unavailable.
+}
+
 // Total students
 $stmt = $conn->query("SELECT COUNT(*) as count FROM students WHERE status = 'active'");
 $totalStudents = $stmt->fetch()['count'];
@@ -689,7 +696,7 @@ include '../../includes/header.php';
                             <input type="hidden" name="csrf_token" value="<?php echo e(Security::generateCSRFToken()); ?>">
                             <select name="activate_semester_id" class="form-control form-control-sm" style="min-width:220px;">
                                 <?php
-                                    $sstmt = $conn->query("SELECT s.id, s.semester_name, s.start_date, s.end_date, ay.year_name, s.status FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id ORDER BY s.start_date DESC");
+                                    $sstmt = $conn->query("SELECT s.id, s.semester_name, s.start_date, s.end_date, ay.year_name, s.status FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id WHERE ay.start_date >= '2025-08-01' ORDER BY ay.start_date DESC, s.semester_number ASC, s.id DESC");
                                     $allSems = $sstmt->fetchAll();
                                     foreach ($allSems as $s) {
                                         $label = $s['year_name'] . ' - ' . $s['semester_name'] . ' (' . date('M d, Y', strtotime($s['start_date'])) . ' - ' . date('M d, Y', strtotime($s['end_date'])) . ')';

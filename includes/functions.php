@@ -613,7 +613,8 @@ function getStudentAcademicStatusMeta($conn, $studentId, $semesterId = 0, $fallb
 
 /**
  * Resolve the semester context to display for a student.
- * Prefers latest approved semester registration, then latest course registration, then active semester.
+ * Prefers active calendar semester so "CURRENT" chips stay in sync with admin semester activation.
+ * Falls back to latest approved semester registration, then latest course registration.
  */
 function getStudentCurrentSemesterContext($conn, $studentId) {
     $studentId = (int)$studentId;
@@ -630,7 +631,25 @@ function getStudentCurrentSemesterContext($conn, $studentId) {
     }
 
     try {
-        // 1) Latest approved semester enrollment for this student
+        // 1) Active semester (system calendar source of truth for "current" context)
+        $active = Helper::getCurrentSemester();
+        if (!empty($active)) {
+            $yearName = '-';
+            if (!empty($active['academic_year_id'])) {
+                $ayStmt = $conn->prepare("SELECT year_name FROM academic_years WHERE id = :id LIMIT 1");
+                $ayStmt->execute(['id' => (int)$active['academic_year_id']]);
+                $yearName = (string)($ayStmt->fetchColumn() ?: '-');
+            }
+            return [
+                'id' => (int)($active['id'] ?? 0),
+                'semester_name' => (string)($active['semester_name'] ?? '-'),
+                'semester_number' => (int)($active['semester_number'] ?? 0),
+                'academic_year_id' => (int)($active['academic_year_id'] ?? 0),
+                'academic_year' => $yearName,
+            ];
+        }
+
+        // 2) Latest approved semester enrollment for this student
         if ($studentId > 0) {
             $stmt = $conn->prepare("
                 SELECT s.id, s.semester_name, s.semester_number, s.academic_year_id, ay.year_name AS academic_year
@@ -654,7 +673,7 @@ function getStudentCurrentSemesterContext($conn, $studentId) {
             }
         }
 
-        // 2) Latest semester where student has course registrations
+        // 3) Latest semester where student has course registrations
         if ($studentId > 0) {
             $stmt = $conn->prepare("
                 SELECT s.id, s.semester_name, s.semester_number, s.academic_year_id, ay.year_name AS academic_year
@@ -678,23 +697,7 @@ function getStudentCurrentSemesterContext($conn, $studentId) {
             }
         }
 
-        // 3) Active semester fallback
-        $active = Helper::getCurrentSemester();
-        if (!empty($active)) {
-            $yearName = '-';
-            if (!empty($active['academic_year_id'])) {
-                $ayStmt = $conn->prepare("SELECT year_name FROM academic_years WHERE id = :id LIMIT 1");
-                $ayStmt->execute(['id' => (int)$active['academic_year_id']]);
-                $yearName = (string)($ayStmt->fetchColumn() ?: '-');
-            }
-            return [
-                'id' => (int)($active['id'] ?? 0),
-                'semester_name' => (string)($active['semester_name'] ?? '-'),
-                'semester_number' => (int)($active['semester_number'] ?? 0),
-                'academic_year_id' => (int)($active['academic_year_id'] ?? 0),
-                'academic_year' => $yearName,
-            ];
-        }
+        // 4) No active semester and no student history
     } catch (Exception $e) {
         // Fall through to default.
     }

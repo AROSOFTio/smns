@@ -30,7 +30,7 @@ $conn = $db->getConnection();
 
 try {
     $stmt = $conn->prepare("
-        SELECT s.*, p.program_code, p.program_name, u.username, u.status as user_status, u.created_at as user_created_at, u.last_login, u.failed_login_attempts as login_attempts
+        SELECT s.*, p.program_code, p.program_name, u.username, u.status as user_status, u.created_at as user_created_at, u.last_login, u.failed_login_attempts
         FROM students s
         INNER JOIN programs p ON s.program_id = p.id
         INNER JOIN users u ON s.user_id = u.id
@@ -42,6 +42,21 @@ try {
     if (!$student) {
         header('Location: list.php?error=student_not_found');
         exit;
+    }
+
+    // Count successful logins from activity logs.
+    $student['total_logins'] = 0;
+    try {
+        $loginCountStmt = $conn->prepare("
+            SELECT COUNT(*) AS total_logins
+            FROM activity_logs
+            WHERE user_id = :user_id AND action = 'login'
+        ");
+        $loginCountStmt->execute(['user_id' => $student['user_id']]);
+        $loginCount = $loginCountStmt->fetch(PDO::FETCH_ASSOC);
+        $student['total_logins'] = (int)($loginCount['total_logins'] ?? 0);
+    } catch (Exception $e) {
+        $student['total_logins'] = 0;
     }
 } catch (Exception $e) {
     header('Location: list.php?error=database_error');
@@ -273,8 +288,12 @@ $pageTitle = 'View Student - ' . APP_NAME;
                                     <?php echo e($student['last_login'] ? Helper::formatDateTime($student['last_login'], 'M d, Y g:i A') : 'Never'); ?>
                                 </div>
                                 <div class="mb-3">
-                                    <span class="info-label">Login Attempts:</span>
-                                    <?php echo e($student['login_attempts'] ?? 0); ?>
+                                    <span class="info-label">Failed Login Attempts:</span>
+                                    <?php echo e($student['failed_login_attempts'] ?? 0); ?>
+                                </div>
+                                <div class="mb-3">
+                                    <span class="info-label">Total Logins:</span>
+                                    <?php echo e($student['total_logins'] ?? 0); ?>
                                 </div>
                             </div>
                         </div>
