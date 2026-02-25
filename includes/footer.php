@@ -34,6 +34,11 @@
     (function() {
         var ACTIVE_MODULE = <?php echo json_encode($autoLogoutModule); ?>;
         var ACTIVE_TOKEN = <?php echo json_encode($autoLogoutToken); ?>;
+        var DISABLE_AUTO_LOGOUT = <?php echo json_encode(!empty($disableAutoLogout)); ?>;
+        if (DISABLE_AUTO_LOGOUT) {
+            ACTIVE_MODULE = '';
+            ACTIVE_TOKEN = '';
+        }
         var AUTO_LOGOUT_ENABLED = !!ACTIVE_MODULE;
         var AUTO_LOGOUT_ENDPOINT = '<?php echo BASE_URL; ?>/api/auto-logout.php';
         var TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -264,6 +269,10 @@
         });
 
         setInterval(function() {
+            if (!AUTO_LOGOUT_ENABLED) {
+                return;
+            }
+
             var elapsed = Date.now() - lastActivity;
             var remaining = TIMEOUT_MS - elapsed;
 

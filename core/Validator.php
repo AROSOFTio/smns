@@ -40,6 +40,13 @@ class Validator {
         }
         return $this;
     }
+
+    /**
+     * Backward-compatible alias for minimum length validation.
+     */
+    public function minLength($field, $length, $message = null) {
+        return $this->min($field, $length, $message);
+    }
     
     /**
      * Validate maximum length
@@ -49,6 +56,13 @@ class Validator {
             $this->errors[$field] = $message ?? "$field must not exceed $length characters";
         }
         return $this;
+    }
+
+    /**
+     * Backward-compatible alias for maximum length validation.
+     */
+    public function maxLength($field, $length, $message = null) {
+        return $this->max($field, $length, $message);
     }
     
     /**
@@ -181,6 +195,14 @@ class Validator {
      */
     public function firstError() {
         return reset($this->errors) ?: null;
+    }
+
+    /**
+     * Add an explicit validation error for a field.
+     */
+    public function addError($field, $message) {
+        $this->errors[$field] = $message;
+        return $this;
     }
     
     /**

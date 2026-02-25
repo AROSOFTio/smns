@@ -2,9 +2,25 @@
 /**
  * Admin User Management - Add User Page
  */
-require_once '../../../config.php';
+require_once __DIR__ . '/../../../config.php';
 
 // Simple session handling
+
+// Keep-alive endpoint for long form sessions (AJAX ping).
+if (isset($_GET['keepalive']) && $_GET['keepalive'] === '1') {
+    $session = new Session('admin');
+    $auth = new Auth('admin');
+    header('Content-Type: application/json');
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    if (!$auth->isLoggedIn() || $auth->getRole() !== 'admin') {
+        http_response_code(401);
+        echo json_encode(['success' => false, 'message' => 'session_expired']);
+    } else {
+        // Session constructor already refreshes last_activity.
+        echo json_encode(['success' => true, 'message' => 'alive', 'ts' => time()]);
+    }
+    exit;
+}
 
 
 // Initialize with admin module context
@@ -12,8 +28,11 @@ $session = new Session('admin');
 $auth = new Auth('admin');
 
 // Verify admin access (using module-specific session keys)
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true || $_SESSION['admin_role'] !== 'admin') {
-    header('Location: ' . BASE_URL . '/views/admin/login.php?error=unauthorized');
+if (!$auth->isLoggedIn() || $auth->getRole() !== 'admin') {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        $_SESSION['flash_error'] = 'Session expired before saving. No user account was created.';
+    }
+    header('Location: ' . BASE_URL . '/views/admin/login.php?error=session_expired');
     exit;
 }
 
@@ -26,6 +45,7 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     $username = Security::sanitize($_POST['username'] ?? '');
+        $email = Security::sanitize($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
         $confirmPassword = $_POST['confirm_password'] ?? '';
         $role = Security::sanitize($_POST['role'] ?? '');
@@ -54,101 +74,161 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
         if ($validator->passed()) {
+            $conn = null;
             try {
                 $db = new Database();
                 $conn = $db->getConnection();
-                
+                $conn->beginTransaction();
+
                 // Check if username or email already exists
                 $stmt = $conn->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
                 $stmt->execute([$username, $email]);
-                
+
                 if ($stmt->fetch()) {
+                    $conn->rollBack();
                     $error = 'Username or email already exists';
                 } else {
-                    // Create user
                     $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-                    $requireChange = in_array($role, ['lecturer', 'finance']) ? 1 : 0;
-                    // Ensure require_password_change column exists
-                    $col = $conn->query("SHOW COLUMNS FROM users LIKE 'require_password_change'")->fetch();
-                    if (!$col) {
-                        $conn->exec("ALTER TABLE users ADD COLUMN require_password_change TINYINT(1) DEFAULT 0 AFTER account_locked_until");
-                    }
-                    $stmt = $conn->prepare("
-                        INSERT INTO users (username, email, password_hash, role, status, require_password_change, created_at) 
-                        VALUES (?, ?, ?, ?, 'active', ?, NOW())
-                    ");
-                    if ($stmt->execute([$username, $email, $passwordHash, $role, $requireChange])) {
-                        $userId = $conn->lastInsertId();
-                        // Create role-specific profile
-                        switch ($role) {
-                            case 'admin':
-                                $stmt = $conn->prepare("
-                                    INSERT INTO admins (user_id, first_name, last_name, phone, email) 
-                                    VALUES (?, ?, ?, ?, ?)
-                                ");
-                                $stmt->execute([$userId, $firstName, $lastName, $phone, $email]);
-                                break;
-                            case 'lecturer':
-                                $lecturerId = 'LEC' . str_pad($userId, 3, '0', STR_PAD_LEFT);
-                                $stmt = $conn->prepare("
-                                    INSERT INTO lecturers (user_id, lecturer_id, first_name, last_name, phone, email, department, status) 
-                                    VALUES (?, ?, ?, ?, ?, ?, 'General', 'active')
-                                ");
-                                $stmt->execute([$userId, $lecturerId, $firstName, $lastName, $phone, $email]);
-                                break;
-                            case 'student':
-                                $studentId = 'STD' . date('Y') . str_pad($userId, 3, '0', STR_PAD_LEFT);
-                                $stmt = $conn->prepare("
-                                    INSERT INTO students (user_id, student_id, first_name, last_name, phone, email, program_id, level_year, entry_year, status) 
-                                    VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, 'active')
-                                ");
-                                $stmt->execute([$userId, $studentId, $firstName, $lastName, $phone, $email, date('Y')]);
-                                break;
-                            case 'finance':
-                                $stmt = $conn->prepare("
-                                    INSERT INTO finance_staff (user_id, first_name, last_name, phone, email) 
-                                    VALUES (?, ?, ?, ?, ?)
-                                ");
-                                $stmt->execute([$userId, $firstName, $lastName, $phone, $email]);
-                                break;
-                        }
-                        // Show credentials to admin for lecturer/finance
-                        if (in_array($role, ['lecturer', 'finance'])) {
-                            // Store credentials in session for display
-                            $_SESSION['new_user_credentials'] = [
-                                'user_name' => $firstName . ' ' . $lastName,
-                                'username' => $username,
-                                'password' => $password,
-                                'email' => $email,
-                                'role' => $role,
-                                'mail_sent' => false // Admin users don't get emails
-                            ];
-                            $_SESSION['new_user_type'] = $role;
+                    $requireChange = in_array($role, ['lecturer', 'finance'], true) ? 1 : 0;
 
-                            $session->setFlash('success', ucfirst($role) . ' account created successfully! Redirecting to credentials page...');
-                            header('Location: ../credentials.php');
-                            exit;
-                        } else {
-                            $success = "User created successfully! Username: $username, Role: $role";
-                        }
-                        
-                        // Log activity
-                        $logger = new Logger();
-                        $logger->log($currentUser['id'], 'create', 'users', "Created new $role user: $username");
-                        
-                        $success = "User created successfully! Username: $username, Role: $role";
-                        
-                        // Clear form
-                        $_POST = [];
-                        
-                    } else {
-                        $error = 'Failed to create user. Please try again.';
+                    // Use require_password_change only when column exists.
+                    $hasRequirePasswordChange = false;
+                    $col = $conn->query("SHOW COLUMNS FROM users LIKE 'require_password_change'")->fetch();
+                    if ($col) {
+                        $hasRequirePasswordChange = true;
                     }
+
+                    if ($hasRequirePasswordChange) {
+                        $stmt = $conn->prepare("
+                            INSERT INTO users (username, email, password_hash, role, status, require_password_change, created_at) 
+                            VALUES (?, ?, ?, ?, 'active', ?, NOW())
+                        ");
+                        $stmt->execute([$username, $email, $passwordHash, $role, $requireChange]);
+                    } else {
+                        $stmt = $conn->prepare("
+                            INSERT INTO users (username, email, password_hash, role, status, created_at) 
+                            VALUES (?, ?, ?, ?, 'active', NOW())
+                        ");
+                        $stmt->execute([$username, $email, $passwordHash, $role]);
+                    }
+
+                    $userId = (int)$conn->lastInsertId();
+                    $accountIdentifier = '-';
+                    $accountIdLabel = 'Account ID';
+
+                    // Create role-specific profile
+                    switch ($role) {
+                        case 'admin':
+                            $stmt = $conn->prepare("
+                                INSERT INTO admins (user_id, first_name, last_name, phone, email) 
+                                VALUES (?, ?, ?, ?, ?)
+                            ");
+                            $stmt->execute([$userId, $firstName, $lastName, $phone, $email]);
+                            break;
+                        case 'lecturer':
+                            $lecturerId = 'LEC' . str_pad((string)$userId, 3, '0', STR_PAD_LEFT);
+                            $accountIdentifier = $lecturerId;
+                            $accountIdLabel = 'Lecturer ID';
+                            $stmt = $conn->prepare("
+                                INSERT INTO lecturers (user_id, lecturer_id, first_name, last_name, phone, email, department, status) 
+                                VALUES (?, ?, ?, ?, ?, ?, 'General', 'active')
+                            ");
+                            $stmt->execute([$userId, $lecturerId, $firstName, $lastName, $phone, $email]);
+                            break;
+                        case 'student':
+                            $studentId = 'STD' . date('Y') . str_pad((string)$userId, 3, '0', STR_PAD_LEFT);
+                            $accountIdentifier = $studentId;
+                            $accountIdLabel = 'Student ID';
+                            $stmt = $conn->prepare("
+                                INSERT INTO students (user_id, student_id, first_name, last_name, phone, email, program_id, level_year, entry_year, status) 
+                                VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, 'active')
+                            ");
+                            $stmt->execute([$userId, $studentId, $firstName, $lastName, $phone, $email, date('Y')]);
+                            break;
+                        case 'finance':
+                            $accountIdentifier = 'FIN-' . str_pad((string)$userId, 4, '0', STR_PAD_LEFT);
+                            $accountIdLabel = 'Finance Staff ID';
+                            $stmt = $conn->prepare("
+                                INSERT INTO finance_staff (user_id, first_name, last_name, phone, email) 
+                                VALUES (?, ?, ?, ?, ?)
+                            ");
+                            $stmt->execute([$userId, $firstName, $lastName, $phone, $email]);
+                            break;
+                    }
+
+                    $conn->commit();
+
+                    // Log activity
+                    $logger = new Logger();
+                    $logger->log($currentUser['id'], 'create', 'users', "Created new $role user: $username");
+
+                    $mailSent = false;
+                    $mailError = '';
+
+                    // Send finance credentials by email after successful account creation.
+                    if ($role === 'finance') {
+                        $mailSent = Helper::sendTemplatedEmail(
+                            'credentials_issued',
+                            $email,
+                            [
+                                'recipient_name' => trim($firstName . ' ' . $lastName),
+                                'role_label' => 'Finance',
+                                'account_id_label' => $accountIdLabel,
+                                'account_id_value' => $accountIdentifier,
+                                'username' => $username,
+                                'temporary_password' => $password,
+                                'login_url' => BASE_URL . '/views/finance/login.php'
+                            ],
+                            [
+                                'context_label' => 'Finance Account Credentials',
+                                'source_page' => '/views/admin/users/add.php'
+                            ]
+                        );
+
+                        if (!$mailSent) {
+                            $mailError = trim((string)Helper::getLastEmailError());
+                        }
+                    }
+
+                    // Show credentials to admin for lecturer/finance
+                    if (in_array($role, ['lecturer', 'finance'], true)) {
+                        $_SESSION['new_user_credentials'] = [
+                            'user_name' => trim($firstName . ' ' . $lastName),
+                            'username' => $username,
+                            'password' => $password,
+                            'email' => $email,
+                            'role' => $role,
+                            'account_id_label' => $accountIdLabel,
+                            'account_id_value' => $accountIdentifier,
+                            'mail_sent' => $mailSent,
+                            'mail_error' => $mailError
+                        ];
+                        $_SESSION['new_user_type'] = $role;
+
+                        $flashMessage = ucfirst($role) . ' account created successfully.';
+                        if ($role === 'finance') {
+                            if ($mailSent) {
+                                $flashMessage .= ' Login credentials were sent to ' . $email . '.';
+                            } else {
+                                $flashMessage .= ' Account created, but credential email failed. Share the credentials manually from the next page.';
+                            }
+                        }
+                        $session->setFlash('success', $flashMessage);
+                        header('Location: ../credentials.php');
+                        exit;
+                    }
+
+                    $success = "User created successfully! Username: $username, Role: $role";
+
+                    // Clear form
+                    $_POST = [];
                 }
-                
-            } catch (Exception $e) {
+            } catch (Throwable $e) {
+                if ($conn instanceof PDO && $conn->inTransaction()) {
+                    $conn->rollBack();
+                }
                 error_log("User creation error: " . $e->getMessage());
-                $error = 'An error occurred while creating the user.';
+                $error = 'An error occurred while creating the user. No account was created.';
             }
         } else {
             $error = $validator->firstError();
@@ -162,12 +242,84 @@ $conn = $db->getConnection();
 $currentUser = isset($currentUser) ? $currentUser : $auth->getCurrentUser();
 $unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
 
+// System users directory (all modules)
+$systemUsers = [];
+$systemUsersError = '';
+$roleSummary = [
+    'admin' => 0,
+    'lecturer' => 0,
+    'student' => 0,
+    'finance' => 0
+];
+$rolePortalMap = [
+    'admin' => [
+        'label' => 'Admin Portal',
+        'url' => BASE_URL . '/views/admin/dashboard.php',
+        'area' => 'Administration'
+    ],
+    'lecturer' => [
+        'label' => 'Lecturer Portal',
+        'url' => BASE_URL . '/views/lecturer/dashboard.php',
+        'area' => 'Teaching & Results Entry'
+    ],
+    'student' => [
+        'label' => 'Student Portal',
+        'url' => BASE_URL . '/views/student/dashboard.php',
+        'area' => 'Registration & Results'
+    ],
+    'finance' => [
+        'label' => 'Finance Portal',
+        'url' => BASE_URL . '/views/finance/dashboard.php',
+        'area' => 'Billing & Payments'
+    ]
+];
+
+try {
+    $usersStmt = $conn->query("
+        SELECT
+            u.id,
+            u.username,
+            u.email,
+            u.role,
+            u.status,
+            u.created_at,
+            a.first_name AS admin_first_name,
+            a.last_name AS admin_last_name,
+            l.first_name AS lecturer_first_name,
+            l.last_name AS lecturer_last_name,
+            l.lecturer_id,
+            s.first_name AS student_first_name,
+            s.middle_name AS student_middle_name,
+            s.last_name AS student_last_name,
+            s.student_id,
+            f.first_name AS finance_first_name,
+            f.last_name AS finance_last_name
+        FROM users u
+        LEFT JOIN admins a ON a.user_id = u.id
+        LEFT JOIN lecturers l ON l.user_id = u.id
+        LEFT JOIN students s ON s.user_id = u.id
+        LEFT JOIN finance_staff f ON f.user_id = u.id
+        ORDER BY FIELD(u.role, 'admin', 'finance', 'lecturer', 'student'), u.created_at DESC, u.id DESC
+    ");
+    $systemUsers = $usersStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($systemUsers as $directoryUser) {
+        if (isset($roleSummary[$directoryUser['role']])) {
+            $roleSummary[$directoryUser['role']]++;
+        }
+    }
+} catch (Exception $e) {
+    error_log('System users directory error: ' . $e->getMessage());
+    $systemUsersError = 'Unable to load system users directory right now.';
+}
+
 $pageTitle = 'Add User - ' . APP_NAME;
 $additionalCSS = ['admin.css'];
-include '../../../includes/header.php';
+$disableAutoLogout = true;
+include __DIR__ . '/../../../includes/header.php';
 ?>
 
-<?php include '../../../includes/admin/sidebar.php'; ?>
+<?php include __DIR__ . '/../../../includes/admin/sidebar.php'; ?>
 
 <div class="main-content">
     <div class="topbar d-flex justify-content-between align-items-center">
@@ -178,7 +330,7 @@ include '../../../includes/header.php';
             </h4>
         </div>
         <div class="topbar-right d-flex align-items-center">
-            <?php include '../../../includes/notification_bell.php'; ?>
+            <?php include __DIR__ . '/../../../includes/notification_bell.php'; ?>
         </div>
     </div>
     
@@ -200,7 +352,7 @@ include '../../../includes/header.php';
             
             <div class="row justify-content-center">
                 <div class="col-md-8">
-                    <div class="card">
+                    <div class="card system-users-card">
                         <div class="card-header">
                             <h5 class="mb-0">
                                 <i class="fas fa-user-plus"></i> Create New User Account
@@ -339,9 +491,193 @@ include '../../../includes/header.php';
                     </div>
                 </div>
             </div>
+
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">
+                                <i class="fas fa-users"></i> System Users Directory
+                            </h5>
+                            <span class="badge badge-dark"><?php echo count($systemUsers); ?> Total</span>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted mb-3">
+                                This list identifies all system users and where they operate: Admin, Student, Lecturer, and Finance modules.
+                            </p>
+
+                            <?php if ($systemUsersError): ?>
+                                <div class="alert alert-warning mb-0">
+                                    <i class="fas fa-exclamation-triangle"></i> <?php echo e($systemUsersError); ?>
+                                </div>
+                            <?php else: ?>
+                                <div class="row mb-3">
+                                    <div class="col-md-8">
+                                        <div class="form-group mb-0">
+                                            <input type="text" id="systemUserSearch" class="form-control" placeholder="Search by name, username, email, role, or operating area...">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="d-flex flex-wrap justify-content-md-end mt-2 mt-md-0">
+                                            <span class="badge badge-primary mr-2 mb-2">Admins: <?php echo (int)$roleSummary['admin']; ?></span>
+                                            <span class="badge badge-info mr-2 mb-2">Lecturers: <?php echo (int)$roleSummary['lecturer']; ?></span>
+                                            <span class="badge badge-success mr-2 mb-2">Students: <?php echo (int)$roleSummary['student']; ?></span>
+                                            <span class="badge badge-warning mb-2">Finance: <?php echo (int)$roleSummary['finance']; ?></span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <?php if (empty($systemUsers)): ?>
+                                    <div class="alert alert-info mb-0">
+                                        <i class="fas fa-info-circle"></i> No users found in the system yet.
+                                    </div>
+                                <?php else: ?>
+                                    <div class="table-responsive system-users-table-wrap">
+                                        <table class="table table-bordered table-hover" id="systemUsersTable">
+                                            <thead class="thead-light">
+                                                <tr>
+                                                    <th>#</th>
+                                                    <th>Full Name</th>
+                                                    <th>Username</th>
+                                                    <th>Email</th>
+                                                    <th>Role</th>
+                                                    <th>Identifier</th>
+                                                    <th>Operating Area</th>
+                                                    <th>Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($systemUsers as $index => $directoryUser): ?>
+                                                    <?php
+                                                        $directoryRole = (string)($directoryUser['role'] ?? '');
+                                                        $fullName = '';
+                                                        $identifier = '-';
+
+                                                        if ($directoryRole === 'admin') {
+                                                            $fullName = trim(((string)($directoryUser['admin_first_name'] ?? '')) . ' ' . ((string)($directoryUser['admin_last_name'] ?? '')));
+                                                        } elseif ($directoryRole === 'lecturer') {
+                                                            $fullName = trim(((string)($directoryUser['lecturer_first_name'] ?? '')) . ' ' . ((string)($directoryUser['lecturer_last_name'] ?? '')));
+                                                            $identifier = (string)($directoryUser['lecturer_id'] ?? '') !== '' ? (string)$directoryUser['lecturer_id'] : '-';
+                                                        } elseif ($directoryRole === 'student') {
+                                                            $fullName = trim(((string)($directoryUser['student_first_name'] ?? '')) . ' ' . ((string)($directoryUser['student_middle_name'] ?? '')) . ' ' . ((string)($directoryUser['student_last_name'] ?? '')));
+                                                            $identifier = (string)($directoryUser['student_id'] ?? '') !== '' ? (string)$directoryUser['student_id'] : '-';
+                                                        } elseif ($directoryRole === 'finance') {
+                                                            $fullName = trim(((string)($directoryUser['finance_first_name'] ?? '')) . ' ' . ((string)($directoryUser['finance_last_name'] ?? '')));
+                                                        }
+
+                                                        if ($fullName === '') {
+                                                            $fullName = (string)($directoryUser['username'] ?? 'Unknown User');
+                                                        }
+
+                                                        $portalMeta = $rolePortalMap[$directoryRole] ?? [
+                                                            'label' => 'Unknown Module',
+                                                            'url' => '#',
+                                                            'area' => 'Unknown Area'
+                                                        ];
+                                                        $portalPath = (string)(parse_url($portalMeta['url'], PHP_URL_PATH) ?? '#');
+
+                                                        $roleBadgeClass = 'secondary';
+                                                        if ($directoryRole === 'admin') $roleBadgeClass = 'danger';
+                                                        if ($directoryRole === 'lecturer') $roleBadgeClass = 'info';
+                                                        if ($directoryRole === 'student') $roleBadgeClass = 'success';
+                                                        if ($directoryRole === 'finance') $roleBadgeClass = 'warning';
+
+                                                        $statusRaw = (string)($directoryUser['status'] ?? 'unknown');
+                                                        $statusBadgeClass = 'secondary';
+                                                        if ($statusRaw === 'active') $statusBadgeClass = 'success';
+                                                        if ($statusRaw === 'inactive') $statusBadgeClass = 'secondary';
+                                                        if ($statusRaw === 'suspended') $statusBadgeClass = 'danger';
+                                                    ?>
+                                                    <tr>
+                                                        <td><?php echo (int)$index + 1; ?></td>
+                                                        <td><?php echo e($fullName); ?></td>
+                                                        <td><?php echo e((string)($directoryUser['username'] ?? '')); ?></td>
+                                                        <td><?php echo e((string)($directoryUser['email'] ?? '')); ?></td>
+                                                        <td>
+                                                            <span class="badge badge-<?php echo e($roleBadgeClass); ?>">
+                                                                <?php echo e(ucfirst($directoryRole)); ?>
+                                                            </span>
+                                                        </td>
+                                                        <td><?php echo e($identifier); ?></td>
+                                                        <td class="operating-area-cell">
+                                                            <div><strong><?php echo e((string)$portalMeta['label']); ?></strong></div>
+                                                            <small class="text-muted"><?php echo e((string)$portalMeta['area']); ?> | <?php echo e($portalPath); ?></small>
+                                                        </td>
+                                                        <td>
+                                                            <span class="badge badge-<?php echo e($statusBadgeClass); ?>">
+                                                                <?php echo e(ucfirst($statusRaw)); ?>
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
+
+<style>
+.main-content,
+.content-area,
+.container-fluid {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+.system-users-card {
+    overflow: hidden;
+}
+
+.system-users-card .card-body {
+    overflow-x: hidden;
+}
+
+.system-users-table-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+}
+
+.system-users-table-wrap table {
+    min-width: 980px;
+    table-layout: fixed;
+    margin-bottom: 0;
+}
+
+#systemUsersTable th,
+#systemUsersTable td {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    vertical-align: middle;
+}
+
+#systemUsersTable td:nth-child(1) { width: 56px; }
+#systemUsersTable td:nth-child(5) { width: 95px; }
+#systemUsersTable td:nth-child(6) { width: 130px; }
+#systemUsersTable td:nth-child(8) { width: 100px; }
+
+.operating-area-cell small {
+    display: block;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+@media (max-width: 767.98px) {
+    .system-users-table-wrap table {
+        min-width: 860px;
+    }
+}
+</style>
 
 <script>
 // Auto-generate username from names
@@ -350,6 +686,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const lastName = document.getElementById('last_name');
     const username = document.getElementById('username');
     const role = document.getElementById('role');
+    const systemUserSearch = document.getElementById('systemUserSearch');
+    const systemUsersTable = document.getElementById('systemUsersTable');
     
     function generateUsername() {
         if (firstName.value && lastName.value && role.value && !username.value) {
@@ -369,7 +707,54 @@ document.addEventListener('DOMContentLoaded', function() {
     firstName.addEventListener('input', generateUsername);
     lastName.addEventListener('input', generateUsername);
     role.addEventListener('change', generateUsername);
+
+    if (systemUserSearch && systemUsersTable) {
+        const rows = systemUsersTable.querySelectorAll('tbody tr');
+        systemUserSearch.addEventListener('input', function() {
+            const keyword = systemUserSearch.value.toLowerCase().trim();
+            rows.forEach(function(row) {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.indexOf(keyword) !== -1 ? '' : 'none';
+            });
+        });
+    }
+
+    // Keep admin session active while user is filling the create form.
+    const keepAliveUrl = 'add.php?keepalive=1';
+    const keepAliveEveryMs = 4 * 60 * 1000;
+    let keepAliveTimer = null;
+
+    function pingKeepAlive() {
+        fetch(keepAliveUrl, {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Cache-Control': 'no-cache'
+            }
+        }).then(function(response) {
+            if (!response.ok) {
+                throw new Error('keepalive_failed');
+            }
+            return response.json();
+        }).then(function(data) {
+            if (!data || data.success !== true) {
+                throw new Error('keepalive_invalid');
+            }
+        }).catch(function() {
+            if (keepAliveTimer) {
+                clearInterval(keepAliveTimer);
+            }
+        });
+    }
+
+    keepAliveTimer = setInterval(pingKeepAlive, keepAliveEveryMs);
+    window.addEventListener('beforeunload', function() {
+        if (keepAliveTimer) {
+            clearInterval(keepAliveTimer);
+        }
+    });
 });
 </script>
 
-<?php include '../../../includes/footer.php'; ?>
+<?php include __DIR__ . '/../../../includes/footer.php'; ?>

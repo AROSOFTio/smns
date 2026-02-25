@@ -5,42 +5,43 @@
  */
 require_once '../config.php';
 
-// Try each module's session to find the logged-in user.
-// Each role uses a separate session cookie (e.g. SMNS_ADMIN_SESSION, SMNS_STUDENT_SESSION).
-$userId = null;
+// Resolve user context from module-isolated sessions.
+// If `module` is provided, lock to that module to avoid cross-module cookie mixups.
 $modules = ['admin', 'student', 'lecturer', 'finance'];
+$requestedModule = strtolower(trim((string)($_REQUEST['module'] ?? '')));
+$userId = null;
+$activeModule = null;
 
-foreach ($modules as $mod) {
+$tryModuleSession = function ($mod) use (&$userId, &$activeModule) {
     $cookieName = 'SMNS_' . strtoupper($mod) . '_SESSION';
-    if (!empty($_COOKIE[$cookieName])) {
-        // Close any currently active session before switching
-        if (session_status() === PHP_SESSION_ACTIVE) {
-            session_write_close();
-        }
-        session_name($cookieName);
-        session_start();
-        if (!empty($_SESSION[$mod . '_logged_in']) && $_SESSION[$mod . '_logged_in'] === true) {
-            $userId = $_SESSION[$mod . '_user_id'] ?? null;
-            if ($userId) {
-                break;
-            }
-        }
-        session_write_close();
+    if (empty($_COOKIE[$cookieName])) {
+        return false;
     }
-}
 
-// Fallback: try default session name
-if (!$userId) {
     if (session_status() === PHP_SESSION_ACTIVE) {
         session_write_close();
     }
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
+
+    session_name($cookieName);
+    session_start();
+
+    $loggedInKey = $mod . '_logged_in';
+    $userIdKey = $mod . '_user_id';
+    if (!empty($_SESSION[$loggedInKey]) && $_SESSION[$loggedInKey] === true && !empty($_SESSION[$userIdKey])) {
+        $userId = (int)$_SESSION[$userIdKey];
+        $activeModule = $mod;
+        return $userId > 0;
     }
+
+    return false;
+};
+
+if (in_array($requestedModule, $modules, true)) {
+    $tryModuleSession($requestedModule);
+} else {
     foreach ($modules as $mod) {
-        if (!empty($_SESSION[$mod . '_logged_in']) && $_SESSION[$mod . '_logged_in'] === true) {
-            $userId = $_SESSION[$mod . '_user_id'] ?? null;
-            if ($userId) break;
+        if ($tryModuleSession($mod)) {
+            break;
         }
     }
 }
@@ -115,7 +116,6 @@ switch ($action) {
 
     case 'mark_all_read':
         // Mark all unread for current user only (personal + broadcast handled per-user)
-        $isAdmin = !empty($_SESSION['admin_logged_in']);
         // Mark personal notifications for this user
         $pstmt = $conn->prepare("UPDATE notifications SET read_status = 'read', read_at = NOW() WHERE user_id = :uid AND read_status = 'unread'");
         $pstmt->execute(['uid' => $userId]);
@@ -184,7 +184,7 @@ switch ($action) {
 
     case 'execute':
         // Execute an admin-only operation triggered from a notification action
-        if (empty($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
+        if ($activeModule !== 'admin' || empty($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
             echo json_encode(['success' => false, 'error' => 'Unauthorized']);
             break;
         }

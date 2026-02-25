@@ -553,11 +553,27 @@ if (search) {
 }
 
 var API_URL = '/smns/api/notifications.php';
+var API_MODULE = 'student';
+
+function apiUrl(action, extraQuery) {
+    var qs = new URLSearchParams();
+    qs.set('action', action);
+    qs.set('module', API_MODULE);
+    if (extraQuery && typeof extraQuery === 'object') {
+        Object.keys(extraQuery).forEach(function(key) {
+            var value = extraQuery[key];
+            if (value !== undefined && value !== null && value !== '') {
+                qs.set(key, String(value));
+            }
+        });
+    }
+    return API_URL + '?' + qs.toString();
+}
 
 var markAllReadBtn = document.getElementById('markAllReadBtn');
 if (markAllReadBtn) {
     markAllReadBtn.addEventListener('click', function() {
-        fetch(API_URL + '?action=mark_all_read', { method: 'POST', credentials: 'same-origin' })
+        fetch(apiUrl('mark_all_read'), { method: 'POST', credentials: 'same-origin' })
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data && data.success) {
@@ -573,7 +589,7 @@ if (markAllReadBtn) {
 document.querySelectorAll('.mark-read-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
         var id = btn.getAttribute('data-id');
-        fetch(API_URL + '?action=mark_read&id=' + encodeURIComponent(id), { method: 'POST', credentials: 'same-origin' })
+        fetch(apiUrl('mark_read', { id: id }), { method: 'POST', credentials: 'same-origin' })
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data && data.success) {
@@ -589,7 +605,7 @@ document.querySelectorAll('.mark-read-btn').forEach(function(btn) {
 document.querySelectorAll('.archive-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
         var id = btn.getAttribute('data-id');
-        fetch(API_URL + '?action=archive&id=' + encodeURIComponent(id), { method: 'POST', credentials: 'same-origin' })
+        fetch(apiUrl('archive', { id: id }), { method: 'POST', credentials: 'same-origin' })
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data && data.success) {
@@ -605,7 +621,7 @@ document.querySelectorAll('.archive-btn').forEach(function(btn) {
 document.querySelectorAll('.delete-archive-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
         var id = btn.getAttribute('data-id');
-        fetch(API_URL + '?action=delete_archive&id=' + encodeURIComponent(id), { method: 'POST', credentials: 'same-origin' })
+        fetch(apiUrl('delete_archive', { id: id }), { method: 'POST', credentials: 'same-origin' })
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data && data.success) {

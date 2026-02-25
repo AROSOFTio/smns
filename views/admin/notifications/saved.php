@@ -81,6 +81,22 @@ include dirname(__DIR__, 3) . '/includes/header.php';
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const API_URL = '/smns/api/notifications.php';
+    const API_MODULE = 'admin';
+
+    function apiUrl(action, extraQuery) {
+        const qs = new URLSearchParams();
+        qs.set('action', action);
+        qs.set('module', API_MODULE);
+        if (extraQuery && typeof extraQuery === 'object') {
+            Object.keys(extraQuery).forEach(key => {
+                const value = extraQuery[key];
+                if (value !== undefined && value !== null && value !== '') {
+                    qs.set(key, String(value));
+                }
+            });
+        }
+        return `${API_URL}?${qs.toString()}`;
+    }
 
     // Delete archived notification
     document.querySelectorAll('.delete-archive-btn').forEach(button => {
@@ -91,7 +107,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const listItem = this.closest('li');
             const archiveId = listItem.dataset.archiveId;
             
-            fetch(`${API_URL}?action=delete_archive&id=${archiveId}`, { method: 'POST' })
+            fetch(apiUrl('delete_archive', { id: archiveId }), { method: 'POST', credentials: 'same-origin' })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {

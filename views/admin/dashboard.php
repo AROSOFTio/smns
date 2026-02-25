@@ -40,6 +40,23 @@ $totalLecturers = $stmt->fetch()['count'];
 $stmt = $conn->query("SELECT COUNT(*) as count FROM courses WHERE status = 'active'");
 $totalCourses = $stmt->fetch()['count'];
 
+// Total system users (all roles)
+$stmt = $conn->query("SELECT COUNT(*) as count FROM users");
+$totalSystemUsers = $stmt->fetch()['count'];
+$systemUserRoleCounts = [
+    'admin' => 0,
+    'lecturer' => 0,
+    'student' => 0,
+    'finance' => 0
+];
+$roleStmt = $conn->query("SELECT role, COUNT(*) AS count FROM users GROUP BY role");
+foreach ($roleStmt->fetchAll(PDO::FETCH_ASSOC) as $roleRow) {
+    $roleKey = (string)($roleRow['role'] ?? '');
+    if (isset($systemUserRoleCounts[$roleKey])) {
+        $systemUserRoleCounts[$roleKey] = (int)$roleRow['count'];
+    }
+}
+
 // Pending registrations
 $stmt = $conn->query("SELECT COUNT(*) as count FROM course_registrations WHERE status = 'pending'");
 $pendingRegistrations = $stmt->fetch()['count'];
@@ -367,6 +384,21 @@ include '../../includes/header.php';
                     <div class="stat-change neutral"><i class="fas fa-minus"></i> Current</div>
                 </div>
             </div>
+
+            <div class="stat-card">
+                <div class="stat-icon system-users-icon"><i class="fas fa-users"></i></div>
+                <div class="stat-details">
+                    <h3><?php echo number_format($totalSystemUsers); ?></h3>
+                    <p>System Users</p>
+                    <div class="stat-change neutral system-users-breakdown">
+                        <i class="fas fa-layer-group"></i>
+                        <span class="role-pill">A: <?php echo (int)$systemUserRoleCounts['admin']; ?></span>
+                        <span class="role-pill">L: <?php echo (int)$systemUserRoleCounts['lecturer']; ?></span>
+                        <span class="role-pill">S: <?php echo (int)$systemUserRoleCounts['student']; ?></span>
+                        <span class="role-pill">F: <?php echo (int)$systemUserRoleCounts['finance']; ?></span>
+                    </div>
+                </div>
+            </div>
             
             <div class="stat-card">
                 <div class="stat-icon pending-icon"><i class="fas fa-clock"></i></div>
@@ -396,26 +428,34 @@ include '../../includes/header.php';
             <div class="action-grid">
                 <a href="users/add.php" class="action-card">
                     <div class="action-icon"><i class="fas fa-user-plus"></i></div>
-                    <h4>Add User</h4>
-                    <p>Create new admin, lecturer, or student account</p>
+                    <div class="action-copy">
+                        <h4>Add User</h4>
+                        <p>Create new admin, lecturer, or student account</p>
+                    </div>
                 </a>
                 
                 <a href="courses/list.php" class="action-card">
                     <div class="action-icon"><i class="fas fa-list-alt"></i></div>
-                    <h4>Manage Courses</h4>
-                    <p>View, edit, and organize course curriculum</p>
+                    <div class="action-copy">
+                        <h4>Manage Courses</h4>
+                        <p>View, edit, and organize course curriculum</p>
+                    </div>
                 </a>
                 
                 <a href="results/submitted.php" class="action-card">
                     <div class="action-icon"><i class="fas fa-check-circle"></i></div>
-                    <h4>Approve Results</h4>
-                    <p><?php echo $pendingResults; ?> results awaiting approval</p>
+                    <div class="action-copy">
+                        <h4>Approve Results</h4>
+                        <p><?php echo $pendingResults; ?> results awaiting approval</p>
+                    </div>
                 </a>
                 
                 <a href="students/list.php" class="action-card">
                     <div class="action-icon"><i class="fas fa-users"></i></div>
-                    <h4>View Students</h4>
-                    <p>Browse and manage student records</p>
+                    <div class="action-copy">
+                        <h4>View Students</h4>
+                        <p>Browse and manage student records</p>
+                    </div>
                 </a>
             </div>
         </div>
@@ -915,6 +955,169 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
 
 <style>
 /* Admin Dashboard Specific Styles */
+.system-users-icon {
+    color: #0ea5e9;
+}
+
+/* Keep all 6 dashboard stats on one line on desktop without horizontal scroll */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 12px;
+    align-items: stretch;
+}
+
+.stats-grid .stat-card {
+    min-width: 0;
+    padding: 10px 12px;
+    min-height: 86px;
+    height: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.stats-grid .stat-icon {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    font-size: 16px;
+    margin: 0;
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+}
+
+.stats-grid .stat-details {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+}
+
+.stats-grid .stat-details h3 {
+    font-size: 22px;
+    line-height: 1.05;
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.stats-grid .stat-details p {
+    font-size: 11px;
+    line-height: 1.2;
+    margin: 0;
+}
+
+.stats-grid .stat-change {
+    font-size: 10px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+}
+
+.stats-grid .system-users-breakdown {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 3px;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    min-height: 0;
+    background: transparent !important;
+    padding: 0;
+}
+
+.stats-grid .system-users-breakdown .role-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 4px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #334155;
+    font-weight: 600;
+    line-height: 1.05;
+    font-size: 10px;
+}
+
+html[data-theme='dark'] .stats-grid .system-users-breakdown .role-pill {
+    background: #1f2937;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+}
+
+html[data-theme='dark'] .stats-grid .system-users-breakdown i {
+    color: #93c5fd;
+}
+
+/* Quick Actions: compact, aligned, responsive */
+.quick-actions-section .action-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.quick-actions-section .action-card {
+    min-width: 0;
+    min-height: 88px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+}
+
+.quick-actions-section .action-card .action-icon {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    margin: 0;
+    border-radius: 9px;
+    font-size: 15px;
+}
+
+.quick-actions-section .action-card .action-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+}
+
+.quick-actions-section .action-card h4 {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.2;
+}
+
+.quick-actions-section .action-card p {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.3;
+    color: #64748b;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+html[data-theme='dark'] .quick-actions-section .action-card h4 {
+    color: #f8fafc !important;
+}
+
+html[data-theme='dark'] .quick-actions-section .action-card p {
+    color: #cbd5e1 !important;
+}
+
 .quick-links-card,
 .semester-card {
     background: white;
@@ -1404,6 +1607,25 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
 }
 
 /* Responsive fixes */
+@media (max-width: 1200px) {
+    .stats-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .stats-grid .stat-card {
+        min-height: 80px;
+        padding: 9px 10px;
+    }
+
+    .stats-grid .stat-details h3 {
+        font-size: 20px;
+    }
+
+    .quick-actions-section .action-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
 @media (max-width: 992px) {
     .col-md-8, .col-md-4 {
         flex: 0 0 100%;
@@ -1416,13 +1638,36 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
     }
     
     .stats-grid {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
 @media (max-width: 576px) {
     .stats-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .stats-grid .stat-card {
+        min-height: 74px;
+        padding: 8px 10px;
+        gap: 8px;
+    }
+
+    .stats-grid .stat-icon {
+        width: 32px;
+        height: 32px;
+        flex-basis: 32px;
+    }
+
+    .quick-actions-section .action-grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 10px;
+    }
+
+    .quick-actions-section .action-card {
+        min-height: 78px;
+        padding: 9px 10px;
+        gap: 8px;
     }
     
     .action-cards {

@@ -143,6 +143,11 @@ if (!isset($currentUser) || !is_array($currentUser)) {
                 </a>
             </li>
             <li>
+                <a href="<?php echo BASE_URL; ?>/views/admin/finance/fee-structures.php" class="<?php echo ($currentDir === 'finance' && $currentPage === 'fee-structures.php') ? 'active' : ''; ?>">
+                    <i class="fas fa-file-invoice-dollar"></i><span>Fee Structure Approvals</span>
+                </a>
+            </li>
+            <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/activity-recovery.php" class="<?php echo $currentPage == 'activity-recovery.php' ? 'active' : ''; ?>">
                     <i class="fas fa-history"></i><span>Activity Recovery</span>
                 </a>

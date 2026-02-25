@@ -3,7 +3,7 @@
  * Display User Credentials - Admin
  * Shows login credentials for newly created users
  */
-require_once '../../config.php';
+require_once __DIR__ . '/../../config.php';
 
 
 
@@ -11,24 +11,44 @@ $session = new Session('admin');
 $auth = new Auth('admin');
 
 // Verify admin access
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true || $_SESSION['admin_role'] !== 'admin') {
-    header('Location: ../login.php?error=unauthorized');
+if (!$auth->isLoggedIn() || $auth->getRole() !== 'admin') {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        $_SESSION['flash_error'] = 'Session expired while opening credentials.';
+    }
+    header('Location: ' . BASE_URL . '/views/admin/login.php?error=session_expired');
     exit;
 }
 
 // Get credentials from session
 $credentials = $_SESSION['new_user_credentials'] ?? null;
 $userType = $_SESSION['new_user_type'] ?? 'user';
-$isPending = strpos($userType, '_pending') !== false;
-$actualUserType = str_replace('_pending', '', $userType);
+$credentialsFromCache = false;
 
-if (!$credentials) {
-    header('Location: dashboard.php?error=no_credentials');
-    exit;
+// Persist a short-lived backup so page refresh does not force-redirect away.
+if (is_array($credentials) && !empty($credentials)) {
+    $_SESSION['last_generated_credentials'] = $credentials;
+    $_SESSION['last_generated_user_type'] = $userType;
+    $_SESSION['last_generated_credentials_expires_at'] = time() + 900; // 15 minutes
+} else {
+    $backup = $_SESSION['last_generated_credentials'] ?? null;
+    $backupType = $_SESSION['last_generated_user_type'] ?? 'user';
+    $backupExpiresAt = (int)($_SESSION['last_generated_credentials_expires_at'] ?? 0);
+    if (is_array($backup) && !empty($backup) && $backupExpiresAt >= time()) {
+        $credentials = $backup;
+        $userType = $backupType;
+        $credentialsFromCache = true;
+    }
 }
 
+$isPending = strpos($userType, '_pending') !== false;
+$actualUserType = str_replace('_pending', '', $userType);
+$successFlash = $session->getFlash('success');
+
+$hasCredentials = is_array($credentials) && !empty($credentials);
+
 $pageTitle = 'User Credentials - ' . APP_NAME;
-include '../../includes/header.php';
+$disableAutoLogout = true;
+include __DIR__ . '/../../includes/header.php';
 ?>
 
 <style>
@@ -262,7 +282,7 @@ body {
 }
 </style>
 
-<?php include '../../includes/admin/sidebar.php'; ?>
+<?php include __DIR__ . '/../../includes/admin/sidebar.php'; ?>
 
 <div class="main-content">
     <div class="topbar">
@@ -271,18 +291,63 @@ body {
         </div>
         <div class="topbar-right">
             <button onclick="window.print()" class="btn btn-success">🖨️ Print Credentials</button>
-            <?php include '../../includes/notification_bell.php'; ?>
+            <?php include __DIR__ . '/../../includes/notification_bell.php'; ?>
         </div>
     </div>
 
     <div class="content-area">
         <div class="credentials-container">
+            <?php if ($successFlash): ?>
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle"></i> <?php echo e($successFlash); ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!$hasCredentials): ?>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    No recent credentials are available in this session.
+                </div>
+                <div class="actions">
+                    <a href="<?php echo BASE_URL; ?>/views/admin/users/add.php" class="btn-dashboard">
+                        <i class="fas fa-user-plus"></i> Create Another User
+                    </a>
+                    <a href="dashboard.php" class="btn-dashboard ml-2">
+                        <i class="fas fa-home"></i> Back to Dashboard
+                    </a>
+                </div>
+            <?php else: ?>
+
             <!-- Success Message -->
             <div class="alert alert-<?php echo $isPending ? 'warning' : 'success'; ?>">
                 <i class="fas fa-<?php echo $isPending ? 'clock' : 'check-circle'; ?>"></i>
                 <strong><?php echo ucfirst($actualUserType); ?> <?php echo $isPending ? 'application submitted' : 'account created'; ?> successfully!</strong>
                 <?php echo $isPending ? 'Application is pending administrative approval.' : 'Please save these login credentials securely.'; ?>
             </div>
+
+            <?php if ($credentialsFromCache): ?>
+                <div class="alert alert-info">
+                    <i class="fas fa-sync-alt"></i>
+                    Refreshed copy loaded from this session cache.
+                </div>
+            <?php endif; ?>
+
+            <?php if ($actualUserType === 'finance' && !$isPending): ?>
+                <?php if (!empty($credentials['mail_sent'])): ?>
+                    <div class="alert alert-info">
+                        <i class="fas fa-envelope-open-text"></i>
+                        Login credentials were sent to <strong><?php echo e((string)($credentials['email'] ?? '')); ?></strong>.
+                    </div>
+                <?php else: ?>
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Credential email was not sent. Please share these credentials manually.
+                        <?php if (!empty($credentials['mail_error'])): ?>
+                            <div class="small mt-1 text-muted"><?php echo e((string)$credentials['mail_error']); ?></div>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
 
             <!-- Credentials Card -->
             <div class="credentials-card">
@@ -303,6 +368,13 @@ body {
                         <div class="credential-item">
                             <div class="credential-label">Lecturer ID</div>
                             <div class="credential-value"><?php echo e($credentials['lecturer_id']); ?></div>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if (!empty($credentials['account_id_label']) && !empty($credentials['account_id_value']) && (string)$credentials['account_id_value'] !== '-'): ?>
+                        <div class="credential-item">
+                            <div class="credential-label"><?php echo e((string)$credentials['account_id_label']); ?></div>
+                            <div class="credential-value"><?php echo e((string)$credentials['account_id_value']); ?></div>
                         </div>
                     <?php endif; ?>
 
@@ -415,6 +487,8 @@ body {
                             </div>
                         </li>
                     <?php endif; ?>
+                </ul>
+            </div>
 
             <!-- Actions -->
             <div class="actions">
@@ -425,14 +499,19 @@ body {
                     <i class="fas fa-home"></i> Back to Dashboard
                 </a>
             </div>
+            <?php endif; ?>
         </div>
     </div>
 </div>
 
 <?php
-// Clear the credentials from session after displaying
-unset($_SESSION['new_user_credentials']);
-unset($_SESSION['new_user_type']);
+// Clear one-time payload keys after loading, while keeping short-lived backup for refresh resilience.
+if (isset($_SESSION['new_user_credentials'])) {
+    unset($_SESSION['new_user_credentials']);
+}
+if (isset($_SESSION['new_user_type'])) {
+    unset($_SESSION['new_user_type']);
+}
 ?>
 
 <script>
@@ -464,4 +543,4 @@ document.querySelectorAll('.credential-value').forEach(function(element) {
 });
 </script>
 
-<?php include '../../includes/footer.php'; ?>
+<?php include __DIR__ . '/../../includes/footer.php'; ?>

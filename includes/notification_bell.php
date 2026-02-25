@@ -263,6 +263,23 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
         const bell = document.getElementById('notificationBell');
         const dropdown = document.getElementById('notificationDropdown');
         const markAllBtn = document.getElementById('markAllRead');
+        const notificationModule = <?php echo json_encode($role !== '' ? $role : null); ?>;
+
+        function notificationApiUrl(action, extraParams) {
+            const params = new URLSearchParams();
+            params.set('action', action);
+            if (notificationModule) {
+                params.set('module', notificationModule);
+            }
+            if (extraParams && typeof extraParams === 'object') {
+                Object.keys(extraParams).forEach(function(key) {
+                    if (extraParams[key] !== undefined && extraParams[key] !== null && extraParams[key] !== '') {
+                        params.set(key, String(extraParams[key]));
+                    }
+                });
+            }
+            return '<?php echo BASE_URL; ?>/api/notifications.php?' + params.toString();
+        }
         
         if (!bell || !dropdown) return;
         
@@ -281,7 +298,7 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
             markAllBtn.addEventListener('click', function(e) {
                 e.preventDefault();
                 
-                fetch('<?php echo BASE_URL; ?>/api/notifications.php?action=mark_all_read', {
+                fetch(notificationApiUrl('mark_all_read'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'same-origin'
@@ -304,7 +321,7 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
         let notificationRefreshInterval;
         
         function refreshNotifications() {
-            fetch('<?php echo BASE_URL; ?>/api/notifications.php?action=fetch&limit=10')
+            fetch(notificationApiUrl('fetch', { limit: 10 }), { credentials: 'same-origin' })
                 .then(response => {
                     if (!response.ok) {
                         throw new Error('Network response was not ok');
@@ -409,7 +426,7 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                         // Re-attach event listener
                         newLink.addEventListener('click', function(e) {
                             e.preventDefault();
-                            fetch('<?php echo BASE_URL; ?>/api/notifications.php?action=mark_all_read', {
+                            fetch(notificationApiUrl('mark_all_read'), {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 credentials: 'same-origin'
@@ -469,7 +486,7 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                 return Promise.resolve(false);
             }
 
-            return fetch('<?php echo BASE_URL; ?>/api/notifications.php?action=mark_read&id=' + encodeURIComponent(notifId), {
+            return fetch(notificationApiUrl('mark_read', { id: notifId }), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'same-origin',
@@ -516,11 +533,11 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                 btn.disabled = true;
                 btn.textContent = 'Running...';
 
-                fetch('<?php echo BASE_URL; ?>/api/notifications.php?action=execute', {
+                fetch(notificationApiUrl('execute'), {
                     method: 'POST',
                     credentials: 'same-origin',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: 'op=' + encodeURIComponent(op)
+                    body: 'op=' + encodeURIComponent(op) + '&module=' + encodeURIComponent(notificationModule || '')
                 })
                 .then(r => r.json())
                 .then(data => {
@@ -562,11 +579,11 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                 abtn.disabled = true;
                 abtn.textContent = 'Saving...';
 
-                fetch('<?php echo BASE_URL; ?>/api/notifications.php?action=archive', {
+                fetch(notificationApiUrl('archive', { id: nid }), {
                     method: 'POST',
                     credentials: 'same-origin',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: 'id=' + encodeURIComponent(nid)
+                    body: 'id=' + encodeURIComponent(nid) + '&module=' + encodeURIComponent(notificationModule || '')
                 })
                 .then(r => r.json())
                 .then(data => {

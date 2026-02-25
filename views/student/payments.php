@@ -121,6 +121,10 @@ if (!in_array($migratedTab, $validMigratedTabs, true)) {
 $ledgerRows = [];
 $feesRows = [];
 $feesByYear = [];
+$activeFeeVersion = null;
+$activeFeeVersionLabel = '';
+$activeFeeVersionCreatedBy = 'Finance Office';
+$activeFeeVersionApprovedBy = 'University Administration';
 
 if ($studentDbId > 0) {
     try {
@@ -407,17 +411,79 @@ if ($studentDbId > 0) {
     }
 
     try {
-        $feesStmt = $conn->prepare("
-            SELECT fs.fee_name, fs.fee_type, fs.amount, fs.level_year, s.semester_name, s.semester_number, ay.year_name
-            FROM fees_structure fs
-            LEFT JOIN semesters s ON fs.semester_id = s.id
-            LEFT JOIN academic_years ay ON s.academic_year_id = ay.id
-            WHERE fs.status = 'active'
-              AND (fs.program_id = :program_id OR fs.program_id IS NULL)
-            ORDER BY fs.level_year ASC, s.semester_number ASC, fs.fee_name ASC
-        ");
-        $feesStmt->execute(['program_id' => (int)($studentProfile['program_id'] ?? 0)]);
-        $feesRows = $feesStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $programIdForFees = (int)($studentProfile['program_id'] ?? 0);
+        $academicYearIdForFees = (int)($studentSemesterContext['academic_year_id'] ?? 0);
+        FeeStructureGovernance::ensureSchema($conn);
+        $activeFeeVersion = FeeStructureGovernance::findPreferredPublishedVersion($conn, $programIdForFees, $academicYearIdForFees);
+
+        if ($activeFeeVersion) {
+            $activeFeeVersionLabel = (string)($activeFeeVersion['version_name'] ?? '');
+
+            $createdByStmt = $conn->prepare("
+                SELECT COALESCE(NULLIF(TRIM(CONCAT_WS(' ', first_name, last_name)), ''), 'Finance Office')
+                FROM finance_staff
+                WHERE id = :id
+                LIMIT 1
+            ");
+            $createdByStmt->execute(['id' => (int)($activeFeeVersion['created_by'] ?? 0)]);
+            $activeFeeVersionCreatedBy = (string)($createdByStmt->fetchColumn() ?: 'Finance Office');
+
+            if (!empty($activeFeeVersion['approved_by'])) {
+                $approvedByStmt = $conn->prepare("
+                    SELECT COALESCE(NULLIF(TRIM(CONCAT_WS(' ', a.first_name, a.last_name)), ''), 'University Administration')
+                    FROM users u
+                    LEFT JOIN admins a ON a.user_id = u.id
+                    WHERE u.id = :id
+                    LIMIT 1
+                ");
+                $approvedByStmt->execute(['id' => (int)$activeFeeVersion['approved_by']]);
+                $activeFeeVersionApprovedBy = (string)($approvedByStmt->fetchColumn() ?: 'University Administration');
+            }
+
+            $feesStmt = $conn->prepare("
+                SELECT
+                    fs.fee_name,
+                    fs.fee_type,
+                    fs.amount,
+                    fs.level_year,
+                    fs.due_date,
+                    COALESCE(fs.fine_amount, 0) AS fine_amount,
+                    COALESCE(fs.discount_amount, 0) AS discount_amount,
+                    s.semester_name,
+                    s.semester_number,
+                    ay.year_name
+                FROM fees_structure fs
+                LEFT JOIN semesters s ON fs.semester_id = s.id
+                LEFT JOIN academic_years ay ON s.academic_year_id = ay.id
+                WHERE fs.version_id = :version_id
+                  AND fs.status = 'active'
+                ORDER BY fs.level_year ASC, s.semester_number ASC, fs.fee_name ASC
+            ");
+            $feesStmt->execute(['version_id' => (int)$activeFeeVersion['id']]);
+            $feesRows = $feesStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } else {
+            $feesStmt = $conn->prepare("
+                SELECT
+                    fs.fee_name,
+                    fs.fee_type,
+                    fs.amount,
+                    fs.level_year,
+                    fs.due_date,
+                    COALESCE(fs.fine_amount, 0) AS fine_amount,
+                    COALESCE(fs.discount_amount, 0) AS discount_amount,
+                    s.semester_name,
+                    s.semester_number,
+                    ay.year_name
+                FROM fees_structure fs
+                LEFT JOIN semesters s ON fs.semester_id = s.id
+                LEFT JOIN academic_years ay ON s.academic_year_id = ay.id
+                WHERE fs.status = 'active'
+                  AND (fs.program_id = :program_id OR fs.program_id IS NULL)
+                ORDER BY fs.level_year ASC, s.semester_number ASC, fs.fee_name ASC
+            ");
+            $feesStmt->execute(['program_id' => $programIdForFees]);
+            $feesRows = $feesStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        }
 
         for ($y = 1; $y <= $registeredProgramDuration; $y++) {
             $feesByYear[$y] = [
@@ -442,7 +508,10 @@ if ($studentDbId > 0) {
                 $sem = (strpos($semName, '2') !== false || strpos($semName, 'ii') !== false) ? 2 : 1;
             }
             $feesByYear[$year][$sem]['rows'][] = $fr;
-            $feesByYear[$year][$sem]['total'] += (float)($fr['amount'] ?? 0);
+            $base = (float)($fr['amount'] ?? 0);
+            $discount = (float)($fr['discount_amount'] ?? 0);
+            $fine = (float)($fr['fine_amount'] ?? 0);
+            $feesByYear[$year][$sem]['total'] += max(0, $base - $discount + $fine);
         }
         ksort($feesByYear);
     } catch (Exception $e) {
@@ -1608,6 +1677,14 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                         <button type="button" class="refs-reload-btn" onclick="window.location.reload();">RELOAD</button>
                         <button type="button" class="tx-check-btn" onclick="window.print();">PRINT</button>
                     </div>
+                    <div class="alert alert-info" style="margin-bottom:10px;">
+                        <strong>Mode:</strong> Read-only active fee structure
+                        <?php if (!empty($activeFeeVersionLabel)): ?>
+                            <span class="ml-2"><strong>Version:</strong> <?php echo e($activeFeeVersionLabel); ?></span>
+                            <span class="ml-2"><strong>Created by:</strong> <?php echo e($activeFeeVersionCreatedBy); ?> (Finance Office)</span>
+                            <span class="ml-2"><strong>Approved by:</strong> <?php echo e($activeFeeVersionApprovedBy); ?> (University Administration)</span>
+                        <?php endif; ?>
+                    </div>
                     <?php $yIndex = 0; foreach ($feesByYear as $yearNum => $semData): $yIndex++; ?>
                         <div class="fees-year-card">
                             <button type="button" class="fees-year-head" data-fees-year="fees_year_<?php echo (int)$yearNum; ?>">
@@ -1620,28 +1697,36 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                     <table class="tbl" style="margin-bottom:8px;">
                                         <thead>
                                             <tr>
-                                                <th>#</th><th>ITEM</th><th>CATEGORY</th><th>AMOUNT</th><th>TO PAY</th><th>EXEMPTION</th><th>CURR</th>
+                                                <th>#</th><th>ITEM</th><th>CATEGORY</th><th>BASE</th><th>DISCOUNT</th><th>FINE</th><th>TO PAY</th><th>DEADLINE</th><th>CURR</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <?php if (!empty($semData[$semNum]['rows'])): ?>
                                                 <?php $sn = 1; foreach ($semData[$semNum]['rows'] as $row): ?>
+                                                    <?php
+                                                        $baseAmount = (float)($row['amount'] ?? 0);
+                                                        $discountAmount = (float)($row['discount_amount'] ?? 0);
+                                                        $fineAmount = (float)($row['fine_amount'] ?? 0);
+                                                        $toPayAmount = max(0, $baseAmount - $discountAmount + $fineAmount);
+                                                    ?>
                                                     <tr>
                                                         <td><?php echo $sn++; ?></td>
                                                         <td><?php echo e(strtoupper((string)($row['fee_name'] ?? '-'))); ?></td>
                                                         <td><?php echo e(strtoupper((string)($row['fee_type'] ?? '-'))); ?></td>
-                                                        <td><?php echo number_format((float)($row['amount'] ?? 0)); ?></td>
-                                                        <td><?php echo number_format((float)($row['amount'] ?? 0)); ?></td>
-                                                        <td>0 %</td>
+                                                        <td><?php echo number_format($baseAmount); ?></td>
+                                                        <td><?php echo number_format($discountAmount); ?></td>
+                                                        <td><?php echo number_format($fineAmount); ?></td>
+                                                        <td><strong><?php echo number_format($toPayAmount); ?></strong></td>
+                                                        <td><?php echo !empty($row['due_date']) ? e((string)$row['due_date']) : '-'; ?></td>
                                                         <td>UGX</td>
                                                     </tr>
                                                 <?php endforeach; ?>
                                             <?php else: ?>
-                                                <tr><td colspan="7" style="text-align:center; color:#64748b;">No fees configured for this semester.</td></tr>
+                                                <tr><td colspan="9" style="text-align:center; color:#64748b;">No fees configured for this semester.</td></tr>
                                             <?php endif; ?>
                                             <tr class="fees-total-row">
                                                 <td colspan="4">TOTAL</td>
-                                                <td colspan="3"><?php echo number_format((float)($semData[$semNum]['total'] ?? 0)); ?> UGX</td>
+                                                <td colspan="5"><?php echo number_format((float)($semData[$semNum]['total'] ?? 0)); ?> UGX</td>
                                             </tr>
                                         </tbody>
                                     </table>
