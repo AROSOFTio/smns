@@ -147,6 +147,11 @@ if (!isset($currentUser) || !is_array($currentUser)) {
                     <i class="fas fa-history"></i><span>Activity Recovery</span>
                 </a>
             </li>
+            <li>
+                <a href="<?php echo BASE_URL; ?>/views/admin/change-tracker.php" class="<?php echo $currentPage == 'change-tracker.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-clipboard-list"></i><span>Change Tracker</span>
+                </a>
+            </li>
             <li class="<?php echo $currentDir == 'reports' ? 'open' : ''; ?>">
                 <a href="#" class="has-submenu <?php echo $currentDir == 'reports' ? 'active' : ''; ?>">
                     <i class="fas fa-chart-bar"></i><span>Reports</span>

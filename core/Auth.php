@@ -640,6 +640,12 @@ class Auth {
      */
     private function logActivity($userId, $action, $module, $description) {
         try {
+            $desc = trim((string)$description);
+            $where = trim((string)($_SERVER['REQUEST_URI'] ?? ''));
+            if ($where !== '' && stripos($desc, '[where:') === false) {
+                $desc = trim($desc . ' [where:' . $this->sanitizeLogMeta($where) . ']');
+            }
+
             $sql = "INSERT INTO activity_logs (user_id, action, module, description, ip_address, user_agent) 
                     VALUES (:user_id, :action, :module, :description, :ip_address, :user_agent)";
             $stmt = $this->db->prepare($sql);
@@ -647,13 +653,20 @@ class Auth {
                 'user_id' => $userId,
                 'action' => $action,
                 'module' => $module,
-                'description' => $description,
+                'description' => $desc,
                 'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
                 'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
             ]);
         } catch(Exception $e) {
             error_log("Activity log error: " . $e->getMessage());
         }
+    }
+
+    private function sanitizeLogMeta($value) {
+        $clean = str_replace(["\r", "\n", "\t"], ' ', (string)$value);
+        $clean = str_replace(['[', ']'], '', $clean);
+        $clean = preg_replace('/\s{2,}/', ' ', $clean);
+        return trim((string)$clean);
     }
     
     /**
