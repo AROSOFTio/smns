@@ -66,6 +66,7 @@ class FeeStructureGovernance
         );
 
         self::addIndexIfMissing($conn, 'fees_structure', 'idx_version_id', 'version_id');
+        self::addCompositeIndexIfMissing($conn, 'fees_structure', 'idx_version_year_sem', 'version_id, level_year, semester_id');
     }
 
     public static function findPreferredPublishedVersion(PDO $conn, $programId, $academicYearId = 0)
@@ -104,6 +105,52 @@ class FeeStructureGovernance
         return $row ?: null;
     }
 
+    public static function resolveSuperAdminUserId(PDO $conn)
+    {
+        // Optional DB-level safeguard:
+        // - Prefer explicit setting `super_admin_user_id`
+        // - Fallback to the first admin user in the system
+        try {
+            $stmt = $conn->prepare("
+                SELECT setting_value
+                FROM settings
+                WHERE setting_key = 'super_admin_user_id'
+                LIMIT 1
+            ");
+            $stmt->execute();
+            $raw = trim((string)$stmt->fetchColumn());
+            $id = (int)$raw;
+            if ($id > 0) {
+                return $id;
+            }
+        } catch (Exception $e) {
+            // ignore and fallback
+        }
+
+        try {
+            $fallback = $conn->query("
+                SELECT u.id
+                FROM users u
+                WHERE u.role = 'admin'
+                ORDER BY u.id ASC
+                LIMIT 1
+            ")->fetchColumn();
+            return (int)$fallback;
+        } catch (Exception $e) {
+            return 0;
+        }
+    }
+
+    public static function isSuperAdmin(PDO $conn, $userId)
+    {
+        $userId = (int)$userId;
+        if ($userId <= 0) {
+            return false;
+        }
+        $superAdminId = (int)self::resolveSuperAdminUserId($conn);
+        return $superAdminId > 0 && $superAdminId === $userId;
+    }
+
     private static function addColumnIfMissing(PDO $conn, $table, $column, $definitionSql)
     {
         if (!self::columnExists($conn, $table, $column)) {
@@ -129,6 +176,24 @@ class FeeStructureGovernance
         }
     }
 
+    private static function addCompositeIndexIfMissing(PDO $conn, $table, $indexName, $columns)
+    {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM information_schema.statistics
+            WHERE table_schema = DATABASE()
+              AND table_name = :table_name
+              AND index_name = :index_name
+        ");
+        $stmt->execute([
+            'table_name' => $table,
+            'index_name' => $indexName
+        ]);
+        if ((int)$stmt->fetchColumn() === 0) {
+            $conn->exec("ALTER TABLE {$table} ADD INDEX {$indexName} ({$columns})");
+        }
+    }
+
     private static function columnExists(PDO $conn, $table, $column)
     {
         $stmt = $conn->prepare("
@@ -145,4 +210,3 @@ class FeeStructureGovernance
         return (int)$stmt->fetchColumn() > 0;
     }
 }
-

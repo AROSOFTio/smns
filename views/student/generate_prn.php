@@ -61,25 +61,75 @@ $academicStatus = (string)($academicStatusMeta['label'] ?? 'Status Pending');
 $academicStatusStyle = (string)($academicStatusMeta['style'] ?? getAcademicStatusChipStyle('neutral'));
 
 $registeredProgramName = '-';
+$studentCountry = '';
+$studentNationality = '';
 if ($studentDbId > 0) {
     try {
         $progStmt = $conn->prepare("
-            SELECT p.program_name
+            SELECT p.program_name, s.country, s.nationality
             FROM students s
             LEFT JOIN programs p ON s.program_id = p.id
             WHERE s.id = :student_id
             LIMIT 1
         ");
         $progStmt->execute(['student_id' => $studentDbId]);
-        $programName = $progStmt->fetchColumn();
-        if (!empty($programName)) {
-            $registeredProgramName = $programName;
+        $progRow = $progStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $studentCountry = trim((string)($progRow['country'] ?? ''));
+        $studentNationality = trim((string)($progRow['nationality'] ?? ''));
+        if (!empty($progRow['program_name'])) {
+            $registeredProgramName = (string)$progRow['program_name'];
         } elseif (!empty($studentProfile['program_name'])) {
             $registeredProgramName = $studentProfile['program_name'];
         }
     } catch (Exception $e) {
     }
 }
+
+if ($studentCountry === '') {
+    $studentCountry = trim((string)($studentProfile['country'] ?? ''));
+}
+if ($studentNationality === '') {
+    $studentNationality = trim((string)($studentProfile['nationality'] ?? ''));
+}
+
+$normalizeGeo = function ($value) {
+    $v = strtolower(trim((string)$value));
+    $v = preg_replace('/[^a-z]/', '', $v);
+    return $v;
+};
+
+$countryNorm = $normalizeGeo($studentCountry);
+$nationalityNorm = $normalizeGeo($studentNationality);
+$ugandaTokens = ['uganda', 'ugandan', 'ug'];
+$isUgandanStudent = in_array($countryNorm, $ugandaTokens, true)
+    || in_array($nationalityNorm, $ugandaTokens, true);
+if ($countryNorm === '' && $nationalityNorm === '') {
+    // Default local currency when profile country/nationality is not filled.
+    $isUgandanStudent = true;
+}
+$isInternationalStudent = !$isUgandanStudent;
+$studentDisplayCurrency = $isInternationalStudent ? 'USD' : 'UGX';
+$usdUgxRate = (float)Helper::getUsdUgxRate();
+if ($usdUgxRate <= 0) {
+    $usdUgxRate = 3700.0;
+}
+
+$convertAmountForDisplay = function ($amountUgx) use ($isInternationalStudent, $usdUgxRate) {
+    $val = (float)$amountUgx;
+    if ($isInternationalStudent) {
+        return $val / $usdUgxRate;
+    }
+    return $val;
+};
+
+$formatCurrencyForDisplay = function ($amountUgx) use ($convertAmountForDisplay, $studentDisplayCurrency, $isInternationalStudent) {
+    $val = $convertAmountForDisplay($amountUgx);
+    return Helper::formatCurrency($val, $studentDisplayCurrency, $isInternationalStudent ? 2 : 0);
+};
+
+$formatCurrencyByStudentInput = function ($amount) use ($studentDisplayCurrency, $isInternationalStudent) {
+    return Helper::formatCurrency((float)$amount, $studentDisplayCurrency, $isInternationalStudent ? 2 : 0);
+};
 
 $unpaidInvoices = [];
 $unpaidInvoicesTotal = 0.0;
@@ -741,8 +791,8 @@ html[data-theme='dark'] .dial-code {
         <span class="chip gray">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span>
-        <span class="chip gray">TOTAL FEES BAL DUE: <?php echo Helper::formatCurrencyDual((float)$outstandingBalance, 'UGX'); ?></span>
-        <span class="chip blue">BALANCE ON ACCOUNT: <?php echo Helper::formatCurrencyDual((float)($studentProfile['account_balance'] ?? 0), 'UGX'); ?></span>
+        <span class="chip gray">TOTAL FEES BAL DUE: <?php echo $formatCurrencyForDisplay((float)$outstandingBalance); ?></span>
+        <span class="chip blue">BALANCE ON ACCOUNT: <?php echo $formatCurrencyForDisplay((float)($studentProfile['account_balance'] ?? 0)); ?></span>
     </div>
 
     <div class="prn-wrap">
@@ -765,7 +815,7 @@ html[data-theme='dark'] .dial-code {
                     <div class="alert alert-warning mb-2"><?php echo e($invoiceDataError); ?></div>
                 <?php elseif (!empty($unpaidInvoices)): ?>
                     <div class="notice" style="background:#ecfdf3; border-color:#86efac; color:#166534;">
-                        You have <?php echo count($unpaidInvoices); ?> unpaid invoice(s). Total outstanding: <?php echo Helper::formatCurrencyDual((float)$unpaidInvoicesTotal, 'UGX'); ?>
+                        You have <?php echo count($unpaidInvoices); ?> unpaid invoice(s). Total outstanding: <?php echo $formatCurrencyForDisplay((float)$unpaidInvoicesTotal); ?>
                     </div>
                 <?php endif; ?>
 
@@ -774,7 +824,7 @@ html[data-theme='dark'] .dial-code {
                     <div class="acc-body" id="acc_all_pending">
                         <?php if (!empty($unpaidInvoices)): ?>
                             <div style="font-size:0.86rem; margin-bottom:8px; color:#334155;">
-                                All pending invoices selected. Total amount: <strong><?php echo Helper::formatCurrencyDual((float)$unpaidInvoicesTotal, 'UGX'); ?></strong>
+                                All pending invoices selected. Total amount: <strong><?php echo $formatCurrencyForDisplay((float)$unpaidInvoicesTotal); ?></strong>
                             </div>
                             <table class="prn-list-table">
                                 <thead>
@@ -794,7 +844,7 @@ html[data-theme='dark'] .dial-code {
                                             <td><?php echo e(trim((string)($invoice['academic_year'] ?? '-') . ' ' . (string)($invoice['semester_name'] ?? ''))); ?></td>
                                             <td><?php echo !empty($invoice['due_date']) ? e(date('d M Y', strtotime($invoice['due_date']))) : '-'; ?></td>
                                             <td><span class="status-pill <?php echo e($invStatus); ?>"><?php echo e(strtoupper($invStatus)); ?></span></td>
-                                            <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($invoice['balance'] ?? 0), 'UGX'); ?></td>
+                                            <td style="text-align:right;"><?php echo $formatCurrencyForDisplay((float)($invoice['balance'] ?? 0)); ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -820,7 +870,7 @@ html[data-theme='dark'] .dial-code {
                                     <?php foreach ($unpaidInvoices as $invoice): ?>
                                         <tr>
                                             <td><?php echo e($invoice['invoice_number'] ?? '-'); ?></td>
-                                            <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($invoice['balance'] ?? 0), 'UGX'); ?></td>
+                                            <td style="text-align:right;"><?php echo $formatCurrencyForDisplay((float)($invoice['balance'] ?? 0)); ?></td>
                                             <td><?php echo e($invoice['invoice_number'] ?? '-'); ?></td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -842,13 +892,13 @@ html[data-theme='dark'] .dial-code {
                             <input type="hidden" name="action" value="generate_deposit_prn">
                             <input type="hidden" name="prn_tab" value="new_prn">
                             <div>
-                                <label style="font-size:1rem; margin-bottom:6px; display:block;"><span style="color:#dc2626;">*</span> AMOUNT TO DEPOSIT:</label>
+                                <label style="font-size:1rem; margin-bottom:6px; display:block;"><span style="color:#dc2626;">*</span> AMOUNT TO DEPOSIT (<?php echo e($studentDisplayCurrency); ?>):</label>
                                 <input type="number" name="deposit_amount" min="1" step="0.01" class="prn-input" value="<?php echo e($generatedAmount); ?>" required>
                             </div>
                             <button type="submit" class="prn-generate-btn">GENERATE PRN</button>
                         </form>
                         <?php if (!empty($generatedPrn)): ?>
-                            <div class="prn-generated">Generated PRN: <?php echo e($generatedPrn); ?> | Amount: <?php echo Helper::formatCurrencyDual((float)$generatedAmount, 'UGX'); ?></div>
+                            <div class="prn-generated">Generated PRN: <?php echo e($generatedPrn); ?> | Amount: <?php echo $formatCurrencyByStudentInput((float)$generatedAmount); ?></div>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -869,7 +919,7 @@ html[data-theme='dark'] .dial-code {
                             <?php $refNumber = $ref['reference_number'] ?: ($ref['receipt_number'] ?: ($ref['payment_id'] ?? '-')); ?>
                             <div class="ref-line">
                                 REFERENCE: <span class="red"><?php echo e($refNumber); ?></span>,
-                                AMOUNT TO PAY: <span class="red"><?php echo Helper::formatCurrencyDual((float)($ref['amount'] ?? 0), 'UGX'); ?></span>,
+                                AMOUNT TO PAY: <span class="red"><?php echo $formatCurrencyForDisplay((float)($ref['amount'] ?? 0)); ?></span>,
                                 EXPIRY DATE: <span class="red"><?php echo e(date('Y.m.d', strtotime($ref['expiry_date']))); ?></span>,
                                 GENERATED BY: <span class="red">SELF</span>
                             </div>
@@ -885,7 +935,7 @@ html[data-theme='dark'] .dial-code {
                             <?php $refNumber = $ref['reference_number'] ?: ($ref['receipt_number'] ?: ($ref['payment_id'] ?? '-')); ?>
                             <div class="ref-line" style="opacity:0.85;">
                                 REFERENCE: <span class="red"><?php echo e($refNumber); ?></span>,
-                                AMOUNT TO PAY: <span class="red"><?php echo Helper::formatCurrencyDual((float)($ref['amount'] ?? 0), 'UGX'); ?></span>,
+                                AMOUNT TO PAY: <span class="red"><?php echo $formatCurrencyForDisplay((float)($ref['amount'] ?? 0)); ?></span>,
                                 EXPIRY DATE: <span class="red"><?php echo e(date('Y.m.d', strtotime($ref['expiry_date']))); ?></span>,
                                 GENERATED BY: <span class="red">SELF</span>
                             </div>

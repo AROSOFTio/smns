@@ -428,6 +428,35 @@ if (!empty($studentProfile['id'])) {
     }
 }
 
+$studentCountryForCurrency = trim((string)($studentProfile['country'] ?? ''));
+$studentNationalityForCurrency = trim((string)($studentProfile['nationality'] ?? ''));
+$normalizeGeo = function ($value) {
+    $v = strtolower(trim((string)$value));
+    $v = preg_replace('/[^a-z]/', '', $v);
+    return $v;
+};
+$countryNorm = $normalizeGeo($studentCountryForCurrency);
+$nationalityNorm = $normalizeGeo($studentNationalityForCurrency);
+$ugandaTokens = ['uganda', 'ugandan', 'ug'];
+$isUgandanStudent = in_array($countryNorm, $ugandaTokens, true)
+    || in_array($nationalityNorm, $ugandaTokens, true);
+if ($countryNorm === '' && $nationalityNorm === '') {
+    $isUgandanStudent = true;
+}
+$isInternationalStudent = !$isUgandanStudent;
+$studentDisplayCurrency = $isInternationalStudent ? 'USD' : 'UGX';
+$usdUgxRate = (float)Helper::getUsdUgxRate();
+if ($usdUgxRate <= 0) {
+    $usdUgxRate = 3700.0;
+}
+$formatCurrencyForDisplay = function ($amountUgx) use ($isInternationalStudent, $usdUgxRate, $studentDisplayCurrency) {
+    $amount = (float)$amountUgx;
+    if ($isInternationalStudent) {
+        $amount = $amount / $usdUgxRate;
+    }
+    return Helper::formatCurrency($amount, $studentDisplayCurrency, $isInternationalStudent ? 2 : 0);
+};
+
 // Navigation links with safe fallbacks for pages that may not exist yet.
 $studentViewsPath = BASE_PATH . '/views/student/';
 $linkDashboard = 'dashboard.php';
@@ -933,8 +962,8 @@ document.addEventListener('click', function() {
             <span style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7; color:#166534; border:1px solid #86efac; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;' : 'background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;'; ?>">
                 <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?>
             </span>
-            <span style="background:#f1f5f9; color:#991b1b; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">TOTAL FEES BAL DUE: <?php echo isset($outstandingBalance) ? number_format($outstandingBalance) : '0'; ?>/=</span>
-            <span style="background:#2563eb; color:#fff; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">BALANCE ON ACCOUNT: <?php echo isset($studentProfile['account_balance']) ? number_format($studentProfile['account_balance']) : '0'; ?>/=</span>
+            <span style="background:#f1f5f9; color:#991b1b; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">TOTAL FEES BAL DUE: <?php echo $formatCurrencyForDisplay((float)$outstandingBalance); ?></span>
+            <span style="background:#2563eb; color:#fff; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">BALANCE ON ACCOUNT: <?php echo $formatCurrencyForDisplay((float)($studentProfile['account_balance'] ?? 0)); ?></span>
         </div>
 
         <div class="bio-card">

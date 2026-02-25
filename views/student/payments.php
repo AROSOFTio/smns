@@ -63,10 +63,12 @@ $academicStatusStyle = (string)($academicStatusMeta['style'] ?? getAcademicStatu
 $registeredProgramName = '-';
 $registeredProgramDepartment = '';
 $registeredProgramDuration = 4;
+$studentCountry = '';
+$studentNationality = '';
 if ($studentDbId > 0) {
     try {
         $progStmt = $conn->prepare("
-            SELECT p.program_name, p.department, p.duration_years
+            SELECT p.program_name, p.department, p.duration_years, s.country, s.nationality
             FROM students s
             LEFT JOIN programs p ON s.program_id = p.id
             WHERE s.id = :student_id
@@ -74,6 +76,8 @@ if ($studentDbId > 0) {
         ");
         $progStmt->execute(['student_id' => $studentDbId]);
         $progRow = $progStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $studentCountry = trim((string)($progRow['country'] ?? ''));
+        $studentNationality = trim((string)($progRow['nationality'] ?? ''));
         if (!empty($progRow['program_name'])) {
             $registeredProgramName = $progRow['program_name'];
             $registeredProgramDepartment = (string)($progRow['department'] ?? '');
@@ -86,6 +90,53 @@ if ($studentDbId > 0) {
     } catch (Exception $e) {
     }
 }
+
+if ($studentCountry === '') {
+    $studentCountry = trim((string)($studentProfile['country'] ?? ''));
+}
+if ($studentNationality === '') {
+    $studentNationality = trim((string)($studentProfile['nationality'] ?? ''));
+}
+
+$normalizeGeo = function ($value) {
+    $v = strtolower(trim((string)$value));
+    $v = preg_replace('/[^a-z]/', '', $v);
+    return $v;
+};
+
+$countryNorm = $normalizeGeo($studentCountry);
+$nationalityNorm = $normalizeGeo($studentNationality);
+$ugandaTokens = ['uganda', 'ugandan', 'ug'];
+$isUgandanStudent = in_array($countryNorm, $ugandaTokens, true)
+    || in_array($nationalityNorm, $ugandaTokens, true);
+if ($countryNorm === '' && $nationalityNorm === '') {
+    // Default local currency when profile country/nationality is not filled.
+    $isUgandanStudent = true;
+}
+$isInternationalStudent = !$isUgandanStudent;
+$studentDisplayCurrency = $isInternationalStudent ? 'USD' : 'UGX';
+$usdUgxRate = (float)Helper::getUsdUgxRate();
+if ($usdUgxRate <= 0) {
+    $usdUgxRate = 3700.0;
+}
+
+$convertAmountForDisplay = function ($amountUgx) use ($isInternationalStudent, $usdUgxRate) {
+    $val = (float)$amountUgx;
+    if ($isInternationalStudent) {
+        return $val / $usdUgxRate;
+    }
+    return $val;
+};
+
+$formatAmountForDisplay = function ($amountUgx) use ($convertAmountForDisplay, $isInternationalStudent) {
+    $val = $convertAmountForDisplay($amountUgx);
+    return number_format($val, $isInternationalStudent ? 2 : 0);
+};
+
+$formatCurrencyForDisplay = function ($amountUgx) use ($convertAmountForDisplay, $studentDisplayCurrency, $isInternationalStudent) {
+    $val = $convertAmountForDisplay($amountUgx);
+    return Helper::formatCurrency($val, $studentDisplayCurrency, $isInternationalStudent ? 2 : 0);
+};
 
 $section = $_GET['section'] ?? 'bills';
 $validSections = ['bills', 'transactions', 'migrated', 'ledger', 'fees'];
@@ -121,6 +172,7 @@ if (!in_array($migratedTab, $validMigratedTabs, true)) {
 $ledgerRows = [];
 $feesRows = [];
 $feesByYear = [];
+$unassignedFeeRows = [];
 $activeFeeVersion = null;
 $activeFeeVersionLabel = '';
 $activeFeeVersionCreatedBy = 'Finance Office';
@@ -492,20 +544,26 @@ if ($studentDbId > 0) {
             ];
         }
         foreach ($feesRows as $fr) {
-            $year = (int)($fr['level_year'] ?? 1);
-            if ($year < 1) {
-                $year = 1;
+            $year = (int)($fr['level_year'] ?? 0);
+            $sem = (int)($fr['semester_number'] ?? 0);
+
+            // Strict mapping: fee lines without explicit year+semester are excluded from grouped display
+            // so they do not get mixed into the wrong cohort.
+            if ($year <= 0 || ($sem !== 1 && $sem !== 2)) {
+                $unassignedFeeRows[] = $fr;
+                continue;
             }
+            // Strict program alignment: exclude rows outside the configured program duration.
+            if ($year > $registeredProgramDuration) {
+                $unassignedFeeRows[] = $fr;
+                continue;
+            }
+
             if (!isset($feesByYear[$year])) {
                 $feesByYear[$year] = [
                     1 => ['rows' => [], 'total' => 0.0],
                     2 => ['rows' => [], 'total' => 0.0]
                 ];
-            }
-            $sem = (int)($fr['semester_number'] ?? 0);
-            if ($sem !== 1 && $sem !== 2) {
-                $semName = strtolower((string)($fr['semester_name'] ?? ''));
-                $sem = (strpos($semName, '2') !== false || strpos($semName, 'ii') !== false) ? 2 : 1;
             }
             $feesByYear[$year][$sem]['rows'][] = $fr;
             $base = (float)($fr['amount'] ?? 0);
@@ -539,7 +597,7 @@ if ($section === 'ledger' && isset($_GET['download']) && $_GET['download'] === '
     header('Content-Type: text/csv; charset=UTF-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['S/N', 'Time stamp', 'Entry', 'Narration', 'Debit', 'Credit', 'Balance']);
+    fputcsv($out, ['S/N', 'Time stamp', 'Entry', 'Narration', 'Debit (' . $studentDisplayCurrency . ')', 'Credit (' . $studentDisplayCurrency . ')', 'Balance (' . $studentDisplayCurrency . ')']);
     $n = 1;
     foreach ($ledgerStatementRows as $row) {
         fputcsv($out, [
@@ -547,12 +605,12 @@ if ($section === 'ledger' && isset($_GET['download']) && $_GET['download'] === '
             !empty($row['timestamp']) ? date('M j, Y g:i A', strtotime($row['timestamp'])) : '-',
             $row['entry'] ?? '',
             $row['narration'] ?? '',
-            number_format((float)($row['debit'] ?? 0)),
-            number_format((float)($row['credit'] ?? 0)),
-            number_format((float)($row['balance'] ?? 0))
+            $formatAmountForDisplay((float)($row['debit'] ?? 0)),
+            $formatAmountForDisplay((float)($row['credit'] ?? 0)),
+            $formatAmountForDisplay((float)($row['balance'] ?? 0))
         ]);
     }
-    fputcsv($out, ['', '', '', 'UGX NET STATEMENT BALANCE', '', '', number_format((float)$ledgerNetBalance)]);
+    fputcsv($out, ['', '', '', $studentDisplayCurrency . ' NET STATEMENT BALANCE', '', '', $formatAmountForDisplay((float)$ledgerNetBalance)]);
     fclose($out);
     exit;
 }
@@ -1403,8 +1461,8 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
         <span class="chip gray">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span>
-        <span class="chip gray">TOTAL FEES BAL DUE: <?php echo Helper::formatCurrencyDual((float)$outstandingBalance, 'UGX'); ?></span>
-        <span class="chip blue">BALANCE ON ACCOUNT: <?php echo Helper::formatCurrencyDual((float)($studentProfile['account_balance'] ?? 0), 'UGX'); ?></span>
+        <span class="chip gray">TOTAL FEES BAL DUE: <?php echo $formatCurrencyForDisplay((float)$outstandingBalance); ?></span>
+        <span class="chip blue">BALANCE ON ACCOUNT: <?php echo $formatCurrencyForDisplay((float)($studentProfile['account_balance'] ?? 0)); ?></span>
     </div>
 
     <div class="prn-wrap">
@@ -1427,9 +1485,9 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
 
             <?php if ($section === 'bills'): ?>
                 <div class="summary-grid">
-                    <div class="sum-card"><div class="sum-label">TOTAL INVOICE AMOUNT</div><div class="sum-value"><?php echo Helper::formatCurrencyDual((float)$invoiceTotals['total'], 'UGX'); ?></div></div>
-                    <div class="sum-card"><div class="sum-label">TOTAL INVOICE AMOUNT PAID</div><div class="sum-value"><?php echo Helper::formatCurrencyDual((float)$invoiceTotals['paid'], 'UGX'); ?></div></div>
-                    <div class="sum-card"><div class="sum-label">TOTAL INVOICE AMOUNT DUE</div><div class="sum-value due"><?php echo Helper::formatCurrencyDual((float)$invoiceTotals['due'], 'UGX'); ?></div></div>
+                    <div class="sum-card"><div class="sum-label">TOTAL INVOICE AMOUNT</div><div class="sum-value"><?php echo $formatCurrencyForDisplay((float)$invoiceTotals['total']); ?></div></div>
+                    <div class="sum-card"><div class="sum-label">TOTAL INVOICE AMOUNT PAID</div><div class="sum-value"><?php echo $formatCurrencyForDisplay((float)$invoiceTotals['paid']); ?></div></div>
+                    <div class="sum-card"><div class="sum-label">TOTAL INVOICE AMOUNT DUE</div><div class="sum-value due"><?php echo $formatCurrencyForDisplay((float)$invoiceTotals['due']); ?></div></div>
                     <div class="sum-card"><div class="sum-label">PERCENTAGE COMPLETION</div><div class="sum-value"><?php echo number_format($invoiceTotals['pct'], 2); ?> %</div></div>
                 </div>
 
@@ -1466,10 +1524,10 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                                 <td><?php echo $sn++; ?></td>
                                                 <td><?php echo e($row['invoice_number'] ?? '-'); ?></td>
                                                 <td><?php echo e($category); ?></td>
-                                                <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($row['total_amount'] ?? 0), 'UGX'); ?></td>
-                                                <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($row['amount_paid'] ?? 0), 'UGX'); ?></td>
-                                                <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)$dueVal, 'UGX'); ?></td>
-                                                <td>USD/UGX</td>
+                                                <td style="text-align:right;"><?php echo $formatCurrencyForDisplay((float)($row['total_amount'] ?? 0)); ?></td>
+                                                <td style="text-align:right;"><?php echo $formatCurrencyForDisplay((float)($row['amount_paid'] ?? 0)); ?></td>
+                                                <td style="text-align:right;"><?php echo $formatCurrencyForDisplay((float)$dueVal); ?></td>
+                                                <td><?php echo e($studentDisplayCurrency); ?></td>
                                                 <td><?php echo e($category); ?></td>
                                                 <td><?php echo $dueVal <= 0 ? '<span class="badge-cleared"><i class="fas fa-check-circle"></i> Cleared</span>' : '<span class="badge-pending"><i class="fas fa-clock"></i> Pending</span>'; ?></td>
                                             </tr>
@@ -1477,9 +1535,9 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                     </tbody>
                                 </table>
                                 <div class="group-total">
-                                    <div>TOTAL AMOUNT: <span style="color:#059669;"><?php echo Helper::formatCurrencyDual((float)$group['total'], 'UGX'); ?></span></div>
-                                    <div>TOTAL AMOUNT PAID: <span style="color:#059669;"><?php echo Helper::formatCurrencyDual((float)$group['paid'], 'UGX'); ?></span></div>
-                                    <div>TOTAL AMOUNT DUE: <span style="color:#dc2626;"><?php echo Helper::formatCurrencyDual((float)$group['due'], 'UGX'); ?></span></div>
+                                    <div>TOTAL AMOUNT: <span style="color:#059669;"><?php echo $formatCurrencyForDisplay((float)$group['total']); ?></span></div>
+                                    <div>TOTAL AMOUNT PAID: <span style="color:#059669;"><?php echo $formatCurrencyForDisplay((float)$group['paid']); ?></span></div>
+                                    <div>TOTAL AMOUNT DUE: <span style="color:#dc2626;"><?php echo $formatCurrencyForDisplay((float)$group['due']); ?></span></div>
                                     <div>COMPLETION: <span style="color:#059669;"><?php echo number_format($pct, 2); ?> %</span></div>
                                 </div>
                             </div>
@@ -1499,7 +1557,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                 <div class="alert alert-info mb-0">No invoice payment transactions found.</div>
                             <?php else: ?>
                                 <table class="tbl">
-                                    <thead><tr><th>Payment ID</th><th>Invoice No.</th><th>Reference</th><th>Method</th><th>Date</th><th>Amount (USD/UGX)</th></tr></thead>
+                                    <thead><tr><th>Payment ID</th><th>Invoice No.</th><th>Reference</th><th>Method</th><th>Date</th><th>Amount (<?php echo e($studentDisplayCurrency); ?>)</th></tr></thead>
                                     <tbody>
                                         <?php foreach ($invoiceTransactions as $tx): ?>
                                             <tr>
@@ -1508,7 +1566,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                                 <td><?php echo e($tx['reference_number'] ?: ($tx['receipt_number'] ?: '-')); ?></td>
                                                 <td><?php echo e(ucwords(str_replace('_', ' ', (string)($tx['payment_method'] ?? '-')))); ?></td>
                                                 <td><?php echo !empty($tx['payment_date']) ? e(date('d M Y', strtotime($tx['payment_date']))) : '-'; ?></td>
-                                                <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($tx['amount'] ?? 0), 'UGX'); ?></td>
+                                                <td style="text-align:right;"><?php echo $formatCurrencyForDisplay((float)($tx['amount'] ?? 0)); ?></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -1519,7 +1577,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                 <div class="alert alert-info mb-0">No fee deposit transactions found.</div>
                             <?php else: ?>
                                 <table class="tbl">
-                                    <thead><tr><th>Payment ID</th><th>Reference</th><th>Method</th><th>Date</th><th>Narration</th><th>Amount (USD/UGX)</th></tr></thead>
+                                    <thead><tr><th>Payment ID</th><th>Reference</th><th>Method</th><th>Date</th><th>Narration</th><th>Amount (<?php echo e($studentDisplayCurrency); ?>)</th></tr></thead>
                                     <tbody>
                                         <?php foreach ($depositTransactions as $tx): ?>
                                             <tr>
@@ -1528,7 +1586,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                                 <td><?php echo e(ucwords(str_replace('_', ' ', (string)($tx['payment_method'] ?? '-')))); ?></td>
                                                 <td><?php echo !empty($tx['payment_date']) ? e(date('d M Y', strtotime($tx['payment_date']))) : '-'; ?></td>
                                                 <td><?php echo e($tx['notes'] ?? '-'); ?></td>
-                                                <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($tx['amount'] ?? 0), 'UGX'); ?></td>
+                                                <td style="text-align:right;"><?php echo $formatCurrencyForDisplay((float)($tx['amount'] ?? 0)); ?></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -1548,7 +1606,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                     <div class="alert alert-success mt-2 mb-0">
                                         <strong>Status:</strong> Paid |
                                         <strong>Payment ID:</strong> <?php echo e($prnStatusRow['payment_id'] ?? '-'); ?> |
-                                        <strong>Amount:</strong> <?php echo Helper::formatCurrencyDual((float)($prnStatusRow['amount'] ?? 0), 'UGX'); ?> |
+                                        <strong>Amount:</strong> <?php echo $formatCurrencyForDisplay((float)($prnStatusRow['amount'] ?? 0)); ?> |
                                         <strong>Date:</strong> <?php echo !empty($prnStatusRow['payment_date']) ? e(date('d M Y', strtotime($prnStatusRow['payment_date']))) : '-'; ?>
                                     </div>
                                 <?php else: ?>
@@ -1570,7 +1628,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                 <div class="alert alert-info mb-0">No migrated invoice payments available.</div>
                             <?php else: ?>
                                 <table class="tbl">
-                                    <thead><tr><th>Payment ID</th><th>Invoice No.</th><th>Reference</th><th>Method</th><th>Date</th><th>Narration</th><th>Amount (USD/UGX)</th></tr></thead>
+                                    <thead><tr><th>Payment ID</th><th>Invoice No.</th><th>Reference</th><th>Method</th><th>Date</th><th>Narration</th><th>Amount (<?php echo e($studentDisplayCurrency); ?>)</th></tr></thead>
                                     <tbody>
                                         <?php foreach ($migratedInvoiceTransactions as $tx): ?>
                                             <tr>
@@ -1580,7 +1638,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                                 <td><?php echo e(ucwords(str_replace('_', ' ', (string)($tx['payment_method'] ?? '-')))); ?></td>
                                                 <td><?php echo !empty($tx['payment_date']) ? e(date('d M Y', strtotime($tx['payment_date']))) : '-'; ?></td>
                                                 <td><?php echo e($tx['notes'] ?? '-'); ?></td>
-                                                <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($tx['amount'] ?? 0), 'UGX'); ?></td>
+                                                <td style="text-align:right;"><?php echo $formatCurrencyForDisplay((float)($tx['amount'] ?? 0)); ?></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -1591,7 +1649,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                 <div class="alert alert-info mb-0">No migrated fee deposits available.</div>
                             <?php else: ?>
                                 <table class="tbl">
-                                    <thead><tr><th>Payment ID</th><th>Reference</th><th>Method</th><th>Date</th><th>Narration</th><th>Amount (USD/UGX)</th></tr></thead>
+                                    <thead><tr><th>Payment ID</th><th>Reference</th><th>Method</th><th>Date</th><th>Narration</th><th>Amount (<?php echo e($studentDisplayCurrency); ?>)</th></tr></thead>
                                     <tbody>
                                         <?php foreach ($migratedDepositTransactions as $tx): ?>
                                             <tr>
@@ -1600,7 +1658,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                                 <td><?php echo e(ucwords(str_replace('_', ' ', (string)($tx['payment_method'] ?? '-')))); ?></td>
                                                 <td><?php echo !empty($tx['payment_date']) ? e(date('d M Y', strtotime($tx['payment_date']))) : '-'; ?></td>
                                                 <td><?php echo e($tx['notes'] ?? '-'); ?></td>
-                                                <td style="text-align:right;"><?php echo Helper::formatCurrencyDual((float)($tx['amount'] ?? 0), 'UGX'); ?></td>
+                                                <td style="text-align:right;"><?php echo $formatCurrencyForDisplay((float)($tx['amount'] ?? 0)); ?></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -1654,17 +1712,17 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                             <td><?php echo !empty($row['timestamp']) ? e(date('M j, Y g:i A', strtotime($row['timestamp']))) : '-'; ?></td>
                                             <td><?php echo e($row['entry'] ?? '-'); ?></td>
                                             <td><?php echo e($row['narration'] ?? '-'); ?></td>
-                                            <td><?php echo ((float)($row['debit'] ?? 0) > 0) ? number_format((float)$row['debit']) : '0'; ?></td>
-                                            <td><?php echo ((float)($row['credit'] ?? 0) > 0) ? number_format((float)$row['credit']) : '0'; ?></td>
-                                            <td><?php echo number_format((float)($row['balance'] ?? 0)); ?></td>
+                                            <td><?php echo ((float)($row['debit'] ?? 0) > 0) ? $formatAmountForDisplay((float)$row['debit']) : '0'; ?></td>
+                                            <td><?php echo ((float)($row['credit'] ?? 0) > 0) ? $formatAmountForDisplay((float)$row['credit']) : '0'; ?></td>
+                                            <td><?php echo $formatAmountForDisplay((float)($row['balance'] ?? 0)); ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
                             </table>
 
                             <div class="ledger-net">
-                                <span>UGX NET STATEMENT BALANCE</span>
-                                <span><?php echo number_format((float)$ledgerNetBalance); ?></span>
+                                <span><?php echo e($studentDisplayCurrency); ?> NET STATEMENT BALANCE</span>
+                                <span><?php echo $formatAmountForDisplay((float)$ledgerNetBalance); ?></span>
                             </div>
                         </div>
                     </div>
@@ -1685,6 +1743,11 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                             <span class="ml-2"><strong>Approved by:</strong> <?php echo e($activeFeeVersionApprovedBy); ?> (University Administration)</span>
                         <?php endif; ?>
                     </div>
+                    <?php if (!empty($unassignedFeeRows)): ?>
+                        <div class="alert alert-warning" style="margin-bottom:10px;">
+                            <strong>Data quality warning:</strong> <?php echo count($unassignedFeeRows); ?> item(s) are missing year/semester mapping and were excluded to prevent mixed display.
+                        </div>
+                    <?php endif; ?>
                     <?php $yIndex = 0; foreach ($feesByYear as $yearNum => $semData): $yIndex++; ?>
                         <div class="fees-year-card">
                             <button type="button" class="fees-year-head" data-fees-year="fees_year_<?php echo (int)$yearNum; ?>">
@@ -1713,12 +1776,12 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                                         <td><?php echo $sn++; ?></td>
                                                         <td><?php echo e(strtoupper((string)($row['fee_name'] ?? '-'))); ?></td>
                                                         <td><?php echo e(strtoupper((string)($row['fee_type'] ?? '-'))); ?></td>
-                                                        <td><?php echo number_format($baseAmount); ?></td>
-                                                        <td><?php echo number_format($discountAmount); ?></td>
-                                                        <td><?php echo number_format($fineAmount); ?></td>
-                                                        <td><strong><?php echo number_format($toPayAmount); ?></strong></td>
+                                                        <td><?php echo $formatAmountForDisplay($baseAmount); ?></td>
+                                                        <td><?php echo $formatAmountForDisplay($discountAmount); ?></td>
+                                                        <td><?php echo $formatAmountForDisplay($fineAmount); ?></td>
+                                                        <td><strong><?php echo $formatAmountForDisplay($toPayAmount); ?></strong></td>
                                                         <td><?php echo !empty($row['due_date']) ? e((string)$row['due_date']) : '-'; ?></td>
-                                                        <td>UGX</td>
+                                                        <td><?php echo e($studentDisplayCurrency); ?></td>
                                                     </tr>
                                                 <?php endforeach; ?>
                                             <?php else: ?>
@@ -1726,7 +1789,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                             <?php endif; ?>
                                             <tr class="fees-total-row">
                                                 <td colspan="4">TOTAL</td>
-                                                <td colspan="5"><?php echo number_format((float)($semData[$semNum]['total'] ?? 0)); ?> UGX</td>
+                                                <td colspan="5"><?php echo $formatAmountForDisplay((float)($semData[$semNum]['total'] ?? 0)); ?> <?php echo e($studentDisplayCurrency); ?></td>
                                             </tr>
                                         </tbody>
                                     </table>

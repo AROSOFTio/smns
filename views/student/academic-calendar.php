@@ -129,15 +129,53 @@ $academicStatus = (string)($academicStatusMeta['label'] ?? 'Status Pending');
 $academicStatusStyle = (string)($academicStatusMeta['style'] ?? getAcademicStatusChipStyle('neutral'));
 
 $registeredProgramName = '-';
+$studentCountryForCurrency = trim((string)($studentProfile['country'] ?? ''));
+$studentNationalityForCurrency = trim((string)($studentProfile['nationality'] ?? ''));
 if ($studentId > 0) {
     try {
-        $pStmt = $conn->prepare("SELECT p.program_name FROM students s LEFT JOIN programs p ON s.program_id = p.id WHERE s.id = :student_id LIMIT 1");
+        $pStmt = $conn->prepare("SELECT p.program_name, s.country, s.nationality FROM students s LEFT JOIN programs p ON s.program_id = p.id WHERE s.id = :student_id LIMIT 1");
         $pStmt->execute(['student_id' => $studentId]);
-        $pn = $pStmt->fetchColumn();
-        if (!empty($pn)) $registeredProgramName = $pn;
-        elseif (!empty($studentProfile['program_name'])) $registeredProgramName = $studentProfile['program_name'];
+        $pRow = $pStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        if (!empty($pRow['program_name'])) {
+            $registeredProgramName = (string)$pRow['program_name'];
+        } elseif (!empty($studentProfile['program_name'])) {
+            $registeredProgramName = $studentProfile['program_name'];
+        }
+        if (!empty($pRow['country'])) {
+            $studentCountryForCurrency = trim((string)$pRow['country']);
+        }
+        if (!empty($pRow['nationality'])) {
+            $studentNationalityForCurrency = trim((string)$pRow['nationality']);
+        }
     } catch (Exception $e) {}
 }
+
+$normalizeGeo = function ($value) {
+    $v = strtolower(trim((string)$value));
+    $v = preg_replace('/[^a-z]/', '', $v);
+    return $v;
+};
+$countryNorm = $normalizeGeo($studentCountryForCurrency);
+$nationalityNorm = $normalizeGeo($studentNationalityForCurrency);
+$ugandaTokens = ['uganda', 'ugandan', 'ug'];
+$isUgandanStudent = in_array($countryNorm, $ugandaTokens, true)
+    || in_array($nationalityNorm, $ugandaTokens, true);
+if ($countryNorm === '' && $nationalityNorm === '') {
+    $isUgandanStudent = true;
+}
+$isInternationalStudent = !$isUgandanStudent;
+$studentDisplayCurrency = $isInternationalStudent ? 'USD' : 'UGX';
+$usdUgxRate = (float)Helper::getUsdUgxRate();
+if ($usdUgxRate <= 0) {
+    $usdUgxRate = 3700.0;
+}
+$formatCurrencyForDisplay = function ($amountUgx) use ($isInternationalStudent, $usdUgxRate, $studentDisplayCurrency) {
+    $amount = (float)$amountUgx;
+    if ($isInternationalStudent) {
+        $amount = $amount / $usdUgxRate;
+    }
+    return Helper::formatCurrency($amount, $studentDisplayCurrency, $isInternationalStudent ? 2 : 0);
+};
 
 $studentViewsPath = BASE_PATH . '/views/student/';
 $linkDashboard = 'dashboard.php';
@@ -229,7 +267,7 @@ body{background:#f2f4f7}.student-sidebar{width:230px;background:linear-gradient(
   </div>
 
   <div class="chip-row"><span style="font-size:1rem;color:#1f7aa8;">PROGRAMME:</span><span style="font-size:1rem;"><?php echo e($registeredProgramName); ?></span><span class="chip" style="background:#16a34a;color:#fff;">ACTIVE</span><span style="margin-left:auto;font-size:1rem;color:#1f7aa8;">ACADEMIC STATUS:</span><span class="chip red" style="<?php echo e($academicStatusStyle); ?>"><?php echo e($academicStatus); ?></span></div>
-  <div class="chip-row"><span class="chip gray">CURRENT YR. <span style="color:#2563eb;"><?php echo e($currentSemester['academic_year']); ?></span></span><span class="chip gray">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span><span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span><span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span><span class="chip gray">TOTAL FEES BAL DUE: <?php echo number_format($outstandingBalance); ?>/=</span><span class="chip blue">BALANCE ON ACCOUNT: <?php echo number_format((float)($studentProfile['account_balance'] ?? 0)); ?>/=</span></div>
+  <div class="chip-row"><span class="chip gray">CURRENT YR. <span style="color:#2563eb;"><?php echo e($currentSemester['academic_year']); ?></span></span><span class="chip gray">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span><span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span><span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span><span class="chip gray">TOTAL FEES BAL DUE: <?php echo $formatCurrencyForDisplay((float)$outstandingBalance); ?></span><span class="chip blue">BALANCE ON ACCOUNT: <?php echo $formatCurrencyForDisplay((float)($studentProfile['account_balance'] ?? 0)); ?></span></div>
 
   <div class="cal-wrap"><div class="cal-card">
     <form method="GET" class="cal-head"><div style="min-width:220px;"><select class="cal-year-pick" name="academic_year_id" onchange="this.form.submit()"><?php foreach ($allAcademicYears as $y): ?><option value="<?php echo (int)$y['id']; ?>" <?php echo (int)$selectedAcademicYearId === (int)$y['id'] ? 'selected' : ''; ?>><?php echo e($y['year_name']); ?></option><?php endforeach; ?></select></div><h2 class="cal-title">ACADEMIC YEAR - <?php echo e($selectedAcademicYearName); ?></h2><div style="min-width:220px;"></div></form>
