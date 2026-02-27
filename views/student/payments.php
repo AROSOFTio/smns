@@ -107,9 +107,13 @@ $normalizeGeo = function ($value) {
 $countryNorm = $normalizeGeo($studentCountry);
 $nationalityNorm = $normalizeGeo($studentNationality);
 $ugandaTokens = ['uganda', 'ugandan', 'ug'];
-$isUgandanStudent = in_array($countryNorm, $ugandaTokens, true)
-    || in_array($nationalityNorm, $ugandaTokens, true);
-if ($countryNorm === '' && $nationalityNorm === '') {
+$isUgandanStudent = false;
+if ($nationalityNorm !== '') {
+    // Nationality takes priority for fee display currency.
+    $isUgandanStudent = in_array($nationalityNorm, $ugandaTokens, true);
+} elseif ($countryNorm !== '') {
+    $isUgandanStudent = in_array($countryNorm, $ugandaTokens, true);
+} else {
     // Default local currency when profile country/nationality is not filled.
     $isUgandanStudent = true;
 }
@@ -163,6 +167,7 @@ if (!in_array($txTab, $validTxTabs, true)) {
 }
 $prnQuery = trim((string)($_GET['prn_ref'] ?? ''));
 $prnStatusRow = null;
+$prnStatusData = null;
 $prnStatusMessage = '';
 $migratedTab = $_GET['mtx_tab'] ?? 'invoice_payments';
 $validMigratedTabs = ['invoice_payments', 'fees_deposits'];
@@ -321,11 +326,13 @@ if ($studentDbId > 0) {
     });
 
     try {
+        $verifiedPaymentsPredicate = getVerifiedPaymentsPredicate($conn, 'p');
         $txStmt = $conn->prepare("
             SELECT p.payment_id, p.invoice_id, p.amount, p.payment_date, p.payment_method, p.reference_number, p.receipt_number, p.notes, p.created_at, i.invoice_number
             FROM payments p
             LEFT JOIN invoices i ON p.invoice_id = i.id
             WHERE p.student_id = :student_id
+              AND {$verifiedPaymentsPredicate}
             ORDER BY p.payment_date DESC, p.id DESC
         ");
         $txStmt->execute(['student_id' => $studentDbId]);
@@ -369,7 +376,22 @@ if ($studentDbId > 0) {
                     break;
                 }
             }
-            if ($prnStatusRow === null) {
+
+            try {
+                $statusService = new MobileMoneyGatewayService($conn);
+                $statusResult = $statusService->getStudentReferenceStatus($studentDbId, strtoupper($prnQuery));
+                if (!empty($statusResult['success']) && !empty($statusResult['data']) && is_array($statusResult['data'])) {
+                    $prnStatusData = $statusResult['data'];
+                } elseif (empty($prnStatusRow)) {
+                    $prnStatusMessage = (string)($statusResult['message'] ?? 'No transaction found for the entered payment reference number.');
+                }
+            } catch (Exception $statusEx) {
+                if (empty($prnStatusRow)) {
+                    $prnStatusMessage = 'No transaction found for the entered payment reference number.';
+                }
+            }
+
+            if ($prnStatusRow === null && $prnStatusData === null && $prnStatusMessage === '') {
                 $prnStatusMessage = 'No transaction found for the entered payment reference number.';
             }
         }
@@ -996,6 +1018,10 @@ body { background: #f2f4f7; }
     font-size: 1.05rem;
     font-weight: 800;
 }
+.ledger-amount-negative {
+    color: #b91c1c;
+    font-weight: 800;
+}
 .prn-list-table {
     width: 100%;
     border-collapse: collapse;
@@ -1254,6 +1280,21 @@ html[data-theme='dark'] .badge-pending,
 html[data-theme='dark'] .badge-pending i {
     color: #f87171 !important;
 }
+html[data-theme='dark'] .status-pill.pending {
+    background: rgba(239, 68, 68, 0.18) !important;
+    color: #fca5a5 !important;
+    border: 1px solid rgba(248, 113, 113, 0.5) !important;
+}
+html[data-theme='dark'] .status-pill.partial {
+    background: rgba(245, 158, 11, 0.16) !important;
+    color: #fcd34d !important;
+    border: 1px solid rgba(251, 191, 36, 0.45) !important;
+}
+html[data-theme='dark'] .status-pill.overdue {
+    background: rgba(220, 38, 38, 0.2) !important;
+    color: #fca5a5 !important;
+    border: 1px solid rgba(248, 113, 113, 0.55) !important;
+}
 
 /* Dark-mode fixes for transactions tabs and check PRN form */
 html[data-theme='dark'] .tx-shell {
@@ -1344,6 +1385,48 @@ html[data-theme='dark'] .fees-total-row td {
 html[data-theme='dark'] .fees-year-body .tbl td[style*='color:#64748b;'],
 html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
     color: #cbd5e1 !important;
+}
+
+/* Dark-mode fixes for student ledger */
+html[data-theme='dark'] .ledger-card {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .ledger-head {
+    background: var(--app-surface-2) !important;
+    border-bottom-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .ledger-title {
+    color: #7dd3fc !important;
+}
+html[data-theme='dark'] .ledger-info-wrap {
+    background: var(--app-surface-1) !important;
+}
+html[data-theme='dark'] .ledger-meta {
+    color: #e5e7eb !important;
+}
+html[data-theme='dark'] .ledger-meta strong {
+    color: #f8fafc !important;
+}
+html[data-theme='dark'] .ledger-caption {
+    color: #e5e7eb !important;
+}
+html[data-theme='dark'] .ledger-photo {
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .ledger-card .tbl tbody tr:nth-child(odd) {
+    background: rgba(148, 163, 184, 0.06) !important;
+}
+html[data-theme='dark'] .ledger-card .tbl tbody tr:hover {
+    background: rgba(59, 130, 246, 0.10) !important;
+}
+html[data-theme='dark'] .ledger-net {
+    border-top-color: var(--app-border) !important;
+    color: #f8fafc !important;
+}
+html[data-theme='dark'] .ledger-amount-negative {
+    color: #f87171 !important;
+    font-weight: 800 !important;
 }
 @media (max-width: 1200px) {
     .chip-row {
@@ -1602,7 +1685,52 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                 <button type="submit" class="tx-check-btn"><i class="fas fa-search"></i> CHECK STATUS</button>
                             </form>
                             <?php if ($prnQuery !== ''): ?>
-                                <?php if ($prnStatusRow): ?>
+                                <?php if ($prnStatusData): ?>
+                                    <?php
+                                        $txStatus = strtolower((string)($prnStatusData['transaction_status'] ?? ''));
+                                        $refStatus = strtolower((string)($prnStatusData['reference_status'] ?? ''));
+                                        $channel = strtolower((string)($prnStatusData['transaction_channel'] ?? ''));
+                                        $stage = (string)($prnStatusData['status_stage'] ?? '');
+                                        $alertClass = 'alert-info';
+                                        if (in_array($txStatus, ['posted', 'paid'], true) || $refStatus === 'paid') {
+                                            $alertClass = 'alert-success';
+                                        } elseif (in_array($txStatus, ['failed', 'cancelled', 'expired'], true)) {
+                                            $alertClass = 'alert-danger';
+                                        } elseif (in_array($txStatus, ['received', 'verified', 'pending', 'initiated', 'successful'], true)) {
+                                            $alertClass = 'alert-warning';
+                                        }
+                                        $statusText = strtoupper($txStatus !== '' ? $txStatus : ($refStatus !== '' ? $refStatus : 'UNKNOWN'));
+                                        $channelText = $channel !== '' ? strtoupper(str_replace('_', ' ', $channel)) : '-';
+                                        $bankMethodText = strtoupper(str_replace('_', ' ', (string)($prnStatusData['bank_payment_method'] ?? '')));
+                                        $amountForStatus = (float)($prnStatusData['amount_received'] ?? ($prnStatusData['amount_submitted'] ?? ($prnStatusData['amount'] ?? 0)));
+                                    ?>
+                                    <div class="alert <?php echo e($alertClass); ?> mt-2 mb-0">
+                                        <strong>Status:</strong> <?php echo e($statusText); ?> |
+                                        <strong>Channel:</strong> <?php echo e($channelText); ?> |
+                                        <?php if ($bankMethodText !== ''): ?>
+                                            <strong>Bank Method:</strong> <?php echo e($bankMethodText); ?> |
+                                        <?php endif; ?>
+                                        <strong>PRN:</strong> <?php echo e((string)($prnStatusData['reference_number'] ?? $prnQuery)); ?>
+                                        <?php if ($amountForStatus > 0): ?> |
+                                            <strong>Amount:</strong> <?php echo $formatCurrencyForDisplay($amountForStatus); ?>
+                                        <?php endif; ?>
+                                        <?php if (!empty($prnStatusData['payment_id'])): ?> |
+                                            <strong>Payment ID:</strong> <?php echo e((string)$prnStatusData['payment_id']); ?>
+                                        <?php endif; ?>
+                                        <?php if (!empty($prnStatusData['receipt_number'])): ?> |
+                                            <strong>Receipt:</strong> <?php echo e((string)$prnStatusData['receipt_number']); ?>
+                                        <?php endif; ?>
+                                        <?php if (!empty($prnStatusData['payment_date'])): ?> |
+                                            <strong>Date:</strong> <?php echo e(date('d M Y', strtotime((string)$prnStatusData['payment_date']))); ?>
+                                        <?php endif; ?>
+                                        <?php if ($stage !== ''): ?>
+                                            <br><strong>Stage:</strong> <?php echo e($stage); ?>
+                                        <?php endif; ?>
+                                        <?php if (!empty($prnStatusData['transfer_reference'])): ?>
+                                            <br><strong>Bank Ref:</strong> <?php echo e((string)$prnStatusData['transfer_reference']); ?>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php elseif ($prnStatusRow): ?>
                                     <div class="alert alert-success mt-2 mb-0">
                                         <strong>Status:</strong> Paid |
                                         <strong>Payment ID:</strong> <?php echo e($prnStatusRow['payment_id'] ?? '-'); ?> |
@@ -1707,6 +1835,7 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                 </thead>
                                 <tbody>
                                     <?php $sn = 1; foreach ($ledgerStatementRows as $row): ?>
+                                        <?php $rowBalance = (float)($row['balance'] ?? 0); ?>
                                         <tr>
                                             <td><?php echo $sn++; ?></td>
                                             <td><?php echo !empty($row['timestamp']) ? e(date('M j, Y g:i A', strtotime($row['timestamp']))) : '-'; ?></td>
@@ -1714,15 +1843,16 @@ html[data-theme='dark'] .fees-year-body .tbl td[style*='color: #64748b;'] {
                                             <td><?php echo e($row['narration'] ?? '-'); ?></td>
                                             <td><?php echo ((float)($row['debit'] ?? 0) > 0) ? $formatAmountForDisplay((float)$row['debit']) : '0'; ?></td>
                                             <td><?php echo ((float)($row['credit'] ?? 0) > 0) ? $formatAmountForDisplay((float)$row['credit']) : '0'; ?></td>
-                                            <td><?php echo $formatAmountForDisplay((float)($row['balance'] ?? 0)); ?></td>
+                                            <td class="<?php echo $rowBalance < 0 ? 'ledger-amount-negative' : ''; ?>"><?php echo $formatAmountForDisplay($rowBalance); ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
                             </table>
 
+                            <?php $netBalanceValue = (float)$ledgerNetBalance; ?>
                             <div class="ledger-net">
                                 <span><?php echo e($studentDisplayCurrency); ?> NET STATEMENT BALANCE</span>
-                                <span><?php echo $formatAmountForDisplay((float)$ledgerNetBalance); ?></span>
+                                <span class="<?php echo $netBalanceValue < 0 ? 'ledger-amount-negative' : ''; ?>"><?php echo $formatAmountForDisplay($netBalanceValue); ?></span>
                             </div>
                         </div>
                     </div>

@@ -261,6 +261,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['activate_semester_id'
 
 // Current semester
 $currentSemester = Helper::getCurrentSemester();
+$currentSemesterId = (int)($currentSemester['id'] ?? 0);
+$usdUgxRate = (float)Helper::getUsdUgxRate();
+if ($usdUgxRate <= 0) {
+    $usdUgxRate = 3700.0;
+}
+$adminStudentBalances = [];
+$adminOutstandingBalanceUgx = 0.0;
+$adminStudentsWithBalance = 0;
+$adminStudentCount = 0;
+if ($currentSemesterId > 0) {
+    $adminBalanceMonitor = getActiveStudentBalanceMonitor($conn, $currentSemesterId);
+    $adminStudentBalances = (array)($adminBalanceMonitor['rows'] ?? []);
+    $adminOutstandingBalanceUgx = (float)($adminBalanceMonitor['outstanding_total_ugx'] ?? 0.0);
+    $adminStudentsWithBalance = (int)($adminBalanceMonitor['students_with_balance'] ?? 0);
+    $adminStudentCount = (int)($adminBalanceMonitor['student_count'] ?? 0);
+}
 
 // Notifications (per-user + broadcast aware)
 $currentUser = isset($currentUser) ? $currentUser : $auth->getCurrentUser();
@@ -457,7 +473,94 @@ include '../../includes/header.php';
                         <p>Browse and manage student records</p>
                     </div>
                 </a>
+
+                <a href="#student-balance-monitor" class="action-card">
+                    <div class="action-icon"><i class="fas fa-balance-scale"></i></div>
+                    <div class="action-copy">
+                        <h4>Student Balances</h4>
+                        <p>Monitor all student outstanding balances</p>
+                    </div>
+                </a>
             </div>
+        </div>
+
+        <div class="assigned-courses-section" id="student-balance-monitor">
+            <div class="section-header">
+                <h3><i class="fas fa-balance-scale"></i> Student Balance Monitor</h3>
+                <span class="text-muted" style="font-size:12px;">
+                    Current Semester:
+                    <?php echo e((string)($currentSemester['semester_name'] ?? 'N/A')); ?>
+                </span>
+            </div>
+            <?php if ($currentSemesterId <= 0): ?>
+                <div class="alert alert-warning mb-0">
+                    No active semester is configured, so student balance monitoring is currently unavailable.
+                </div>
+            <?php elseif (empty($adminStudentBalances)): ?>
+                <div class="alert alert-info mb-0">
+                    No active students found for balance monitoring.
+                </div>
+            <?php else: ?>
+                <div class="mb-2" style="font-size:12px; color:#334155;">
+                    <strong>Total Students:</strong> <?php echo number_format($adminStudentCount); ?>
+                    &nbsp;|&nbsp;
+                    <strong>Students with Outstanding:</strong> <?php echo number_format($adminStudentsWithBalance); ?>
+                    &nbsp;|&nbsp;
+                    <strong>Total Outstanding (UGX base):</strong>
+                    <?php echo e(Helper::formatCurrency($adminOutstandingBalanceUgx, 'UGX', 0)); ?>
+                </div>
+                <div class="d-flex flex-wrap justify-content-between align-items-center mb-2" style="gap:8px;">
+                    <div class="d-flex align-items-center" style="gap:8px;">
+                        <input
+                            type="text"
+                            id="adminBalanceSearch"
+                            class="form-control form-control-sm"
+                            placeholder="Search student, ID, currency..."
+                            style="min-width:240px; max-width:320px;"
+                        >
+                        <select id="adminBalancePageSize" class="form-control form-control-sm" style="width:auto;">
+                            <option value="10" selected>10 / page</option>
+                            <option value="25">25 / page</option>
+                            <option value="50">50 / page</option>
+                            <option value="100">100 / page</option>
+                        </select>
+                    </div>
+                    <small id="adminBalanceCountInfo" class="text-muted"></small>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm" id="adminBalanceTable">
+                        <thead>
+                            <tr>
+                                <th>Student</th>
+                                <th>Currency</th>
+                                <th>Total Fees</th>
+                                <th>Total Paid</th>
+                                <th>Outstanding Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody id="adminBalanceTableBody">
+                            <?php foreach ($adminStudentBalances as $balanceRow): ?>
+                                <?php $displayCurrency = (string)($balanceRow['display_currency'] ?? 'UGX'); ?>
+                                <tr>
+                                    <td>
+                                        <?php echo e(trim((string)$balanceRow['first_name'] . ' ' . (string)$balanceRow['last_name'])); ?><br>
+                                        <small><?php echo e((string)($balanceRow['student_id'] ?? '-')); ?></small>
+                                    </td>
+                                    <td><?php echo e($displayCurrency); ?></td>
+                                    <td><?php echo e(formatAmountFromUgxForDisplayCurrency((float)($balanceRow['total_fees'] ?? 0), $displayCurrency, $usdUgxRate)); ?></td>
+                                    <td><?php echo e(formatAmountFromUgxForDisplayCurrency((float)($balanceRow['total_paid'] ?? 0), $displayCurrency, $usdUgxRate)); ?></td>
+                                    <td><strong><?php echo e(formatAmountFromUgxForDisplayCurrency((float)($balanceRow['balance'] ?? 0), $displayCurrency, $usdUgxRate)); ?></strong></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="d-flex justify-content-end align-items-center mt-2" style="gap:8px;">
+                    <button type="button" id="adminBalancePrev" class="btn btn-sm btn-outline-secondary">Previous</button>
+                    <small id="adminBalancePageInfo" class="text-muted">Page 1 of 1</small>
+                    <button type="button" id="adminBalanceNext" class="btn btn-sm btn-outline-secondary">Next</button>
+                </div>
+            <?php endif; ?>
         </div>
 
         <!-- Assigned Courses Section -->
@@ -951,6 +1054,88 @@ if (content) { content.prepend(a); a.scrollIntoView({behavior:'smooth', block:'c
         .catch(function(err){ btn.disabled=false; var errEl=document.createElement('div'); errEl.className='alert alert-danger'; errEl.textContent='Network error. Please try again.'; var content=document.querySelector('.content-area'); if (content) content.prepend(errEl); });
     });
 })();
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function initTableSearchPagination(config) {
+        var tbody = document.getElementById(config.tbodyId);
+        var searchInput = document.getElementById(config.searchId);
+        var pageSizeSelect = document.getElementById(config.pageSizeId);
+        var prevBtn = document.getElementById(config.prevId);
+        var nextBtn = document.getElementById(config.nextId);
+        var pageInfo = document.getElementById(config.pageInfoId);
+        var countInfo = document.getElementById(config.countInfoId);
+        if (!tbody || !searchInput || !pageSizeSelect || !prevBtn || !nextBtn || !pageInfo || !countInfo) {
+            return;
+        }
+
+        var allRows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+        var currentPage = 1;
+
+        function render() {
+            var query = (searchInput.value || '').toLowerCase().trim();
+            var pageSize = parseInt(pageSizeSelect.value, 10) || 10;
+
+            var filteredRows = allRows.filter(function (row) {
+                if (!query) return true;
+                return (row.textContent || '').toLowerCase().indexOf(query) !== -1;
+            });
+
+            var totalRows = filteredRows.length;
+            var totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+
+            var startIdx = (currentPage - 1) * pageSize;
+            var endIdx = startIdx + pageSize;
+
+            allRows.forEach(function (row) { row.style.display = 'none'; });
+            filteredRows.slice(startIdx, endIdx).forEach(function (row) { row.style.display = ''; });
+
+            var from = totalRows === 0 ? 0 : (startIdx + 1);
+            var to = totalRows === 0 ? 0 : Math.min(endIdx, totalRows);
+            countInfo.textContent = totalRows === 0
+                ? 'No matching students'
+                : ('Showing ' + from + '-' + to + ' of ' + totalRows);
+
+            pageInfo.textContent = totalRows === 0
+                ? 'Page 0 of 0'
+                : ('Page ' + currentPage + ' of ' + totalPages);
+            prevBtn.disabled = currentPage <= 1 || totalRows === 0;
+            nextBtn.disabled = currentPage >= totalPages || totalRows === 0;
+        }
+
+        searchInput.addEventListener('input', function () {
+            currentPage = 1;
+            render();
+        });
+        pageSizeSelect.addEventListener('change', function () {
+            currentPage = 1;
+            render();
+        });
+        prevBtn.addEventListener('click', function () {
+            currentPage -= 1;
+            render();
+        });
+        nextBtn.addEventListener('click', function () {
+            currentPage += 1;
+            render();
+        });
+
+        render();
+    }
+
+    initTableSearchPagination({
+        tbodyId: 'adminBalanceTableBody',
+        searchId: 'adminBalanceSearch',
+        pageSizeId: 'adminBalancePageSize',
+        prevId: 'adminBalancePrev',
+        nextId: 'adminBalanceNext',
+        pageInfoId: 'adminBalancePageInfo',
+        countInfoId: 'adminBalanceCountInfo'
+    });
+});
 </script>
 
 <style>

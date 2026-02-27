@@ -20,6 +20,16 @@ $studentDbId = (int)($studentProfile['id'] ?? 0);
 
 $db = new Database();
 $conn = $db->getConnection();
+$paymentGatewayMode = strtolower(trim((string)(defined('PAYMENT_GATEWAY_MODE') ? PAYMENT_GATEWAY_MODE : 'mock')));
+if (!in_array($paymentGatewayMode, ['live', 'sandbox', 'mock'], true)) {
+    $paymentGatewayMode = 'mock';
+}
+$isMockGatewayMode = ($paymentGatewayMode === 'mock');
+$isSandboxGatewayMode = ($paymentGatewayMode === 'sandbox');
+$institutionBankAccountName = trim((string)(defined('BANK_ACCOUNT_NAME') ? BANK_ACCOUNT_NAME : ''));
+$institutionBankAccountNumber = trim((string)(defined('BANK_ACCOUNT_NUMBER') ? BANK_ACCOUNT_NUMBER : ''));
+$institutionBankBranch = trim((string)(defined('BANK_BRANCH') ? BANK_BRANCH : ''));
+$institutionBankSwift = trim((string)(defined('BANK_SWIFT') ? BANK_SWIFT : ''));
 
 $currentSemester = [
     'academic_year' => '-',
@@ -101,9 +111,13 @@ $normalizeGeo = function ($value) {
 $countryNorm = $normalizeGeo($studentCountry);
 $nationalityNorm = $normalizeGeo($studentNationality);
 $ugandaTokens = ['uganda', 'ugandan', 'ug'];
-$isUgandanStudent = in_array($countryNorm, $ugandaTokens, true)
-    || in_array($nationalityNorm, $ugandaTokens, true);
-if ($countryNorm === '' && $nationalityNorm === '') {
+$isUgandanStudent = false;
+if ($nationalityNorm !== '') {
+    // Nationality takes priority for fee display currency.
+    $isUgandanStudent = in_array($nationalityNorm, $ugandaTokens, true);
+} elseif ($countryNorm !== '') {
+    $isUgandanStudent = in_array($countryNorm, $ugandaTokens, true);
+} else {
     // Default local currency when profile country/nationality is not filled.
     $isUgandanStudent = true;
 }
@@ -131,12 +145,97 @@ $formatCurrencyByStudentInput = function ($amount) use ($studentDisplayCurrency,
     return Helper::formatCurrency((float)$amount, $studentDisplayCurrency, $isInternationalStudent ? 2 : 0);
 };
 
+$convertStudentInputToUgx = function ($amountInput) use ($isInternationalStudent, $usdUgxRate) {
+    $value = (float)$amountInput;
+    if ($value <= 0) {
+        return 0.0;
+    }
+    if ($isInternationalStudent) {
+        return $value * $usdUgxRate;
+    }
+    return $value;
+};
+
 $unpaidInvoices = [];
 $unpaidInvoicesTotal = 0.0;
 $paymentRefs = [];
 $activePaymentRefs = [];
 $expiredPaymentRefs = [];
+$paidPaymentRefs = [];
 $invoiceDataError = '';
+$paymentRefDataError = '';
+
+if (!function_exists('studentEnsurePaymentReferenceSchema')) {
+    function studentEnsurePaymentReferenceSchema(PDO $conn) {
+        $conn->exec("
+            CREATE TABLE IF NOT EXISTS student_payment_references (
+                id INT(11) NOT NULL AUTO_INCREMENT,
+                reference_number VARCHAR(64) NOT NULL,
+                student_id INT(11) NOT NULL,
+                invoice_id INT(11) DEFAULT NULL,
+                semester_id INT(11) DEFAULT NULL,
+                reference_type ENUM('all_pending','partial_invoice','deposit') NOT NULL DEFAULT 'deposit',
+                amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                currency_code VARCHAR(3) NOT NULL DEFAULT 'UGX',
+                status ENUM('active','paid','expired','cancelled') NOT NULL DEFAULT 'active',
+                expires_at DATETIME DEFAULT NULL,
+                generated_by ENUM('student','finance','system') NOT NULL DEFAULT 'student',
+                meta_json TEXT DEFAULT NULL,
+                paid_payment_id INT(11) DEFAULT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_reference_number (reference_number),
+                KEY idx_student_status (student_id, status),
+                KEY idx_student_created (student_id, created_at),
+                KEY idx_invoice (invoice_id),
+                KEY idx_paid_payment (paid_payment_id),
+                CONSTRAINT fk_student_payment_refs_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+                CONSTRAINT fk_student_payment_refs_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL,
+                CONSTRAINT fk_student_payment_refs_payment FOREIGN KEY (paid_payment_id) REFERENCES payments(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    }
+}
+
+if (!function_exists('studentGeneratePrnCode')) {
+    function studentGeneratePrnCode(PDO $conn) {
+        for ($attempt = 0; $attempt < 10; $attempt++) {
+            try {
+                $randInt = random_int(0, 1679615); // 36^4 - 1
+            } catch (Exception $e) {
+                $randInt = mt_rand(0, 1679615);
+            }
+            $suffix = strtoupper(str_pad(base_convert((string)$randInt, 10, 36), 4, '0', STR_PAD_LEFT));
+            // Short PRN format: PRN + yymmdd + 4-char token (e.g., PRN260227A1B2)
+            $candidate = 'PRN' . date('ymd') . $suffix;
+
+            $refStmt = $conn->prepare("SELECT id FROM student_payment_references WHERE reference_number = :ref LIMIT 1");
+            $refStmt->execute(['ref' => $candidate]);
+            if ($refStmt->fetchColumn()) {
+                continue;
+            }
+
+            $payStmt = $conn->prepare("SELECT id FROM payments WHERE reference_number = :ref LIMIT 1");
+            $payStmt->execute(['ref' => $candidate]);
+            if ($payStmt->fetchColumn()) {
+                continue;
+            }
+
+            return $candidate;
+        }
+
+        return 'PRN' . date('ymd') . strtoupper(substr(md5(uniqid((string)mt_rand(), true)), 0, 4));
+    }
+}
+
+$prnSchemaReady = false;
+try {
+    studentEnsurePaymentReferenceSchema($conn);
+    $prnSchemaReady = true;
+} catch (Exception $e) {
+    $paymentRefDataError = 'Payment reference service is temporarily unavailable.';
+}
 
 if ($studentDbId > 0) {
     try {
@@ -168,63 +267,265 @@ if ($studentDbId > 0) {
     } catch (Exception $e) {
         $invoiceDataError = 'Unable to load invoice data right now.';
     }
+}
 
+$generatedPrn = '';
+$generatedAmountUgx = 0.0;
+$generatedRefType = '';
+$generatedPrnExpiresAt = '';
+$prnError = '';
+$depositAmountInput = '';
+$activePrnTab = $_POST['prn_tab'] ?? ($_GET['prn_tab'] ?? 'new_prn');
+$validPrnTabs = ['new_prn', 'payment_refs', 'payment_methods'];
+if (!in_array($activePrnTab, $validPrnTabs, true)) {
+    $activePrnTab = 'new_prn';
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = trim((string)($_POST['action'] ?? ''));
+    $supportedActions = ['generate_all_pending_prn', 'generate_partial_prn', 'generate_deposit_prn'];
+    if (in_array($action, $supportedActions, true)) {
+        $activePrnTab = 'new_prn';
+
+        if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+            $prnError = 'Invalid request token.';
+        } elseif ($studentDbId <= 0) {
+            $prnError = 'Student profile is missing.';
+        } elseif (!$prnSchemaReady) {
+            $prnError = 'Payment reference service is temporarily unavailable.';
+        } else {
+            $amountUgx = 0.0;
+            $invoiceId = null;
+            $referenceType = 'deposit';
+            $metaPayload = [];
+
+            if ($action === 'generate_all_pending_prn') {
+                if (empty($unpaidInvoices) || $unpaidInvoicesTotal <= 0) {
+                    $prnError = 'No pending invoices available for PRN generation.';
+                } else {
+                    $referenceType = 'all_pending';
+                    $amountUgx = (float)$unpaidInvoicesTotal;
+                    $invoiceIds = [];
+                    foreach ($unpaidInvoices as $invoiceRow) {
+                        $invoiceIds[] = (int)($invoiceRow['id'] ?? 0);
+                    }
+                    $metaPayload = [
+                        'invoice_ids' => array_values(array_filter($invoiceIds)),
+                        'invoice_count' => count(array_filter($invoiceIds))
+                    ];
+                }
+            } elseif ($action === 'generate_partial_prn') {
+                $invoiceIdCandidate = (int)($_POST['invoice_id'] ?? 0);
+                $partialAmountRaw = trim((string)($_POST['partial_amount'] ?? ''));
+                $targetInvoice = null;
+                foreach ($unpaidInvoices as $invoiceRow) {
+                    if ((int)($invoiceRow['id'] ?? 0) === $invoiceIdCandidate) {
+                        $targetInvoice = $invoiceRow;
+                        break;
+                    }
+                }
+
+                if (!$targetInvoice) {
+                    $prnError = 'Selected invoice is not available for partial payment.';
+                } elseif ($partialAmountRaw === '' || !is_numeric($partialAmountRaw) || (float)$partialAmountRaw <= 0) {
+                    $prnError = 'Enter a valid partial amount.';
+                } else {
+                    $referenceType = 'partial_invoice';
+                    $invoiceId = $invoiceIdCandidate;
+                    $amountUgx = $convertStudentInputToUgx((float)$partialAmountRaw);
+                    $invoiceBalanceUgx = (float)($targetInvoice['balance'] ?? 0);
+
+                    if ($amountUgx <= 0) {
+                        $prnError = 'Enter a valid partial amount.';
+                    } elseif (($amountUgx - $invoiceBalanceUgx) > 0.01) {
+                        $prnError = 'Partial amount cannot exceed invoice balance.';
+                    } else {
+                        $metaPayload = [
+                            'invoice_number' => (string)($targetInvoice['invoice_number'] ?? ''),
+                            'invoice_balance_ugx' => $invoiceBalanceUgx
+                        ];
+                    }
+                }
+            } else {
+                $depositAmountInput = trim((string)($_POST['deposit_amount'] ?? ''));
+                if ($depositAmountInput === '' || !is_numeric($depositAmountInput) || (float)$depositAmountInput <= 0) {
+                    $prnError = 'Enter a valid deposit amount.';
+                } else {
+                    $referenceType = 'deposit';
+                    $amountUgx = $convertStudentInputToUgx((float)$depositAmountInput);
+                    if ($amountUgx <= 0) {
+                        $prnError = 'Enter a valid deposit amount.';
+                    } elseif ($unpaidInvoicesTotal > 0 && ($amountUgx - (float)$unpaidInvoicesTotal) > 0.01) {
+                        $prnError = 'Deposit amount cannot be higher than your outstanding balance. Use "All pending invoices" or enter a partial amount.';
+                    } else {
+                        $metaPayload = ['source' => 'self_deposit'];
+                    }
+                }
+            }
+
+            if ($prnError === '') {
+                try {
+                    $generatedPrn = studentGeneratePrnCode($conn);
+                    $generatedPrnExpiresAt = date('Y-m-d H:i:s', strtotime('+14 days'));
+                    $metaJson = json_encode($metaPayload, JSON_UNESCAPED_UNICODE);
+                    if ($metaJson === false) {
+                        $metaJson = '{}';
+                    }
+
+                    $insertRefStmt = $conn->prepare("
+                        INSERT INTO student_payment_references (
+                            reference_number,
+                            student_id,
+                            invoice_id,
+                            semester_id,
+                            reference_type,
+                            amount,
+                            currency_code,
+                            status,
+                            expires_at,
+                            generated_by,
+                            meta_json,
+                            created_at,
+                            updated_at
+                        ) VALUES (
+                            :reference_number,
+                            :student_id,
+                            :invoice_id,
+                            :semester_id,
+                            :reference_type,
+                            :amount,
+                            'UGX',
+                            'active',
+                            :expires_at,
+                            'student',
+                            :meta_json,
+                            NOW(),
+                            NOW()
+                        )
+                    ");
+                    $insertRefStmt->execute([
+                        'reference_number' => $generatedPrn,
+                        'student_id' => $studentDbId,
+                        'invoice_id' => $invoiceId,
+                        'semester_id' => (int)($currentSemester['id'] ?? 0) > 0 ? (int)$currentSemester['id'] : null,
+                        'reference_type' => $referenceType,
+                        'amount' => $amountUgx,
+                        'expires_at' => $generatedPrnExpiresAt,
+                        'meta_json' => $metaJson
+                    ]);
+
+                    $generatedAmountUgx = $amountUgx;
+                    $generatedRefType = $referenceType;
+
+                    try {
+                        $session->setFlash(
+                            'success',
+                            'PRN generated successfully: ' . $generatedPrn .
+                            '. Expires on ' . date('d M Y, h:i A', strtotime($generatedPrnExpiresAt))
+                        );
+                    } catch (Exception $e) {
+                    }
+                } catch (Exception $e) {
+                    $prnError = 'Unable to generate PRN right now. Please retry.';
+                }
+            }
+        }
+    }
+}
+
+if ($studentDbId > 0 && $prnSchemaReady) {
     try {
-        $payStmt = $conn->prepare("
+        $syncRefStmt = $conn->prepare("
+            UPDATE student_payment_references spr
+            LEFT JOIN (
+                SELECT p.reference_number, MAX(p.id) AS payment_row_id
+                FROM payments p
+                WHERE p.reference_number IS NOT NULL
+                  AND p.reference_number <> ''
+                GROUP BY p.reference_number
+            ) paid ON paid.reference_number = spr.reference_number
+            SET spr.status = CASE
+                WHEN paid.payment_row_id IS NOT NULL THEN 'paid'
+                WHEN spr.status = 'active' AND spr.expires_at IS NOT NULL AND spr.expires_at < NOW() THEN 'expired'
+                ELSE spr.status
+            END,
+            spr.paid_payment_id = CASE
+                WHEN paid.payment_row_id IS NOT NULL THEN paid.payment_row_id
+                ELSE spr.paid_payment_id
+            END
+            WHERE spr.student_id = :student_id
+        ");
+        $syncRefStmt->execute(['student_id' => $studentDbId]);
+
+        $refsStmt = $conn->prepare("
             SELECT
+                spr.id,
+                spr.reference_number,
+                spr.invoice_id,
+                spr.reference_type,
+                spr.amount,
+                spr.currency_code,
+                spr.status,
+                spr.expires_at,
+                spr.meta_json,
+                spr.created_at,
+                spr.updated_at,
+                i.invoice_number,
                 p.payment_id,
-                p.reference_number,
                 p.receipt_number,
-                p.amount,
                 p.payment_date,
                 p.payment_method,
-                i.invoice_number,
-                i.due_date
-            FROM payments p
-            LEFT JOIN invoices i ON p.invoice_id = i.id
-            WHERE p.student_id = :student_id
-            ORDER BY p.payment_date DESC, p.id DESC
-            LIMIT 20
+                p.amount AS paid_amount
+            FROM student_payment_references spr
+            LEFT JOIN invoices i ON spr.invoice_id = i.id
+            LEFT JOIN payments p ON p.id = spr.paid_payment_id
+            WHERE spr.student_id = :student_id
+            ORDER BY spr.created_at DESC, spr.id DESC
+            LIMIT 150
         ");
-        $payStmt->execute(['student_id' => $studentDbId]);
-        $paymentRefs = $payStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        $today = date('Y-m-d');
+        $refsStmt->execute(['student_id' => $studentDbId]);
+        $paymentRefs = $refsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
         foreach ($paymentRefs as $refRow) {
-            $expiryDate = !empty($refRow['due_date']) ? $refRow['due_date'] : date('Y-m-d', strtotime(($refRow['payment_date'] ?? date('Y-m-d')) . ' +14 days'));
-            $refRow['expiry_date'] = $expiryDate;
-            if ($expiryDate >= $today) {
+            $status = strtolower(trim((string)($refRow['status'] ?? 'active')));
+            if ($status === 'paid') {
+                $paidPaymentRefs[] = $refRow;
+            } elseif ($status === 'active') {
                 $activePaymentRefs[] = $refRow;
             } else {
                 $expiredPaymentRefs[] = $refRow;
             }
         }
     } catch (Exception $e) {
+        $paymentRefDataError = 'Unable to load payment references right now.';
     }
+} elseif ($studentDbId > 0 && !$prnSchemaReady && $paymentRefDataError === '') {
+    $paymentRefDataError = 'Payment references are not available at the moment.';
 }
 
-$generatedPrn = '';
-$generatedAmount = '';
-$prnError = '';
-$activePrnTab = $_POST['prn_tab'] ?? 'new_prn';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'generate_deposit_prn') {
-    if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
-        $prnError = 'Invalid request token.';
-    } else {
-        $amountRaw = trim($_POST['deposit_amount'] ?? '');
-        $generatedAmount = $amountRaw;
-        if ($amountRaw === '' || !is_numeric($amountRaw) || (float)$amountRaw <= 0) {
-            $prnError = 'Enter a valid deposit amount.';
-        } else {
-            $generatedPrn = 'PRN' . date('YmdHis') . rand(100, 999);
-            $generatedAmount = (float)$amountRaw;
-            try {
-                $session->setFlash('success', 'PRN generated successfully: ' . $generatedPrn);
-            } catch (Exception $e) {
-            }
-        }
+$referenceTypeLabel = function ($type) {
+    $key = strtolower(trim((string)$type));
+    if ($key === 'all_pending') {
+        return 'All Pending Invoices';
     }
-    $activePrnTab = 'new_prn';
+    if ($key === 'partial_invoice') {
+        return 'Partial Invoice Payment';
+    }
+    return 'Account Deposit';
+};
+
+$latestActivePaymentRef = null;
+foreach ($activePaymentRefs as $refRow) {
+    $refType = strtolower(trim((string)($refRow['reference_type'] ?? '')));
+    if ($refType === 'all_pending' || $refType === 'partial_invoice') {
+        $latestActivePaymentRef = $refRow;
+        break;
+    }
+}
+if ($latestActivePaymentRef === null) {
+    if ($unpaidInvoicesTotal <= 0) {
+        $latestActivePaymentRef = $activePaymentRefs[0] ?? null;
+    }
 }
 
 $studentViewsPath = BASE_PATH . '/views/student/';
@@ -410,6 +711,13 @@ body { background: #f2f4f7; }
     padding: 10px;
     font-weight: 700;
 }
+.prn-generated-actions {
+    margin-top: 9px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
 .prn-list-table {
     width: 100%;
     border-collapse: collapse;
@@ -434,6 +742,9 @@ body { background: #f2f4f7; }
 .status-pill.pending { background: #fee2e2; color: #991b1b; }
 .status-pill.partial { background: #ffedd5; color: #9a3412; }
 .status-pill.overdue { background: #fef2f2; color: #b91c1c; }
+.status-pill.active-ref { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+.status-pill.expired-ref { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+.status-pill.paid-ref { background: #e0f2fe; color: #075985; border: 1px solid #7dd3fc; }
 .refs-toolbar {
     display: flex;
     align-items: center;
@@ -478,6 +789,18 @@ body { background: #f2f4f7; }
     font-weight: 700;
     font-size: 0.82rem;
     cursor: pointer;
+}
+.ref-action-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+.ref-action-row .refs-reload-btn,
+.ref-action-row .prn-generate-btn {
+    padding: 6px 10px;
+    font-size: 0.78rem;
 }
 .ref-line {
     border: 1px solid #d8dee6;
@@ -560,6 +883,257 @@ body { background: #f2f4f7; }
     color: #b42318;
     font-weight: 700;
 }
+.method-current-ref {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.method-current-prn {
+    display: inline-block;
+    background: #111827;
+    color: #f9fafb;
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 0.84rem;
+    letter-spacing: 0.03em;
+}
+.gateway-mode-warning {
+    margin-bottom: 10px;
+    border: 1px solid #f5c2c7;
+    background: #fff1f2;
+    color: #9f1239;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+.gateway-mode-warning.sandbox {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+.mobile-pay-card {
+    margin-top: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    background: #f8fafc;
+    padding: 12px;
+}
+.mobile-pay-title {
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 8px;
+}
+.mobile-pay-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+.mobile-pay-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.mobile-pay-field label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #334155;
+}
+.mobile-pay-field select,
+.mobile-pay-field input {
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 0.9rem;
+    background: #fff;
+    color: #0f172a;
+}
+.mobile-pay-actions {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.mobile-pay-check-btn {
+    border: 1px solid #94a3b8;
+    background: #fff;
+    color: #334155;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 0.86rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+.mobile-pay-status {
+    margin-top: 10px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    padding: 9px 10px;
+    font-size: 0.85rem;
+    color: #334155;
+}
+.mobile-pay-status.pending {
+    border-color: #fcd34d;
+    background: #fffbeb;
+    color: #92400e;
+}
+.mobile-pay-status.success {
+    border-color: #86efac;
+    background: #ecfdf3;
+    color: #166534;
+}
+.mobile-pay-status.error {
+    border-color: #fca5a5;
+    background: #fef2f2;
+    color: #991b1b;
+}
+.mobile-pay-meta {
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: #64748b;
+}
+.bank-proof-card {
+    margin-top: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    background: #f8fafc;
+    padding: 12px;
+}
+.bank-proof-title {
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 8px;
+}
+.bank-proof-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+.bank-proof-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.bank-proof-field.full {
+    grid-column: 1 / -1;
+}
+.bank-proof-field label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #334155;
+}
+.bank-proof-field input,
+.bank-proof-field select,
+.bank-proof-field textarea {
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 0.9rem;
+    background: #fff;
+    color: #0f172a;
+}
+.bank-proof-field textarea {
+    min-height: 76px;
+    resize: vertical;
+}
+.bank-proof-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.bank-pay-status {
+    margin-top: 10px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    padding: 9px 10px;
+    font-size: 0.85rem;
+    color: #334155;
+}
+.bank-pay-status.pending {
+    border-color: #fcd34d;
+    background: #fffbeb;
+    color: #92400e;
+}
+.bank-pay-status.success {
+    border-color: #86efac;
+    background: #ecfdf3;
+    color: #166534;
+}
+.bank-pay-status.error {
+    border-color: #fca5a5;
+    background: #fef2f2;
+    color: #991b1b;
+}
+.bank-pay-meta {
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: #64748b;
+}
+.bank-account-card {
+    margin-top: 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    background: #ffffff;
+    padding: 12px;
+}
+.bank-account-title {
+    font-size: 0.86rem;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 8px;
+}
+.bank-account-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+.bank-account-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: #f8fafc;
+}
+.bank-account-item.full {
+    grid-column: 1 / -1;
+}
+.bank-account-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #475569;
+    margin-bottom: 3px;
+}
+.bank-account-value {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.bank-copy-btn {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #1f2937;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+.bank-account-note {
+    margin-top: 8px;
+    font-size: 0.78rem;
+    color: #64748b;
+}
 
 /* Dark mode overrides for generate PRN panels */
 html[data-theme='dark'] .prn-card {
@@ -608,6 +1182,21 @@ html[data-theme='dark'] .prn-generated {
     border-color: rgba(52, 211, 153, 0.5) !important;
     color: #34d399 !important;
 }
+html[data-theme='dark'] .status-pill.active-ref {
+    background: rgba(16, 185, 129, 0.16) !important;
+    color: #6ee7b7 !important;
+    border-color: rgba(52, 211, 153, 0.5) !important;
+}
+html[data-theme='dark'] .status-pill.expired-ref {
+    background: rgba(239, 68, 68, 0.16) !important;
+    color: #fca5a5 !important;
+    border-color: rgba(248, 113, 113, 0.5) !important;
+}
+html[data-theme='dark'] .status-pill.paid-ref {
+    background: rgba(14, 165, 233, 0.16) !important;
+    color: #7dd3fc !important;
+    border-color: rgba(56, 189, 248, 0.5) !important;
+}
 html[data-theme='dark'] .notice {
     background: #3a2f14 !important;
     color: #fef3c7 !important;
@@ -622,6 +1211,21 @@ html[data-theme='dark'] .notice[style*='background: #ecfdf3'] {
     background: var(--app-surface-2) !important;
     color: #cbd5e1 !important;
     border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .status-pill.pending {
+    background: rgba(239, 68, 68, 0.18) !important;
+    color: #fca5a5 !important;
+    border: 1px solid rgba(248, 113, 113, 0.5) !important;
+}
+html[data-theme='dark'] .status-pill.partial {
+    background: rgba(245, 158, 11, 0.16) !important;
+    color: #fcd34d !important;
+    border: 1px solid rgba(251, 191, 36, 0.45) !important;
+}
+html[data-theme='dark'] .status-pill.overdue {
+    background: rgba(220, 38, 38, 0.2) !important;
+    color: #fca5a5 !important;
+    border: 1px solid rgba(248, 113, 113, 0.55) !important;
 }
 html[data-theme='dark'] .refs-toolbar {
     background: var(--app-surface-2) !important;
@@ -684,6 +1288,130 @@ html[data-theme='dark'] .mobile-money-title {
 html[data-theme='dark'] .dial-code {
     color: #fca5a5 !important;
 }
+html[data-theme='dark'] .method-current-prn {
+    background: #020617 !important;
+    color: #e2e8f0 !important;
+    border: 1px solid var(--app-border) !important;
+}
+html[data-theme='dark'] .gateway-mode-warning {
+    background: rgba(190, 24, 93, 0.18) !important;
+    color: #fbcfe8 !important;
+    border-color: rgba(244, 114, 182, 0.6) !important;
+}
+html[data-theme='dark'] .gateway-mode-warning.sandbox {
+    background: rgba(30, 64, 175, 0.25) !important;
+    color: #bfdbfe !important;
+    border-color: rgba(96, 165, 250, 0.65) !important;
+}
+html[data-theme='dark'] .mobile-pay-card {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .mobile-pay-title {
+    color: #e2e8f0 !important;
+}
+html[data-theme='dark'] .mobile-pay-field label {
+    color: #cbd5e1 !important;
+}
+html[data-theme='dark'] .mobile-pay-field select,
+html[data-theme='dark'] .mobile-pay-field input {
+    background: var(--app-surface-2) !important;
+    color: #e5e7eb !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .mobile-pay-check-btn {
+    background: var(--app-surface-2) !important;
+    color: #e2e8f0 !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .mobile-pay-status {
+    background: var(--app-surface-2) !important;
+    color: #cbd5e1 !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .mobile-pay-status.pending {
+    background: rgba(245, 158, 11, 0.16) !important;
+    color: #fcd34d !important;
+    border-color: rgba(251, 191, 36, 0.45) !important;
+}
+html[data-theme='dark'] .mobile-pay-status.success {
+    background: rgba(16, 185, 129, 0.16) !important;
+    color: #6ee7b7 !important;
+    border-color: rgba(52, 211, 153, 0.5) !important;
+}
+html[data-theme='dark'] .mobile-pay-status.error {
+    background: rgba(220, 38, 38, 0.2) !important;
+    color: #fca5a5 !important;
+    border-color: rgba(248, 113, 113, 0.55) !important;
+}
+html[data-theme='dark'] .mobile-pay-meta {
+    color: #94a3b8 !important;
+}
+html[data-theme='dark'] .bank-proof-card {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .bank-proof-title {
+    color: #e2e8f0 !important;
+}
+html[data-theme='dark'] .bank-proof-field label {
+    color: #cbd5e1 !important;
+}
+html[data-theme='dark'] .bank-proof-field input,
+html[data-theme='dark'] .bank-proof-field select,
+html[data-theme='dark'] .bank-proof-field textarea {
+    background: var(--app-surface-2) !important;
+    color: #e5e7eb !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .bank-pay-status {
+    background: var(--app-surface-2) !important;
+    color: #cbd5e1 !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .bank-pay-status.pending {
+    background: rgba(245, 158, 11, 0.16) !important;
+    color: #fcd34d !important;
+    border-color: rgba(251, 191, 36, 0.45) !important;
+}
+html[data-theme='dark'] .bank-pay-status.success {
+    background: rgba(16, 185, 129, 0.16) !important;
+    color: #6ee7b7 !important;
+    border-color: rgba(52, 211, 153, 0.5) !important;
+}
+html[data-theme='dark'] .bank-pay-status.error {
+    background: rgba(220, 38, 38, 0.2) !important;
+    color: #fca5a5 !important;
+    border-color: rgba(248, 113, 113, 0.55) !important;
+}
+html[data-theme='dark'] .bank-pay-meta {
+    color: #94a3b8 !important;
+}
+html[data-theme='dark'] .bank-account-card {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .bank-account-title {
+    color: #e2e8f0 !important;
+}
+html[data-theme='dark'] .bank-account-item {
+    background: var(--app-surface-2) !important;
+    border-color: var(--app-border) !important;
+}
+html[data-theme='dark'] .bank-account-label {
+    color: #94a3b8 !important;
+}
+html[data-theme='dark'] .bank-account-value {
+    color: #e5e7eb !important;
+}
+html[data-theme='dark'] .bank-copy-btn {
+    background: var(--app-surface-1) !important;
+    border-color: var(--app-border) !important;
+    color: #e5e7eb !important;
+}
+html[data-theme='dark'] .bank-account-note {
+    color: #94a3b8 !important;
+}
 
 @media (max-width: 1200px) {
     .chip-row {
@@ -706,6 +1434,15 @@ html[data-theme='dark'] .dial-code {
     .mobile-money-col:last-child {
         border-bottom: none;
         padding-bottom: 0;
+    }
+    .mobile-pay-grid {
+        grid-template-columns: 1fr;
+    }
+    .bank-proof-grid {
+        grid-template-columns: 1fr;
+    }
+    .bank-account-grid {
+        grid-template-columns: 1fr;
     }
 }
 </style>
@@ -802,6 +1539,15 @@ html[data-theme='dark'] .dial-code {
         <?php if (!empty($prnError)): ?>
             <div class="alert alert-danger"><?php echo e($prnError); ?></div>
         <?php endif; ?>
+        <?php if ($isMockGatewayMode || $isSandboxGatewayMode): ?>
+            <div class="gateway-mode-warning <?php echo $isSandboxGatewayMode ? 'sandbox' : 'mock'; ?>">
+                <?php if ($isSandboxGatewayMode): ?>
+                    SANDBOX MODE ACTIVE: provider API calls are enabled for test endpoints. Use sandbox credentials and a reachable webhook URL; no live collections should be used here.
+                <?php else: ?>
+                    MOCK MODE ACTIVE: mobile money prompts are simulated only. Set <code>PAYMENT_GATEWAY_MODE</code> to <code>sandbox</code> or <code>live</code> and configure provider credentials/webhook to process provider callbacks.
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
 
         <div class="prn-card">
             <div class="prn-tabs">
@@ -816,6 +1562,27 @@ html[data-theme='dark'] .dial-code {
                 <?php elseif (!empty($unpaidInvoices)): ?>
                     <div class="notice" style="background:#ecfdf3; border-color:#86efac; color:#166534;">
                         You have <?php echo count($unpaidInvoices); ?> unpaid invoice(s). Total outstanding: <?php echo $formatCurrencyForDisplay((float)$unpaidInvoicesTotal); ?>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (!empty($generatedPrn)): ?>
+                    <div class="prn-generated">
+                        <div>Generated PRN: <?php echo e($generatedPrn); ?></div>
+                        <div>Type: <?php echo e($referenceTypeLabel($generatedRefType)); ?> | Amount: <?php echo $formatCurrencyForDisplay((float)$generatedAmountUgx); ?></div>
+                        <?php if (!empty($generatedPrnExpiresAt)): ?>
+                            <div>Expires: <?php echo e(date('d M Y, h:i A', strtotime($generatedPrnExpiresAt))); ?></div>
+                        <?php endif; ?>
+                        <div class="prn-generated-actions">
+                            <button type="button" class="refs-reload-btn copy-prn-btn" data-prn="<?php echo e($generatedPrn); ?>">COPY PRN</button>
+                            <button
+                                type="button"
+                                class="prn-generate-btn open-methods-btn"
+                                data-prn="<?php echo e($generatedPrn); ?>"
+                                data-amount="<?php echo e($formatCurrencyForDisplay((float)$generatedAmountUgx)); ?>"
+                                data-type="<?php echo e($referenceTypeLabel($generatedRefType)); ?>"
+                                data-expiry="<?php echo !empty($generatedPrnExpiresAt) ? e(date('d M Y, h:i A', strtotime($generatedPrnExpiresAt))) : '-'; ?>"
+                            >PAY WITH THIS PRN</button>
+                        </div>
                     </div>
                 <?php endif; ?>
 
@@ -849,6 +1616,12 @@ html[data-theme='dark'] .dial-code {
                                     <?php endforeach; ?>
                                 </tbody>
                             </table>
+                            <form method="POST" style="margin-top:10px; display:flex; justify-content:flex-end;">
+                                <?php echo csrfField(); ?>
+                                <input type="hidden" name="action" value="generate_all_pending_prn">
+                                <input type="hidden" name="prn_tab" value="new_prn">
+                                <button type="submit" class="prn-generate-btn">GENERATE PRN FOR TOTAL</button>
+                            </form>
                         <?php else: ?>
                             No pending invoices found.
                         <?php endif; ?>
@@ -863,15 +1636,29 @@ html[data-theme='dark'] .dial-code {
                                     <tr>
                                         <th>Invoice No.</th>
                                         <th style="text-align:right;">Balance</th>
-                                        <th>Reference</th>
+                                        <th>Generate Partial PRN</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php foreach ($unpaidInvoices as $invoice): ?>
+                                        <?php
+                                            $invoiceBalanceUgx = (float)($invoice['balance'] ?? 0);
+                                            $invoiceBalanceDisplay = $convertAmountForDisplay($invoiceBalanceUgx);
+                                            $partialInputValue = number_format($invoiceBalanceDisplay, $isInternationalStudent ? 2 : 0, '.', '');
+                                        ?>
                                         <tr>
                                             <td><?php echo e($invoice['invoice_number'] ?? '-'); ?></td>
-                                            <td style="text-align:right;"><?php echo $formatCurrencyForDisplay((float)($invoice['balance'] ?? 0)); ?></td>
-                                            <td><?php echo e($invoice['invoice_number'] ?? '-'); ?></td>
+                                            <td style="text-align:right;"><?php echo $formatCurrencyForDisplay($invoiceBalanceUgx); ?></td>
+                                            <td>
+                                                <form method="POST" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                                    <?php echo csrfField(); ?>
+                                                    <input type="hidden" name="action" value="generate_partial_prn">
+                                                    <input type="hidden" name="invoice_id" value="<?php echo (int)($invoice['id'] ?? 0); ?>">
+                                                    <input type="hidden" name="prn_tab" value="new_prn">
+                                                    <input type="number" name="partial_amount" min="<?php echo $isInternationalStudent ? '0.01' : '1'; ?>" step="0.01" class="prn-input" style="width:150px;" value="<?php echo e($partialInputValue); ?>" required>
+                                                    <button type="submit" class="prn-generate-btn" style="padding:6px 10px; font-size:0.8rem;">GENERATE</button>
+                                                </form>
+                                            </td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -893,72 +1680,284 @@ html[data-theme='dark'] .dial-code {
                             <input type="hidden" name="prn_tab" value="new_prn">
                             <div>
                                 <label style="font-size:1rem; margin-bottom:6px; display:block;"><span style="color:#dc2626;">*</span> AMOUNT TO DEPOSIT (<?php echo e($studentDisplayCurrency); ?>):</label>
-                                <input type="number" name="deposit_amount" min="1" step="0.01" class="prn-input" value="<?php echo e($generatedAmount); ?>" required>
+                                <input type="number" name="deposit_amount" min="<?php echo $isInternationalStudent ? '0.01' : '1'; ?>" step="0.01" class="prn-input" value="<?php echo e($depositAmountInput); ?>" required>
                             </div>
                             <button type="submit" class="prn-generate-btn">GENERATE PRN</button>
                         </form>
-                        <?php if (!empty($generatedPrn)): ?>
-                            <div class="prn-generated">Generated PRN: <?php echo e($generatedPrn); ?> | Amount: <?php echo $formatCurrencyByStudentInput((float)$generatedAmount); ?></div>
-                        <?php endif; ?>
                     </div>
                 </div>
             </div>
 
             <div id="prnTab_payment_refs" class="prn-tab-panel" style="<?php echo $activePrnTab === 'payment_refs' ? '' : 'display:none;'; ?>">
+                <?php if (!empty($paymentRefDataError)): ?>
+                    <div class="alert alert-warning mb-2"><?php echo e($paymentRefDataError); ?></div>
+                <?php endif; ?>
+
                 <div class="refs-toolbar">
                     <div class="refs-groups">
                         <button type="button" class="refs-group-btn active" data-ref-group="active_refs">Active References (<?php echo count($activePaymentRefs); ?>)</button>
                         <button type="button" class="refs-group-btn" data-ref-group="expired_refs">Expired References (<?php echo count($expiredPaymentRefs); ?>)</button>
+                        <button type="button" class="refs-group-btn" data-ref-group="paid_refs">Paid/Used (<?php echo count($paidPaymentRefs); ?>)</button>
                     </div>
                     <button type="button" id="reloadPaymentRefsBtn" class="refs-reload-btn">RELOAD</button>
                 </div>
 
                 <div id="refGroup_active_refs">
                     <?php if (!empty($activePaymentRefs)): ?>
-                        <?php foreach ($activePaymentRefs as $ref): ?>
-                            <?php $refNumber = $ref['reference_number'] ?: ($ref['receipt_number'] ?: ($ref['payment_id'] ?? '-')); ?>
-                            <div class="ref-line">
-                                REFERENCE: <span class="red"><?php echo e($refNumber); ?></span>,
-                                AMOUNT TO PAY: <span class="red"><?php echo $formatCurrencyForDisplay((float)($ref['amount'] ?? 0)); ?></span>,
-                                EXPIRY DATE: <span class="red"><?php echo e(date('Y.m.d', strtotime($ref['expiry_date']))); ?></span>,
-                                GENERATED BY: <span class="red">SELF</span>
-                            </div>
-                        <?php endforeach; ?>
+                        <table class="prn-list-table">
+                            <thead>
+                                <tr>
+                                    <th>PRN</th>
+                                    <th>Type</th>
+                                    <th>Invoice</th>
+                                    <th style="text-align:right;">Amount</th>
+                                    <th>Expires</th>
+                                    <th>Status</th>
+                                    <th style="text-align:right;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($activePaymentRefs as $ref): ?>
+                                    <?php
+                                        $refNumber = (string)($ref['reference_number'] ?? '-');
+                                        $invoiceLabel = !empty($ref['invoice_number']) ? (string)$ref['invoice_number'] : (($ref['reference_type'] ?? '') === 'all_pending' ? 'MULTIPLE' : '-');
+                                        $expiresLabel = !empty($ref['expires_at']) ? date('d M Y, h:i A', strtotime((string)$ref['expires_at'])) : '-';
+                                        $amountLabel = $formatCurrencyForDisplay((float)($ref['amount'] ?? 0));
+                                    ?>
+                                    <?php $refTypeLabel = $referenceTypeLabel($ref['reference_type'] ?? 'deposit'); ?>
+                                    <tr>
+                                        <td><?php echo e($refNumber); ?></td>
+                                        <td><?php echo e($refTypeLabel); ?></td>
+                                        <td><?php echo e($invoiceLabel); ?></td>
+                                        <td style="text-align:right;"><?php echo $amountLabel; ?></td>
+                                        <td><?php echo e($expiresLabel); ?></td>
+                                        <td><span class="status-pill active-ref">ACTIVE</span></td>
+                                        <td style="text-align:right;">
+                                            <div class="ref-action-row">
+                                                <button type="button" class="refs-reload-btn copy-prn-btn" data-prn="<?php echo e($refNumber); ?>">COPY</button>
+                                                <button
+                                                    type="button"
+                                                    class="prn-generate-btn open-methods-btn"
+                                                    data-prn="<?php echo e($refNumber); ?>"
+                                                    data-amount="<?php echo e($amountLabel); ?>"
+                                                    data-type="<?php echo e($refTypeLabel); ?>"
+                                                    data-expiry="<?php echo e($expiresLabel); ?>"
+                                                >PAY NOW</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     <?php else: ?>
-                        <div class="notice" style="background:#eef2ff; color:#334155; border-color:#cbd5e1;">No active references.</div>
+                        <div class="notice" style="background:#eef2ff; color:#334155; border-color:#cbd5e1;">No active references. Generate a new PRN to start payment.</div>
                     <?php endif; ?>
                 </div>
 
                 <div id="refGroup_expired_refs" style="display:none;">
                     <?php if (!empty($expiredPaymentRefs)): ?>
-                        <?php foreach ($expiredPaymentRefs as $ref): ?>
-                            <?php $refNumber = $ref['reference_number'] ?: ($ref['receipt_number'] ?: ($ref['payment_id'] ?? '-')); ?>
-                            <div class="ref-line" style="opacity:0.85;">
-                                REFERENCE: <span class="red"><?php echo e($refNumber); ?></span>,
-                                AMOUNT TO PAY: <span class="red"><?php echo $formatCurrencyForDisplay((float)($ref['amount'] ?? 0)); ?></span>,
-                                EXPIRY DATE: <span class="red"><?php echo e(date('Y.m.d', strtotime($ref['expiry_date']))); ?></span>,
-                                GENERATED BY: <span class="red">SELF</span>
-                            </div>
-                        <?php endforeach; ?>
+                        <table class="prn-list-table">
+                            <thead>
+                                <tr>
+                                    <th>PRN</th>
+                                    <th>Type</th>
+                                    <th>Invoice</th>
+                                    <th style="text-align:right;">Amount</th>
+                                    <th>Expired On</th>
+                                    <th>Status</th>
+                                    <th style="text-align:right;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($expiredPaymentRefs as $ref): ?>
+                                    <?php
+                                        $refNumber = (string)($ref['reference_number'] ?? '-');
+                                        $invoiceLabel = !empty($ref['invoice_number']) ? (string)$ref['invoice_number'] : (($ref['reference_type'] ?? '') === 'all_pending' ? 'MULTIPLE' : '-');
+                                        $expiresLabel = !empty($ref['expires_at']) ? date('d M Y, h:i A', strtotime((string)$ref['expires_at'])) : '-';
+                                    ?>
+                                    <tr>
+                                        <td><?php echo e($refNumber); ?></td>
+                                        <td><?php echo e($referenceTypeLabel($ref['reference_type'] ?? 'deposit')); ?></td>
+                                        <td><?php echo e($invoiceLabel); ?></td>
+                                        <td style="text-align:right;"><?php echo $formatCurrencyForDisplay((float)($ref['amount'] ?? 0)); ?></td>
+                                        <td><?php echo e($expiresLabel); ?></td>
+                                        <td><span class="status-pill expired-ref">EXPIRED</span></td>
+                                        <td style="text-align:right;">
+                                            <button type="button" class="refs-reload-btn copy-prn-btn" data-prn="<?php echo e($refNumber); ?>">COPY</button>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     <?php else: ?>
                         <div class="notice" style="background:#f8fafc; color:#64748b; border-color:#e2e8f0;">No expired references.</div>
+                    <?php endif; ?>
+                </div>
+
+                <div id="refGroup_paid_refs" style="display:none;">
+                    <?php if (!empty($paidPaymentRefs)): ?>
+                        <table class="prn-list-table">
+                            <thead>
+                                <tr>
+                                    <th>PRN</th>
+                                    <th>Type</th>
+                                    <th style="text-align:right;">Amount</th>
+                                    <th>Paid On</th>
+                                    <th>Receipt</th>
+                                    <th>Method</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($paidPaymentRefs as $ref): ?>
+                                    <?php
+                                        $paidAmountUgx = (float)($ref['paid_amount'] ?? 0);
+                                        if ($paidAmountUgx <= 0) {
+                                            $paidAmountUgx = (float)($ref['amount'] ?? 0);
+                                        }
+                                        $methodLabel = strtoupper(str_replace('_', ' ', (string)($ref['payment_method'] ?? '-')));
+                                    ?>
+                                    <tr>
+                                        <td><?php echo e($ref['reference_number'] ?? '-'); ?></td>
+                                        <td><?php echo e($referenceTypeLabel($ref['reference_type'] ?? 'deposit')); ?></td>
+                                        <td style="text-align:right;"><?php echo $formatCurrencyForDisplay($paidAmountUgx); ?></td>
+                                        <td><?php echo !empty($ref['payment_date']) ? e(date('d M Y', strtotime((string)$ref['payment_date']))) : '-'; ?></td>
+                                        <td><?php echo e($ref['receipt_number'] ?: ($ref['payment_id'] ?? '-')); ?></td>
+                                        <td><?php echo e($methodLabel); ?></td>
+                                        <td><span class="status-pill paid-ref">PAID</span></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php else: ?>
+                        <div class="notice" style="background:#f8fafc; color:#64748b; border-color:#e2e8f0;">No paid references yet.</div>
                     <?php endif; ?>
                 </div>
             </div>
             <div id="prnTab_payment_methods" class="prn-tab-panel" style="<?php echo $activePrnTab === 'payment_methods' ? '' : 'display:none;'; ?>">
                 <div class="methods-wrap">
+                    <?php
+                        $methodHasSeed = !empty($latestActivePaymentRef);
+                        $methodSeedPrn = '';
+                        $methodSeedAmount = '-';
+                        $methodSeedExpiry = '-';
+                        $methodSeedType = '-';
+                        if ($methodHasSeed) {
+                            $methodSeedPrn = (string)($latestActivePaymentRef['reference_number'] ?? '');
+                            $methodSeedAmount = $formatCurrencyForDisplay((float)($latestActivePaymentRef['amount'] ?? 0));
+                            $methodSeedExpiry = !empty($latestActivePaymentRef['expires_at']) ? date('d M Y, h:i A', strtotime((string)$latestActivePaymentRef['expires_at'])) : '-';
+                            $methodSeedType = $referenceTypeLabel((string)($latestActivePaymentRef['reference_type'] ?? 'deposit'));
+                        }
+                    ?>
+                    <div
+                        id="methodCurrentRefBox"
+                        class="notice method-current-ref"
+                        style="background:#ecfdf3; border-color:#86efac; color:#166534; <?php echo $methodHasSeed ? '' : 'display:none;'; ?>"
+                    >
+                        <div>
+                            Current PRN:
+                            <span id="methodCurrentPrn" class="method-current-prn"><?php echo e($methodSeedPrn); ?></span>
+                            | Type:
+                            <strong id="methodCurrentType"><?php echo e($methodSeedType); ?></strong>
+                            | Amount:
+                            <strong id="methodCurrentAmount"><?php echo e($methodSeedAmount); ?></strong>
+                            | Expires:
+                            <strong id="methodCurrentExpiry"><?php echo e($methodSeedExpiry); ?></strong>
+                        </div>
+                        <button type="button" id="methodCurrentCopyBtn" class="refs-reload-btn copy-prn-btn" data-prn="<?php echo e($methodSeedPrn); ?>">COPY PRN</button>
+                    </div>
+                    <div
+                        id="methodNoPrnNotice"
+                        class="notice"
+                        style="background:#fef3c7; border-color:#f3d88c; color:#7c5f14; <?php echo $methodHasSeed ? 'display:none;' : ''; ?>"
+                    >
+                        You do not have an active PRN yet.
+                        <button type="button" class="prn-generate-btn" data-open-prn-tab="new_prn" style="margin-left:8px; padding:6px 10px; font-size:0.8rem;">GENERATE PRN</button>
+                    </div>
+
                     <div class="methods-tabs">
-                        <button type="button" class="method-btn active" data-method-tab="bank">HOW TO PAY WITH MOBILE MONEY</button>
+                        <button type="button" class="method-btn active" data-method-tab="bank">HOW TO PAY AT BANK</button>
                         <button type="button" class="method-btn" data-method-tab="mobile">HOW TO PAY WITH MOBILE MONEY</button>
                         <button type="button" class="method-btn" data-method-tab="visa">HOW TO PAY WITH VISA</button>
                     </div>
 
                     <div id="methodPanel_bank" class="method-panel active">
                         <ol class="method-list">
-                            <li>Visit Your Nearest Bank</li>
-                            <li>Provide Your Details (Email, Phone Number etc) and Payment Reference Number (PRN)</li>
-                            <li>Confirm Payment Status</li>
+                            <li>Visit your preferred bank branch or banking app.</li>
+                            <li>Share your active Payment Reference Number (PRN) and payment amount.</li>
+                            <li>Keep the bank receipt and then confirm status in CHECK PRN STATUS.</li>
                         </ol>
+                        <div class="bank-account-card">
+                            <div class="bank-account-title">INSTITUTION BANK DETAILS</div>
+                            <div class="bank-account-grid">
+                                <div class="bank-account-item full">
+                                    <div class="bank-account-label">Account Name</div>
+                                    <div class="bank-account-value"><?php echo e($institutionBankAccountName !== '' ? $institutionBankAccountName : 'NOT SET'); ?></div>
+                                </div>
+                                <div class="bank-account-item">
+                                    <div class="bank-account-label">Account Number</div>
+                                    <div class="bank-account-value">
+                                        <span><?php echo e($institutionBankAccountNumber !== '' ? $institutionBankAccountNumber : 'NOT SET'); ?></span>
+                                        <?php if ($institutionBankAccountNumber !== ''): ?>
+                                            <button type="button" class="bank-copy-btn copy-bank-detail-btn" data-copy="<?php echo e($institutionBankAccountNumber); ?>">COPY</button>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                <div class="bank-account-item">
+                                    <div class="bank-account-label">Branch</div>
+                                    <div class="bank-account-value"><?php echo e($institutionBankBranch !== '' ? $institutionBankBranch : 'NOT SET'); ?></div>
+                                </div>
+                                <div class="bank-account-item">
+                                    <div class="bank-account-label">SWIFT Code</div>
+                                    <div class="bank-account-value">
+                                        <span><?php echo e($institutionBankSwift !== '' ? $institutionBankSwift : 'NOT SET'); ?></span>
+                                        <?php if ($institutionBankSwift !== ''): ?>
+                                            <button type="button" class="bank-copy-btn copy-bank-detail-btn" data-copy="<?php echo e($institutionBankSwift); ?>">COPY</button>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bank-account-note">Set values in <code>config.php</code>: <code>BANK_ACCOUNT_NAME</code>, <code>BANK_ACCOUNT_NUMBER</code>, <code>BANK_BRANCH</code>, <code>BANK_SWIFT</code>.</div>
+                        </div>
+                        <div class="bank-proof-card">
+                            <div class="bank-proof-title">SUBMIT BANK TRANSFER PROOF / REFERENCE</div>
+                            <div class="bank-proof-grid">
+                                <div class="bank-proof-field">
+                                    <label for="bankPaymentMethod">Payment Channel</label>
+                                    <select id="bankPaymentMethod">
+                                        <option value="bank_agent" selected>Bank Agent (All Agents)</option>
+                                        <option value="cente_agent">CenteAgent</option>
+                                        <option value="bank_transfer">Bank Branch / Bank App Transfer</option>
+                                    </select>
+                                </div>
+                                <div class="bank-proof-field">
+                                    <label for="bankTransferBankName">Bank Name</label>
+                                    <input type="text" id="bankTransferBankName" placeholder="e.g. Stanbic Bank">
+                                </div>
+                                <div class="bank-proof-field">
+                                    <label for="bankTransferRef">Transfer/Receipt Reference</label>
+                                    <input type="text" id="bankTransferRef" placeholder="e.g. BTRX9482211">
+                                </div>
+                                <div class="bank-proof-field">
+                                    <label for="bankTransferAmount">Amount Paid (UGX)</label>
+                                    <input type="number" min="1" step="0.01" id="bankTransferAmount" placeholder="e.g. 700000">
+                                </div>
+                                <div class="bank-proof-field">
+                                    <label for="bankDepositorName">Depositor Name (Optional)</label>
+                                    <input type="text" id="bankDepositorName" placeholder="Name on bank slip">
+                                </div>
+                                <div class="bank-proof-field full">
+                                    <label for="bankTransferNotes">Notes / Proof Details (Optional)</label>
+                                    <textarea id="bankTransferNotes" placeholder="Branch, date/time, teller details, or any proof context"></textarea>
+                                </div>
+                            </div>
+                            <div class="bank-proof-actions">
+                                <button type="button" id="bankSubmitBtn" class="prn-generate-btn">SUBMIT FOR VERIFICATION</button>
+                                <button type="button" id="bankCheckStatusBtn" class="mobile-pay-check-btn">CHECK STATUS NOW</button>
+                            </div>
+                            <div id="bankPayStatus" class="bank-pay-status">Submit your bank transfer proof so finance can verify and post it to your ledger.</div>
+                            <div id="bankPayMeta" class="bank-pay-meta"></div>
+                        </div>
                     </div>
 
                     <div id="methodPanel_mobile" class="method-panel">
@@ -967,28 +1966,55 @@ html[data-theme='dark'] .dial-code {
                                 <div class="mobile-money-title">PAY WITH MTN MOBILE MONEY</div>
                                 <ol class="method-list">
                                     <li>Dial <span class="dial-code">*165*18#</span></li>
-                                    <li>Follow Prompts and enter Payment Reference Number (PRN)</li>
-                                    <li>Confirm Payment recipient</li>
+                                    <li>Follow prompts and enter your Payment Reference Number (PRN)</li>
+                                    <li>Confirm recipient and complete payment</li>
                                 </ol>
                             </div>
                             <div class="mobile-money-col">
                                 <div class="mobile-money-title">PAY WITH AIRTEL MONEY</div>
                                 <ol class="method-list">
                                     <li>Dial <span class="dial-code">*165*4*7*1#</span></li>
-                                    <li>Follow Prompts and enter Payment Reference Number (PRN)</li>
-                                    <li>Confirm Payment recipient</li>
+                                    <li>Follow prompts and enter your Payment Reference Number (PRN)</li>
+                                    <li>Confirm recipient and complete payment</li>
                                 </ol>
                             </div>
+                        </div>
+                        <div class="mobile-pay-card">
+                            <div class="mobile-pay-title">INSTANT MOBILE MONEY PAYMENT REQUEST</div>
+                            <div class="mobile-pay-grid">
+                                <div class="mobile-pay-field">
+                                    <label for="mobilePayProvider">Provider</label>
+                                    <select id="mobilePayProvider">
+                                        <option value="mtn">MTN Mobile Money</option>
+                                        <option value="airtel">Airtel Money</option>
+                                    </select>
+                                </div>
+                                <div class="mobile-pay-field">
+                                    <label for="mobilePayPhone">Phone Number (MSISDN)</label>
+                                    <input type="tel" id="mobilePayPhone" placeholder="e.g. 0782123456 / 0772123456 or 256782123456">
+                                </div>
+                            </div>
+                            <div class="mobile-pay-actions">
+                                <button type="button" id="mobileInitiateBtn" class="prn-generate-btn">REQUEST PAYMENT PROMPT</button>
+                                <button type="button" id="mobileCheckStatusBtn" class="mobile-pay-check-btn">CHECK STATUS NOW</button>
+                            </div>
+                            <div id="mobilePayStatus" class="mobile-pay-status">Select provider and phone number, then request payment for the current PRN.</div>
+                            <div id="mobilePayMeta" class="mobile-pay-meta"></div>
                         </div>
                     </div>
 
                     <div id="methodPanel_visa" class="method-panel">
                         <ol class="method-list">
-                            <li>Use a secure card payment channel approved by the institution</li>
-                            <li>Enter your card details and the Payment Reference Number (PRN)</li>
-                            <li>Authorize the transaction (OTP/3D Secure)</li>
-                            <li>Confirm payment status after successful processing</li>
+                            <li>Use an approved secure card payment channel.</li>
+                            <li>Enter your card details and the Payment Reference Number (PRN).</li>
+                            <li>Authorize the transaction (OTP/3D Secure).</li>
+                            <li>After payment, confirm status from CHECK PRN STATUS.</li>
                         </ol>
+                    </div>
+
+                    <div class="notice" style="margin-top:10px; background:#eef2ff; color:#334155; border-color:#cbd5e1;">
+                        After payment, finance verifies and posts to your ledger.
+                        <a href="payments.php?section=transactions&tx_tab=check_prn" style="font-weight:700; color:#1d4ed8; text-decoration:underline;">CHECK PRN STATUS</a>
                     </div>
                 </div>
             </div>
@@ -997,6 +2023,13 @@ html[data-theme='dark'] .dial-code {
 </div>
 
 <script>
+var mobilePayConfig = <?php echo json_encode([
+    'initiate_url' => BASE_URL . '/api/payments/initiate.php',
+    'bank_submit_url' => BASE_URL . '/api/payments/bank_submit.php',
+    'status_url' => BASE_URL . '/api/payments/status.php',
+    'csrf_token' => Security::generateCSRFToken()
+], JSON_UNESCAPED_SLASHES); ?>;
+
 document.getElementById('menuBtn').addEventListener('click', function() {
     var sidebar = document.querySelector('.student-sidebar');
     var main = document.querySelector('.main-content');
@@ -1014,14 +2047,42 @@ document.addEventListener('click', function() {
     if (menu) menu.style.display = 'none';
 });
 
+function openPrnTab(target) {
+    if (!target) return;
+    document.querySelectorAll('.prn-tab').forEach(function(t) {
+        if (t.getAttribute('data-prn-tab') === target) {
+            t.classList.add('active');
+        } else {
+            t.classList.remove('active');
+        }
+    });
+    document.querySelectorAll('.prn-tab-panel').forEach(function(p) {
+        p.style.display = 'none';
+    });
+    var panel = document.getElementById('prnTab_' + target);
+    if (panel) {
+        panel.style.display = '';
+    }
+}
+
+function activateMethodTab(key) {
+    if (!key) return;
+    document.querySelectorAll('.method-btn').forEach(function(b) { b.classList.remove('active'); });
+    document.querySelectorAll('.method-panel').forEach(function(p) { p.classList.remove('active'); });
+    document.querySelectorAll('.method-btn').forEach(function(btn) {
+        if (btn.getAttribute('data-method-tab') === key) {
+            btn.classList.add('active');
+        }
+    });
+    var panel = document.getElementById('methodPanel_' + key);
+    if (panel) {
+        panel.classList.add('active');
+    }
+}
+
 document.querySelectorAll('.prn-tab').forEach(function(tab) {
     tab.addEventListener('click', function() {
-        var target = tab.getAttribute('data-prn-tab');
-        document.querySelectorAll('.prn-tab').forEach(function(t) { t.classList.remove('active'); });
-        document.querySelectorAll('.prn-tab-panel').forEach(function(p) { p.style.display = 'none'; });
-        tab.classList.add('active');
-        var panel = document.getElementById('prnTab_' + target);
-        if (panel) panel.style.display = '';
+        openPrnTab(tab.getAttribute('data-prn-tab'));
     });
 });
 
@@ -1060,16 +2121,518 @@ document.querySelectorAll('.refs-group-btn').forEach(function(btn) {
     });
 });
 
+function setMethodCurrentReference(prn, amountLabel, typeLabel, expiryLabel) {
+    var currentBox = document.getElementById('methodCurrentRefBox');
+    var noPrnNotice = document.getElementById('methodNoPrnNotice');
+    var prnEl = document.getElementById('methodCurrentPrn');
+    var typeEl = document.getElementById('methodCurrentType');
+    var amountEl = document.getElementById('methodCurrentAmount');
+    var expiryEl = document.getElementById('methodCurrentExpiry');
+    var copyBtn = document.getElementById('methodCurrentCopyBtn');
+    if (prnEl && prn) {
+        prnEl.textContent = prn;
+    }
+    if (typeEl && typeLabel) {
+        typeEl.textContent = typeLabel;
+    }
+    if (amountEl && amountLabel) {
+        amountEl.textContent = amountLabel;
+    }
+    if (expiryEl && expiryLabel) {
+        expiryEl.textContent = expiryLabel;
+    }
+    if (copyBtn && prn) {
+        copyBtn.setAttribute('data-prn', prn);
+    }
+    if (currentBox) {
+        currentBox.style.display = '';
+    }
+    if (noPrnNotice) {
+        noPrnNotice.style.display = 'none';
+    }
+    setMobilePayMeta('');
+    setBankPayMeta('');
+}
+
+var mobilePollTimer = null;
+var mobilePollAttempts = 0;
+var mobilePollMaxAttempts = 15;
+var mobileInitiateBtn = document.getElementById('mobileInitiateBtn');
+var mobileCheckStatusBtn = document.getElementById('mobileCheckStatusBtn');
+var mobileProviderInput = document.getElementById('mobilePayProvider');
+var mobilePhoneInput = document.getElementById('mobilePayPhone');
+var mobilePayStatusEl = document.getElementById('mobilePayStatus');
+var mobilePayMetaEl = document.getElementById('mobilePayMeta');
+var bankSubmitBtn = document.getElementById('bankSubmitBtn');
+var bankCheckStatusBtn = document.getElementById('bankCheckStatusBtn');
+var bankPaymentMethodInput = document.getElementById('bankPaymentMethod');
+var bankBankNameInput = document.getElementById('bankTransferBankName');
+var bankTransferRefInput = document.getElementById('bankTransferRef');
+var bankTransferAmountInput = document.getElementById('bankTransferAmount');
+var bankDepositorNameInput = document.getElementById('bankDepositorName');
+var bankTransferNotesInput = document.getElementById('bankTransferNotes');
+var bankPayStatusEl = document.getElementById('bankPayStatus');
+var bankPayMetaEl = document.getElementById('bankPayMeta');
+
+function updateMobilePhonePlaceholder() {
+    if (!mobilePhoneInput) return;
+    var provider = mobileProviderInput ? (mobileProviderInput.value || 'mtn').toLowerCase() : 'mtn';
+    if (provider === 'airtel') {
+        mobilePhoneInput.placeholder = 'e.g. 0752123456 / 0742123456 or 256752123456';
+    } else {
+        mobilePhoneInput.placeholder = 'e.g. 0782123456 / 0772123456 or 256782123456';
+    }
+}
+
+function getCurrentPrnForPayment() {
+    var prnEl = document.getElementById('methodCurrentPrn');
+    if (!prnEl) return '';
+    return (prnEl.textContent || '').trim();
+}
+
+function setMobilePayStatus(message, mode) {
+    if (!mobilePayStatusEl) return;
+    mobilePayStatusEl.classList.remove('pending', 'success', 'error');
+    if (mode === 'pending' || mode === 'success' || mode === 'error') {
+        mobilePayStatusEl.classList.add(mode);
+    }
+    mobilePayStatusEl.textContent = message || '';
+}
+
+function setMobilePayMeta(message) {
+    if (!mobilePayMetaEl) return;
+    mobilePayMetaEl.textContent = message || '';
+}
+
+function setBankPayStatus(message, mode) {
+    if (!bankPayStatusEl) return;
+    bankPayStatusEl.classList.remove('pending', 'success', 'error');
+    if (mode === 'pending' || mode === 'success' || mode === 'error') {
+        bankPayStatusEl.classList.add(mode);
+    }
+    bankPayStatusEl.textContent = message || '';
+}
+
+function setBankPayMeta(message) {
+    if (!bankPayMetaEl) return;
+    bankPayMetaEl.textContent = message || '';
+}
+
+function clearMobilePolling() {
+    if (mobilePollTimer) {
+        clearInterval(mobilePollTimer);
+        mobilePollTimer = null;
+    }
+    mobilePollAttempts = 0;
+}
+
+function isTerminalTransactionStatus(statusValue) {
+    var status = (statusValue || '').toString().toLowerCase();
+    if (!status) return false;
+    return ['posted', 'paid', 'successful', 'failed', 'cancelled', 'expired'].indexOf(status) !== -1;
+}
+
+function formatStatusLine(data) {
+    if (!data || typeof data !== 'object') {
+        return '';
+    }
+    var refStatus = (data.reference_status || '').toString().toUpperCase();
+    var txStatus = (data.transaction_status || '').toString().toUpperCase();
+    var providerStatus = (data.provider_status || '').toString().toUpperCase();
+    var bankStatus = (data.bank_status || '').toString().toUpperCase();
+    var bankPaymentMethod = (data.bank_payment_method || '').toString().toUpperCase();
+    var channel = (data.transaction_channel || '').toString().toUpperCase();
+    var transferReference = (data.transfer_reference || '').toString();
+    var receipt = (data.receipt_number || data.payment_id || '').toString();
+    var parts = [];
+    if (refStatus) parts.push('PRN: ' + refStatus);
+    if (channel) parts.push('Channel: ' + channel.replace('_', ' '));
+    if (txStatus) parts.push('TX: ' + txStatus);
+    if (bankPaymentMethod) parts.push('Bank Method: ' + bankPaymentMethod.replace('_', ' '));
+    if (bankStatus && !txStatus) parts.push('Bank: ' + bankStatus);
+    if (providerStatus) parts.push('Provider: ' + providerStatus);
+    if (transferReference) parts.push('Bank Ref: ' + transferReference);
+    if (receipt) parts.push('Receipt: ' + receipt);
+    return parts.join(' | ');
+}
+
+function checkCurrentPrnStatus(options) {
+    options = options || {};
+    var silent = options.silent === true;
+    var prn = getCurrentPrnForPayment();
+    if (!prn) {
+        if (!silent) {
+            setMobilePayStatus('No active PRN selected. Choose a PRN first.', 'error');
+        }
+        return Promise.resolve(null);
+    }
+
+    var url = (mobilePayConfig.status_url || '') + '?reference_number=' + encodeURIComponent(prn);
+    return fetch(url, {
+        method: 'GET',
+        credentials: 'same-origin'
+    }).then(function(res) {
+        return res.json().catch(function() {
+            return { success: false, message: 'Invalid status response.' };
+        });
+    }).then(function(payload) {
+        if (!payload || payload.success !== true) {
+            if (!silent) {
+                setMobilePayStatus((payload && payload.message) ? payload.message : 'Unable to check PRN status right now.', 'error');
+            }
+            return payload;
+        }
+
+        var row = payload.data || {};
+        var txStatus = (row.transaction_status || '').toString().toLowerCase();
+        var refStatus = (row.reference_status || '').toString().toLowerCase();
+        var channel = (row.transaction_channel || '').toString().toLowerCase();
+        var stageText = (row.status_stage || '').toString();
+        var mainStatus = txStatus || refStatus;
+        var statusLine = formatStatusLine(row);
+
+        if (mainStatus === 'posted' || refStatus === 'paid' || mainStatus === 'paid') {
+            setMobilePayStatus('Payment confirmed and posted to your ledger.', 'success');
+            if (statusLine) setMobilePayMeta(statusLine);
+            setBankPayStatus(stageText || 'Payment confirmed and posted to your ledger.', 'success');
+            if (statusLine) setBankPayMeta(statusLine);
+            clearMobilePolling();
+            return payload;
+        }
+
+        if (channel === 'bank_transfer') {
+            if (mainStatus === 'received') {
+                setBankPayStatus(stageText || 'Bank transfer proof received. Awaiting finance verification.', 'pending');
+                if (statusLine) setBankPayMeta(statusLine);
+                if (!silent) {
+                    setMobilePayStatus(stageText || 'Bank transfer proof received. Awaiting finance verification.', 'pending');
+                    if (statusLine) setMobilePayMeta(statusLine);
+                }
+                clearMobilePolling();
+                return payload;
+            }
+            if (mainStatus === 'verified') {
+                setBankPayStatus(stageText || 'Bank transfer verified. Posting to ledger.', 'pending');
+                if (statusLine) setBankPayMeta(statusLine);
+                if (!silent) {
+                    setMobilePayStatus(stageText || 'Bank transfer verified. Posting to ledger.', 'pending');
+                    if (statusLine) setMobilePayMeta(statusLine);
+                }
+                clearMobilePolling();
+                return payload;
+            }
+            if (mainStatus === 'failed') {
+                setBankPayStatus(stageText || 'Bank transfer verification failed. Contact finance office.', 'error');
+                if (statusLine) setBankPayMeta(statusLine);
+                if (!silent) {
+                    setMobilePayStatus(stageText || 'Bank transfer verification failed. Contact finance office.', 'error');
+                    if (statusLine) setMobilePayMeta(statusLine);
+                }
+                clearMobilePolling();
+                return payload;
+            }
+        }
+
+        if (mainStatus === 'successful') {
+            setMobilePayStatus('Payment is successful and pending ledger posting.', 'pending');
+            if (statusLine) setMobilePayMeta(statusLine);
+            return payload;
+        }
+        if (mainStatus === 'failed' || mainStatus === 'cancelled' || mainStatus === 'expired') {
+            setMobilePayStatus('Payment request ended with status: ' + mainStatus.toUpperCase() + '.', 'error');
+            if (statusLine) setMobilePayMeta(statusLine);
+            clearMobilePolling();
+            return payload;
+        }
+
+        if (!silent) {
+            if (channel === 'bank_transfer') {
+                setMobilePayStatus(stageText || ('Bank transfer status: ' + (mainStatus ? mainStatus.toUpperCase() : 'PENDING') + '.'), 'pending');
+                setBankPayStatus(stageText || ('Bank transfer status: ' + (mainStatus ? mainStatus.toUpperCase() : 'PENDING') + '.'), 'pending');
+            } else {
+                setMobilePayStatus('Payment status: ' + (mainStatus ? mainStatus.toUpperCase() : 'PENDING') + '. Keep your phone on for the prompt.', 'pending');
+            }
+            if (statusLine) setMobilePayMeta(statusLine);
+            if (statusLine) setBankPayMeta(statusLine);
+        } else if (statusLine) {
+            setMobilePayMeta(statusLine);
+            setBankPayMeta(statusLine);
+        }
+
+        return payload;
+    }).catch(function() {
+        if (!silent) {
+            setMobilePayStatus('Network issue while checking PRN status.', 'error');
+        }
+        return null;
+    });
+}
+
+function startStatusPolling() {
+    clearMobilePolling();
+    mobilePollAttempts = 0;
+    mobilePollTimer = setInterval(function() {
+        mobilePollAttempts += 1;
+        checkCurrentPrnStatus({ silent: true }).then(function(payload) {
+            var row = (payload && payload.data) ? payload.data : {};
+            var txStatus = (row.transaction_status || '').toString().toLowerCase();
+            var refStatus = (row.reference_status || '').toString().toLowerCase();
+            var channel = (row.transaction_channel || '').toString().toLowerCase();
+            var mergedStatus = txStatus || refStatus;
+
+            if (isTerminalTransactionStatus(mergedStatus) || refStatus === 'paid') {
+                clearMobilePolling();
+                return;
+            }
+            if (channel === 'bank_transfer' && ['received', 'verified', 'failed'].indexOf(mergedStatus) !== -1) {
+                clearMobilePolling();
+                return;
+            }
+
+            if (mobilePollAttempts >= mobilePollMaxAttempts) {
+                clearMobilePolling();
+                setMobilePayStatus('Still waiting for payment confirmation. You can check again in a few moments.', 'pending');
+                return;
+            }
+        });
+    }, 8000);
+}
+
+function copyPlainText(text, done) {
+    if (!text) {
+        if (typeof done === 'function') done(false);
+        return;
+    }
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(text).then(function() {
+            if (typeof done === 'function') done(true);
+        }).catch(function() {
+            if (typeof done === 'function') done(false);
+        });
+        return;
+    }
+
+    try {
+        var helper = document.createElement('textarea');
+        helper.value = text;
+        helper.setAttribute('readonly', '');
+        helper.style.position = 'fixed';
+        helper.style.opacity = '0';
+        document.body.appendChild(helper);
+        helper.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(helper);
+        if (typeof done === 'function') done(ok);
+    } catch (e) {
+        if (typeof done === 'function') done(false);
+    }
+}
+
+document.querySelectorAll('.copy-prn-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        var originalLabel = btn.textContent;
+        var prn = btn.getAttribute('data-prn') || '';
+        copyPlainText(prn, function(ok) {
+            btn.textContent = ok ? 'COPIED' : 'COPY FAILED';
+            setTimeout(function() {
+                btn.textContent = originalLabel;
+            }, 1200);
+        });
+    });
+});
+
+document.querySelectorAll('.copy-bank-detail-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        var originalLabel = btn.textContent;
+        var value = btn.getAttribute('data-copy') || '';
+        copyPlainText(value, function(ok) {
+            btn.textContent = ok ? 'COPIED' : 'FAILED';
+            setTimeout(function() {
+                btn.textContent = originalLabel;
+            }, 1200);
+        });
+    });
+});
+
+document.querySelectorAll('.open-methods-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        var prn = btn.getAttribute('data-prn') || '';
+        var amount = btn.getAttribute('data-amount') || '';
+        var type = btn.getAttribute('data-type') || '';
+        var expiry = btn.getAttribute('data-expiry') || '';
+        setMethodCurrentReference(prn, amount, type, expiry);
+        openPrnTab('payment_methods');
+        activateMethodTab('mobile');
+        setMobilePayStatus('PRN selected. Enter phone number and request payment prompt.', 'pending');
+        setMobilePayMeta('');
+        setBankPayStatus('Submit your bank transfer proof so finance can verify and post it to your ledger.', 'pending');
+        setBankPayMeta('');
+    });
+});
+
+document.querySelectorAll('[data-open-prn-tab]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        var tab = btn.getAttribute('data-open-prn-tab') || '';
+        openPrnTab(tab);
+    });
+});
+
+if (mobileInitiateBtn) {
+    mobileInitiateBtn.addEventListener('click', function() {
+        var prn = getCurrentPrnForPayment();
+        var provider = mobileProviderInput ? (mobileProviderInput.value || 'mtn') : 'mtn';
+        var phone = mobilePhoneInput ? (mobilePhoneInput.value || '').trim() : '';
+
+        if (!prn) {
+            setMobilePayStatus('No active PRN selected. Use PAY NOW on a reference first.', 'error');
+            return;
+        }
+        if (!phone) {
+            setMobilePayStatus('Enter a mobile money phone number first.', 'error');
+            return;
+        }
+
+        mobileInitiateBtn.disabled = true;
+        var originalLabel = mobileInitiateBtn.textContent;
+        mobileInitiateBtn.textContent = 'SENDING REQUEST...';
+        setMobilePayStatus('Submitting payment request to ' + provider.toUpperCase() + '...', 'pending');
+        setMobilePayMeta('');
+
+        fetch(mobilePayConfig.initiate_url || '', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': mobilePayConfig.csrf_token || ''
+            },
+            body: JSON.stringify({
+                reference_number: prn,
+                msisdn: phone,
+                provider: provider,
+                csrf_token: mobilePayConfig.csrf_token || ''
+            })
+        }).then(function(res) {
+            return res.json().catch(function() {
+                return { success: false, message: 'Invalid initiation response.' };
+            });
+        }).then(function(payload) {
+            if (!payload || payload.success !== true) {
+                setMobilePayStatus((payload && payload.message) ? payload.message : 'Payment request was not accepted.', 'error');
+                return;
+            }
+
+            var txRef = (payload.transaction_ref || '').toString();
+            var providerStatus = (payload.provider_status || '').toString().toUpperCase();
+            setMobilePayStatus('Prompt sent. Approve the request on your phone.', 'pending');
+            setMobilePayMeta((txRef ? 'TX: ' + txRef + ' | ' : '') + 'Provider: ' + (providerStatus || 'PENDING'));
+            startStatusPolling();
+            checkCurrentPrnStatus({ silent: false });
+        }).catch(function() {
+            setMobilePayStatus('Network issue while sending payment request.', 'error');
+        }).finally(function() {
+            mobileInitiateBtn.disabled = false;
+            mobileInitiateBtn.textContent = originalLabel;
+        });
+    });
+}
+
+if (mobileCheckStatusBtn) {
+    mobileCheckStatusBtn.addEventListener('click', function() {
+        checkCurrentPrnStatus({ silent: false }).then(function(payload) {
+            var row = (payload && payload.data) ? payload.data : {};
+            var txStatus = (row.transaction_status || '').toString().toLowerCase();
+            var refStatus = (row.reference_status || '').toString().toLowerCase();
+            if (txStatus && !isTerminalTransactionStatus(txStatus) && refStatus !== 'paid') {
+                startStatusPolling();
+            }
+        });
+    });
+}
+
+if (bankSubmitBtn) {
+    bankSubmitBtn.addEventListener('click', function() {
+        var prn = getCurrentPrnForPayment();
+        var paymentMethod = bankPaymentMethodInput ? (bankPaymentMethodInput.value || 'bank_agent') : 'bank_agent';
+        var bankName = bankBankNameInput ? (bankBankNameInput.value || '').trim() : '';
+        var transferReference = bankTransferRefInput ? (bankTransferRefInput.value || '').trim() : '';
+        var amount = bankTransferAmountInput ? (bankTransferAmountInput.value || '').trim() : '';
+        var depositorName = bankDepositorNameInput ? (bankDepositorNameInput.value || '').trim() : '';
+        var notes = bankTransferNotesInput ? (bankTransferNotesInput.value || '').trim() : '';
+
+        if (!prn) {
+            setBankPayStatus('No active PRN selected. Use PAY NOW on a reference first.', 'error');
+            return;
+        }
+        if (!transferReference) {
+            setBankPayStatus('Enter the bank transfer/receipt reference.', 'error');
+            return;
+        }
+
+        bankSubmitBtn.disabled = true;
+        var originalLabel = bankSubmitBtn.textContent;
+        bankSubmitBtn.textContent = 'SUBMITTING...';
+        setBankPayStatus('Submitting bank transfer proof for verification...', 'pending');
+        setBankPayMeta('');
+
+        fetch(mobilePayConfig.bank_submit_url || '', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': mobilePayConfig.csrf_token || ''
+            },
+            body: JSON.stringify({
+                reference_number: prn,
+                payment_method: paymentMethod,
+                bank_name: bankName,
+                transfer_reference: transferReference,
+                amount_submitted: amount,
+                depositor_name: depositorName,
+                notes: notes,
+                csrf_token: mobilePayConfig.csrf_token || ''
+            })
+        }).then(function(res) {
+            return res.json().catch(function() {
+                return { success: false, message: 'Invalid submission response.' };
+            });
+        }).then(function(payload) {
+            if (!payload || payload.success !== true) {
+                setBankPayStatus((payload && payload.message) ? payload.message : 'Submission was not accepted.', 'error');
+                return;
+            }
+
+            var txRef = (payload.transaction_ref || '').toString();
+            setBankPayStatus((payload.message || 'Bank transfer proof received. Awaiting finance verification.'), 'pending');
+            if (txRef) {
+                setBankPayMeta('Bank TX: ' + txRef);
+            }
+            checkCurrentPrnStatus({ silent: false });
+        }).catch(function() {
+            setBankPayStatus('Network issue while submitting bank transfer proof.', 'error');
+        }).finally(function() {
+            bankSubmitBtn.disabled = false;
+            bankSubmitBtn.textContent = originalLabel;
+        });
+    });
+}
+
+if (bankCheckStatusBtn) {
+    bankCheckStatusBtn.addEventListener('click', function() {
+        checkCurrentPrnStatus({ silent: false });
+    });
+}
+
+if (mobileProviderInput) {
+    mobileProviderInput.addEventListener('change', updateMobilePhonePlaceholder);
+}
+updateMobilePhonePlaceholder();
+setBankPayStatus('Submit your bank transfer proof so finance can verify and post it to your ledger.', 'pending');
+
 document.querySelectorAll('.method-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
         var key = btn.getAttribute('data-method-tab');
-        document.querySelectorAll('.method-btn').forEach(function(b) { b.classList.remove('active'); });
-        document.querySelectorAll('.method-panel').forEach(function(p) { p.classList.remove('active'); });
-        btn.classList.add('active');
-        var panel = document.getElementById('methodPanel_' + key);
-        if (panel) {
-            panel.classList.add('active');
-        }
+        activateMethodTab(key);
     });
 });
 </script>

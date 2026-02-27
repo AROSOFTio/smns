@@ -442,9 +442,13 @@ $normalizeGeo = function ($value) {
 $countryNorm = $normalizeGeo($studentCountryForCurrency);
 $nationalityNorm = $normalizeGeo($studentNationalityForCurrency);
 $ugandaTokens = ['uganda', 'ugandan', 'ug'];
-$isUgandanStudent = in_array($countryNorm, $ugandaTokens, true)
-    || in_array($nationalityNorm, $ugandaTokens, true);
-if ($countryNorm === '' && $nationalityNorm === '') {
+$isUgandanStudent = false;
+if ($nationalityNorm !== '') {
+    // Nationality takes priority for fee display currency.
+    $isUgandanStudent = in_array($nationalityNorm, $ugandaTokens, true);
+} elseif ($countryNorm !== '') {
+    $isUgandanStudent = in_array($countryNorm, $ugandaTokens, true);
+} else {
     $isUgandanStudent = true;
 }
 $isInternationalStudent = !$isUgandanStudent;

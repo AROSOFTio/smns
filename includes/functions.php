@@ -80,6 +80,94 @@ function e($string) {
 }
 
 /**
+ * Normalize country/nationality tokens for currency routing.
+ */
+function normalizeGeoForCurrency($value) {
+    $v = strtolower(trim((string)$value));
+    return preg_replace('/[^a-z]/', '', $v);
+}
+
+/**
+ * Resolve display currency for a student.
+ * Rule: nationality has priority, then country, fallback UGX.
+ */
+function getStudentDisplayCurrencyCode($country = '', $nationality = '') {
+    $ugandaTokens = ['uganda', 'ugandan', 'ug'];
+    $countryNorm = normalizeGeoForCurrency($country);
+    $nationalityNorm = normalizeGeoForCurrency($nationality);
+
+    if ($nationalityNorm !== '') {
+        return in_array($nationalityNorm, $ugandaTokens, true) ? 'UGX' : 'USD';
+    }
+    if ($countryNorm !== '') {
+        return in_array($countryNorm, $ugandaTokens, true) ? 'UGX' : 'USD';
+    }
+
+    return 'UGX';
+}
+
+/**
+ * Convert UGX base amount to the selected display currency.
+ */
+function convertAmountFromUgxForDisplayCurrency($amountUgx, $displayCurrency = 'UGX', $usdUgxRate = 0.0) {
+    $currency = strtoupper(trim((string)$displayCurrency));
+    $amount = (float)$amountUgx;
+
+    if ($currency === 'USD') {
+        $rate = (float)$usdUgxRate;
+        if ($rate <= 0) {
+            $rate = (float)Helper::getUsdUgxRate();
+        }
+        if ($rate <= 0) {
+            $rate = 3700.0;
+        }
+        return $amount / $rate;
+    }
+
+    return $amount;
+}
+
+/**
+ * Format UGX base amount in the selected display currency.
+ */
+function formatAmountFromUgxForDisplayCurrency($amountUgx, $displayCurrency = 'UGX', $usdUgxRate = 0.0) {
+    $currency = strtoupper(trim((string)$displayCurrency));
+    $amount = convertAmountFromUgxForDisplayCurrency($amountUgx, $currency, (float)$usdUgxRate);
+    $decimals = $currency === 'USD' ? 2 : 0;
+    return Helper::formatCurrency($amount, $currency, $decimals);
+}
+
+/**
+ * Build an SQL-safe payment verification predicate.
+ * Returns "1=1" when verification column is unavailable (legacy schema).
+ */
+function getVerifiedPaymentsPredicate($conn, $tableAlias = '') {
+    if (!($conn instanceof PDO)) {
+        return '1=1';
+    }
+
+    static $hasVerificationColumn = null;
+    if ($hasVerificationColumn === null) {
+        try {
+            $colStmt = $conn->query("SHOW COLUMNS FROM payments LIKE 'verification_status'");
+            $hasVerificationColumn = (bool)($colStmt && $colStmt->fetch(PDO::FETCH_ASSOC));
+        } catch (Exception $e) {
+            $hasVerificationColumn = false;
+        }
+    }
+
+    if (!$hasVerificationColumn) {
+        return '1=1';
+    }
+
+    $prefix = trim((string)$tableAlias);
+    if ($prefix !== '' && substr($prefix, -1) !== '.') {
+        $prefix .= '.';
+    }
+    return "COALESCE(" . $prefix . "verification_status, 'verified') = 'verified'";
+}
+
+/**
  * Debug dump
  */
 function dd($var) {
@@ -814,11 +902,13 @@ function getStudentFinancialSnapshot($conn, $studentId, $semesterId = 0, $progra
     $totalPaid = 0.0;
     if ($semesterId > 0) {
         try {
+            $verifiedPaymentsPredicate = getVerifiedPaymentsPredicate($conn);
             $paidStmt = $conn->prepare("
                 SELECT COALESCE(SUM(amount), 0)
                 FROM payments
                 WHERE student_id = :student_id
                   AND semester_id = :semester_id
+                  AND {$verifiedPaymentsPredicate}
             ");
             $paidStmt->execute([
                 'student_id' => $studentId,
@@ -966,6 +1056,104 @@ function getStudentFinancialSnapshot($conn, $studentId, $semesterId = 0, $progra
     $snapshot['source'] = $source;
 
     return $memo[$memoKey] = $snapshot;
+}
+
+/**
+ * Build monitor rows for all active students in a semester.
+ * Amounts are returned in UGX base, with row-level display currency metadata.
+ */
+function getActiveStudentBalanceMonitor(PDO $conn, int $semesterId): array {
+    $result = [
+        'rows' => [],
+        'student_count' => 0,
+        'students_with_balance' => 0,
+        'outstanding_total_ugx' => 0.0
+    ];
+
+    if ($semesterId <= 0) {
+        return $result;
+    }
+
+    try {
+        $stmt = $conn->query("
+            SELECT
+                s.id,
+                s.student_id,
+                s.first_name,
+                s.last_name,
+                s.program_id,
+                COALESCE(s.level_year, s.year_of_study, 1) AS level_year,
+                s.country,
+                s.nationality
+            FROM students s
+            WHERE s.status = 'active'
+            ORDER BY s.last_name ASC, s.first_name ASC
+        ");
+        $students = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+    } catch (Exception $e) {
+        return $result;
+    }
+
+    $result['student_count'] = count($students);
+    $rows = [];
+    foreach ($students as $student) {
+        $studentId = (int)($student['id'] ?? 0);
+        if ($studentId <= 0) {
+            continue;
+        }
+
+        $snapshot = getStudentFinancialSnapshot(
+            $conn,
+            $studentId,
+            $semesterId,
+            (int)($student['program_id'] ?? 0),
+            0,
+            (int)($student['level_year'] ?? 1)
+        );
+
+        $totalFees = (float)($snapshot['approved_total_fees'] ?? $snapshot['total_fees'] ?? 0.0);
+        $totalPaid = (float)($snapshot['total_paid'] ?? 0.0);
+        $balanceDue = (float)($snapshot['balance_due'] ?? max($totalFees - $totalPaid, 0.0));
+        if ($balanceDue < 0) {
+            $balanceDue = 0.0;
+        }
+
+        $displayCurrency = getStudentDisplayCurrencyCode(
+            (string)($student['country'] ?? ''),
+            (string)($student['nationality'] ?? '')
+        );
+
+        $rows[] = [
+            'student_db_id' => $studentId,
+            'student_id' => (string)($student['student_id'] ?? ''),
+            'first_name' => (string)($student['first_name'] ?? ''),
+            'last_name' => (string)($student['last_name'] ?? ''),
+            'country' => (string)($student['country'] ?? ''),
+            'nationality' => (string)($student['nationality'] ?? ''),
+            'display_currency' => $displayCurrency,
+            'total_fees' => $totalFees,
+            'total_paid' => $totalPaid,
+            'balance' => $balanceDue
+        ];
+
+        $result['outstanding_total_ugx'] += $balanceDue;
+        if ($balanceDue > 0) {
+            $result['students_with_balance']++;
+        }
+    }
+
+    usort($rows, function ($a, $b) {
+        $balCmp = ((float)($b['balance'] ?? 0.0)) <=> ((float)($a['balance'] ?? 0.0));
+        if ($balCmp !== 0) {
+            return $balCmp;
+        }
+        $nameA = strtolower(trim((string)($a['last_name'] ?? '') . ' ' . (string)($a['first_name'] ?? '')));
+        $nameB = strtolower(trim((string)($b['last_name'] ?? '') . ' ' . (string)($b['first_name'] ?? '')));
+        return strcmp($nameA, $nameB);
+    });
+
+    $result['rows'] = $rows;
+    return $result;
 }
 
 /**

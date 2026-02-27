@@ -186,6 +186,20 @@ if ($report === 'financial') {
     $t3 = $conn->prepare("SELECT COALESCE(SUM(balance),0) as outstanding FROM student_balances");
     $t3->execute(); $totals['outstanding'] = $t3->fetchColumn();
     $data['totals'] = $totals;
+
+    // Collections by payment method
+    $mstmt = $conn->prepare("
+        SELECT
+            COALESCE(NULLIF(payment_method, ''), 'unknown') AS payment_method,
+            COUNT(*) AS tx_count,
+            COALESCE(SUM(amount),0) AS total
+        FROM payments
+        WHERE DATE(payment_date) BETWEEN :from AND :to
+        GROUP BY payment_method
+        ORDER BY total DESC
+    ");
+    $mstmt->execute(['from' => $from, 'to' => $to]);
+    $data['collections_by_method'] = $mstmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
 if ($report === 'staff') {
@@ -433,6 +447,16 @@ if ($export && in_array($export, ['csv','excel'])) {
         fputcsv($out, ['Total Invoiced', Helper::formatCurrencyDual((float)$data['totals']['invoiced'], 'UGX')]);
         fputcsv($out, ['Total Collected', Helper::formatCurrencyDual((float)$data['totals']['collected'], 'UGX')]);
         fputcsv($out, ['Outstanding Balances', Helper::formatCurrencyDual((float)$data['totals']['outstanding'], 'UGX')]);
+        fputcsv($out, []);
+        fputcsv($out, ['Payment Method', 'Transactions', 'Collections (USD/UGX)']);
+        foreach (($data['collections_by_method'] ?? []) as $r) {
+            $label = ucwords(str_replace('_', ' ', (string)($r['payment_method'] ?? 'unknown')));
+            fputcsv($out, [
+                $label,
+                (int)($r['tx_count'] ?? 0),
+                Helper::formatCurrencyDual((float)($r['total'] ?? 0), 'UGX')
+            ]);
+        }
     } elseif ($report === 'system') {
         fputcsv($out, ['Semester','New Students','Registrations Total','Registrations Approved','Payments Collected','Invoices Issued','Outstanding Balances','Results Published','Courses Offered','Lecturers Assigned','Avg GPA']);
         foreach ($data['system'] as $r) {
@@ -894,6 +918,25 @@ include '../../../includes/header.php';
                                 <?php foreach($data['collections'] as $r): ?>
                                     <tr><td><?php echo e($r['period']); ?></td><td><?php echo Helper::formatCurrencyDual((float)$r['total'], 'UGX'); ?></td></tr>
                                 <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h6 class="mt-3">Collections by Payment Method</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover data-table">
+                            <thead><tr><th>Payment Method</th><th>Transactions</th><th>Collections</th></tr></thead>
+                            <tbody>
+                                <?php foreach (($data['collections_by_method'] ?? []) as $row): ?>
+                                    <tr>
+                                        <td><?php echo e(ucwords(str_replace('_', ' ', (string)($row['payment_method'] ?? 'unknown')))); ?></td>
+                                        <td><?php echo number_format((int)($row['tx_count'] ?? 0)); ?></td>
+                                        <td><?php echo Helper::formatCurrencyDual((float)($row['total'] ?? 0), 'UGX'); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                <?php if (empty($data['collections_by_method'])): ?>
+                                    <tr><td colspan="3" class="text-muted">No payment-method records for this period.</td></tr>
+                                <?php endif; ?>
                             </tbody>
                         </table>
                     </div>

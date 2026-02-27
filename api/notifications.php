@@ -316,6 +316,15 @@ switch ($action) {
                                 $stmt2 = $conn->prepare("SELECT DATE_FORMAT(payment_date, '%Y-%m') as period, COALESCE(SUM(amount),0) as total FROM payments WHERE DATE(payment_date) BETWEEN :from AND :to GROUP BY period ORDER BY period");
                                 $stmt2->execute(['from'=>$from,'to'=>$to]); $rows=$stmt2->fetchAll(PDO::FETCH_ASSOC);
                                 $csv .= "Period,Collections\n"; foreach ($rows as $r) $csv .= "{$r['period']},{$r['total']}\n";
+                                $mstmt = $conn->prepare("SELECT COALESCE(NULLIF(payment_method, ''), 'unknown') AS payment_method, COUNT(*) AS tx_count, COALESCE(SUM(amount),0) AS total FROM payments WHERE DATE(payment_date) BETWEEN :from AND :to GROUP BY payment_method ORDER BY total DESC");
+                                $mstmt->execute(['from' => $from, 'to' => $to]); $methodRows = $mstmt->fetchAll(PDO::FETCH_ASSOC);
+                                $csv .= "\nPayment Method,Transactions,Collections\n";
+                                foreach ($methodRows as $mr) {
+                                    $label = ucwords(str_replace('_', ' ', (string)($mr['payment_method'] ?? 'unknown')));
+                                    $txCount = (int)($mr['tx_count'] ?? 0);
+                                    $total = (float)($mr['total'] ?? 0);
+                                    $csv .= "{$label},{$txCount},{$total}\n";
+                                }
                             } elseif ($type === 'system') {
                                 $ay = $filters['academic_year_id'] ?? 0;
                                 if ($ay) {

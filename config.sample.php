@@ -39,6 +39,22 @@ define('ALLOWED_EXTENSIONS', ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx']);
 // Pagination
 define('RECORDS_PER_PAGE', 20);
 
+// Payment Gateway / Mobile Money
+define('PAYMENT_GATEWAY_MODE', 'live'); // mock | sandbox | live
+define('MOBILE_MONEY_DEFAULT_PROVIDER', 'mtn');
+define('PAYMENT_GATEWAY_WEBHOOK_SECRET', 'replace-with-strong-shared-secret');
+define('PAYMENT_GATEWAY_WEBHOOK_URL', BASE_URL . '/api/payments/webhook.php');
+define('PAYMENT_GATEWAY_HTTP_TIMEOUT', 30);
+define('MOBILE_MONEY_MTN_INITIATE_URL', 'https://your-mtn-gateway.example.com/collections/request-to-pay');
+define('MOBILE_MONEY_MTN_BEARER_TOKEN', '');
+define('MOBILE_MONEY_MTN_API_KEY', '');
+define('MOBILE_MONEY_MTN_API_SECRET', '');
+define('MOBILE_MONEY_AIRTEL_INITIATE_URL', 'https://your-airtel-gateway.example.com/merchant/v1/payments');
+define('MOBILE_MONEY_AIRTEL_BEARER_TOKEN', '');
+define('MOBILE_MONEY_AIRTEL_CLIENT_ID', '');
+define('MOBILE_MONEY_AIRTEL_CLIENT_SECRET', '');
+define('MOBILE_MONEY_AIRTEL_COUNTRY_CODE', 'UG');
+
 // Academic Configuration
 define('STUDENT_ID_PREFIX', 'STD');
 define('LECTURER_ID_PREFIX', 'LEC');
@@ -64,6 +80,10 @@ define('INSTITUTION_NAME', 'Seminary Institution');
 define('INSTITUTION_EMAIL', 'info@seminary.edu');
 define('INSTITUTION_PHONE', '+1234567890');
 define('INSTITUTION_ADDRESS', '123 Seminary Street, City, Country');
+define('BANK_ACCOUNT_NAME', 'Seminary Management System');
+define('BANK_ACCOUNT_NUMBER', '0000000000');
+define('BANK_BRANCH', 'Main Branch');
+define('BANK_SWIFT', 'SWIFTXXX');
 
 // Autoload core classes
 spl_autoload_register(function ($class) {

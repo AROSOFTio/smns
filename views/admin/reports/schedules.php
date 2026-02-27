@@ -68,6 +68,17 @@ function sendScheduledReportNow($conn, $schedule) {
                 $csvEscape(Helper::formatCurrencyDual((float)$r['total'], 'UGX'))
             ]) . "\n";
         }
+        $mstmt = $conn->prepare("SELECT COALESCE(NULLIF(payment_method, ''), 'unknown') AS payment_method, COUNT(*) AS tx_count, COALESCE(SUM(amount),0) AS total FROM payments WHERE DATE(payment_date) BETWEEN :from AND :to GROUP BY payment_method ORDER BY total DESC");
+        $mstmt->execute(['from' => $from, 'to' => $to]);
+        $methodRows = $mstmt->fetchAll(PDO::FETCH_ASSOC);
+        $csv .= "\nPayment Method,Transactions,Collections (USD/UGX)\n";
+        foreach ($methodRows as $r) {
+            $csv .= implode(',', [
+                $csvEscape(ucwords(str_replace('_', ' ', (string)($r['payment_method'] ?? 'unknown')))),
+                $csvEscape((int)($r['tx_count'] ?? 0)),
+                $csvEscape(Helper::formatCurrencyDual((float)($r['total'] ?? 0), 'UGX'))
+            ]) . "\n";
+        }
     } elseif ($type === 'system') {
         // system overview: semester-by-semester metrics for configured academic year
         $semesterId = $filters['semester_id'] ?? 0;
