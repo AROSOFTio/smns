@@ -39,13 +39,9 @@ if (!function_exists('financeSyncStudentBalance')) {
             return;
         }
 
-        $feesStmt = $conn->prepare("SELECT COALESCE(SUM(total_amount), 0) FROM invoices WHERE student_id = :student_id AND semester_id = :semester_id");
-        $feesStmt->execute(['student_id' => $studentId, 'semester_id' => $semesterId]);
-        $totalFees = (float)$feesStmt->fetchColumn();
-
-        $paidStmt = $conn->prepare("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE student_id = :student_id AND semester_id = :semester_id");
-        $paidStmt->execute(['student_id' => $studentId, 'semester_id' => $semesterId]);
-        $totalPaid = (float)$paidStmt->fetchColumn();
+        $snapshot = getStudentFinancialSnapshot($conn, $studentId, $semesterId);
+        $totalFees = (float)($snapshot['approved_total_fees'] ?? $snapshot['total_fees'] ?? 0);
+        $totalPaid = (float)($snapshot['total_paid'] ?? 0);
 
         $lastStmt = $conn->prepare("SELECT MAX(payment_date) FROM payments WHERE student_id = :student_id AND semester_id = :semester_id");
         $lastStmt->execute(['student_id' => $studentId, 'semester_id' => $semesterId]);
@@ -54,7 +50,7 @@ if (!function_exists('financeSyncStudentBalance')) {
             $lastPaymentDate = null;
         }
 
-        $balance = max($totalFees - $totalPaid, 0);
+        $balance = (float)($snapshot['balance_due'] ?? max($totalFees - $totalPaid, 0));
 
         $existsStmt = $conn->prepare("SELECT id FROM student_balances WHERE student_id = :student_id AND semester_id = :semester_id LIMIT 1");
         $existsStmt->execute(['student_id' => $studentId, 'semester_id' => $semesterId]);

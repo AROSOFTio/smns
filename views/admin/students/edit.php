@@ -28,6 +28,21 @@ if (!$studentId) {
 $db = new Database();
 $conn = $db->getConnection();
 
+function ensureStudentParishColumn(PDO $conn): void
+{
+    try {
+        $checkStmt = $conn->query("SHOW COLUMNS FROM students LIKE 'parish'");
+        $exists = $checkStmt ? (bool)$checkStmt->fetch(PDO::FETCH_ASSOC) : false;
+        if (!$exists) {
+            $conn->exec("ALTER TABLE students ADD COLUMN parish VARCHAR(100) NULL AFTER city");
+        }
+    } catch (Exception $e) {
+        // Keep page functional even if schema update is restricted.
+    }
+}
+
+ensureStudentParishColumn($conn);
+
 try {
     $stmt = $conn->prepare("
         SELECT s.*, p.program_code, p.program_name, u.username, u.email as user_email, u.status as user_status, u.created_at as user_created_at, u.last_login, u.failed_login_attempts
@@ -73,6 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $phone = Security::sanitize($_POST['phone'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $address = Security::sanitize($_POST['address'] ?? '');
+    $parish = Security::sanitize($_POST['parish'] ?? '');
     $emergency_contact_name = Security::sanitize($_POST['emergency_contact_name'] ?? '');
     $emergency_contact_phone = Security::sanitize($_POST['emergency_contact_phone'] ?? '');
     $emergency_contact_relationship = Security::sanitize($_POST['emergency_contact_relationship'] ?? '');
@@ -186,6 +202,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     phone = :phone,
                     email = :email,
                     address = :address,
+                    parish = :parish,
                     emergency_contact_name = :emergency_contact_name,
                     emergency_contact_phone = :emergency_contact_phone,
                     emergency_contact_relationship = :emergency_contact_relationship,
@@ -210,6 +227,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'phone' => $phone,
                 'email' => $email,
                 'address' => $address,
+                'parish' => $parish !== '' ? $parish : null,
                 'emergency_contact_name' => $emergency_contact_name,
                 'emergency_contact_phone' => $emergency_contact_phone,
                 'emergency_contact_relationship' => $emergency_contact_relationship,
@@ -404,9 +422,15 @@ $pageTitle = 'Edit Student - ' . APP_NAME;
                         </div>
                     </div>
 
-                    <div class="form-group">
-                        <label>Address</label>
-                        <textarea name="address" class="form-control" rows="2"><?php echo e($student['address'] ?? ''); ?></textarea>
+                    <div class="form-row">
+                        <div class="form-group col-md-4">
+                            <label>Parish</label>
+                            <input type="text" name="parish" class="form-control" value="<?php echo e($student['parish'] ?? ''); ?>">
+                        </div>
+                        <div class="form-group col-md-8">
+                            <label>Address</label>
+                            <textarea name="address" class="form-control" rows="2"><?php echo e($student['address'] ?? ''); ?></textarea>
+                        </div>
                     </div>
                 </div>
             </div>

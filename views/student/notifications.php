@@ -120,21 +120,21 @@ if (!empty($studentSemesterContext['id'])) {
     $currentSemester['academic_year'] = $studentSemesterContext['academic_year'] ?? '-';
 }
 
-$outstandingBalance = (float)($studentProfile['account_balance'] ?? 0);
+$approvedFeesAmount = 0.0;
+$outstandingBalance = 0.0;
+$balanceOnAccount = 0.0;
 if ($studentId > 0 && $currentSemester['id'] > 0) {
-    try {
-        $balStmt = $conn->prepare("
-            SELECT COALESCE(SUM(balance), 0)
-            FROM student_balances
-            WHERE student_id = :student_id AND semester_id = :semester_id
-        ");
-        $balStmt->execute([
-            'student_id' => $studentId,
-            'semester_id' => (int)$currentSemester['id']
-        ]);
-        $outstandingBalance = (float)$balStmt->fetchColumn();
-    } catch (Exception $e) {
-    }
+    $financialSnapshot = getStudentFinancialSnapshot(
+        $conn,
+        $studentId,
+        (int)$currentSemester['id'],
+        (int)($studentProfile['program_id'] ?? 0),
+        (int)($studentSemesterContext['academic_year_id'] ?? 0),
+        (int)($studentProfile['level_year'] ?? ($studentProfile['year_of_study'] ?? 1))
+    );
+    $approvedFeesAmount = (float)($financialSnapshot['approved_total_fees'] ?? 0);
+    $outstandingBalance = (float)($financialSnapshot['balance_due'] ?? 0);
+    $balanceOnAccount = (float)($financialSnapshot['balance_on_account'] ?? $outstandingBalance);
 }
 
 $academicStatusMeta = getStudentAcademicStatusMeta(
@@ -423,8 +423,8 @@ html[data-theme='dark'] .mail-empty {
         <span class="chip gray">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span>
-        <span class="chip gray">TOTAL FEES BAL DUE: <?php echo number_format($outstandingBalance); ?>/=</span>
-        <span class="chip blue">BALANCE ON ACCOUNT: <?php echo number_format((float)($studentProfile['account_balance'] ?? 0)); ?>/=</span>
+        <span class="chip gray">APPROVED FEES AMOUNT: <?php echo number_format($approvedFeesAmount); ?>/=</span>
+        <span class="chip blue">BALANCE ON ACCOUNT: <?php echo number_format((float)$balanceOnAccount); ?>/=</span>
     </div>
 
     <div class="mail-wrap">

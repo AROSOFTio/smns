@@ -110,13 +110,21 @@ try {
     }
 } catch (Exception $e) {}
 
-$outstandingBalance = (float)($studentProfile['account_balance'] ?? 0);
+$approvedFeesAmount = 0.0;
+$outstandingBalance = 0.0;
+$balanceOnAccount = 0.0;
 if ($studentId > 0 && $currentSemester['id'] > 0) {
-    try {
-        $balStmt = $conn->prepare("SELECT COALESCE(SUM(balance), 0) FROM student_balances WHERE student_id = :student_id AND semester_id = :semester_id");
-        $balStmt->execute(['student_id' => $studentId, 'semester_id' => (int)$currentSemester['id']]);
-        $outstandingBalance = (float)$balStmt->fetchColumn();
-    } catch (Exception $e) {}
+    $financialSnapshot = getStudentFinancialSnapshot(
+        $conn,
+        $studentId,
+        (int)$currentSemester['id'],
+        (int)($studentProfile['program_id'] ?? 0),
+        (int)($currentSemester['academic_year_id'] ?? 0),
+        (int)($studentProfile['level_year'] ?? ($studentProfile['year_of_study'] ?? 1))
+    );
+    $approvedFeesAmount = (float)($financialSnapshot['approved_total_fees'] ?? 0);
+    $outstandingBalance = (float)($financialSnapshot['balance_due'] ?? 0);
+    $balanceOnAccount = (float)($financialSnapshot['balance_on_account'] ?? $outstandingBalance);
 }
 
 $academicStatusMeta = getStudentAcademicStatusMeta(
@@ -267,7 +275,7 @@ body{background:#f2f4f7}.student-sidebar{width:230px;background:linear-gradient(
   </div>
 
   <div class="chip-row"><span style="font-size:1rem;color:#1f7aa8;">PROGRAMME:</span><span style="font-size:1rem;"><?php echo e($registeredProgramName); ?></span><span class="chip" style="background:#16a34a;color:#fff;">ACTIVE</span><span style="margin-left:auto;font-size:1rem;color:#1f7aa8;">ACADEMIC STATUS:</span><span class="chip red" style="<?php echo e($academicStatusStyle); ?>"><?php echo e($academicStatus); ?></span></div>
-  <div class="chip-row"><span class="chip gray">CURRENT YR. <span style="color:#2563eb;"><?php echo e($currentSemester['academic_year']); ?></span></span><span class="chip gray">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span><span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span><span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span><span class="chip gray">TOTAL FEES BAL DUE: <?php echo $formatCurrencyForDisplay((float)$outstandingBalance); ?></span><span class="chip blue">BALANCE ON ACCOUNT: <?php echo $formatCurrencyForDisplay((float)($studentProfile['account_balance'] ?? 0)); ?></span></div>
+  <div class="chip-row"><span class="chip gray">CURRENT YR. <span style="color:#2563eb;"><?php echo e($currentSemester['academic_year']); ?></span></span><span class="chip gray">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span><span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span><span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span><span class="chip gray">APPROVED FEES AMOUNT: <?php echo $formatCurrencyForDisplay((float)$approvedFeesAmount); ?></span><span class="chip blue">BALANCE ON ACCOUNT: <?php echo $formatCurrencyForDisplay((float)$balanceOnAccount); ?></span></div>
 
   <div class="cal-wrap"><div class="cal-card">
     <form method="GET" class="cal-head"><div style="min-width:220px;"><select class="cal-year-pick" name="academic_year_id" onchange="this.form.submit()"><?php foreach ($allAcademicYears as $y): ?><option value="<?php echo (int)$y['id']; ?>" <?php echo (int)$selectedAcademicYearId === (int)$y['id'] ? 'selected' : ''; ?>><?php echo e($y['year_name']); ?></option><?php endforeach; ?></select></div><h2 class="cal-title">ACADEMIC YEAR - <?php echo e($selectedAcademicYearName); ?></h2><div style="min-width:220px;"></div></form>

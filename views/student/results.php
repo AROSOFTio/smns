@@ -33,22 +33,21 @@ if (!empty($studentSemesterContext['id'])) {
     $currentSemester['academic_year'] = $studentSemesterContext['academic_year'] ?? '-';
 }
 
-$outstandingBalance = (float)($studentProfile['account_balance'] ?? 0);
-if (!empty($studentProfile['id']) && $currentSemester['id'] > 0) {
-    try {
-        $balStmt = $conn->prepare("
-            SELECT COALESCE(SUM(balance), 0)
-            FROM student_balances
-            WHERE student_id = :student_id AND semester_id = :semester_id
-        ");
-        $balStmt->execute([
-            'student_id' => (int)$studentProfile['id'],
-            'semester_id' => (int)$currentSemester['id']
-        ]);
-        $outstandingBalance = (float)$balStmt->fetchColumn();
-    } catch (Exception $e) {
-        $outstandingBalance = (float)($studentProfile['account_balance'] ?? 0);
-    }
+$approvedFeesAmount = 0.0;
+$outstandingBalance = 0.0;
+$balanceOnAccount = 0.0;
+if ($studentId > 0 && $currentSemester['id'] > 0) {
+    $financialSnapshot = getStudentFinancialSnapshot(
+        $conn,
+        $studentId,
+        (int)$currentSemester['id'],
+        (int)($studentProfile['program_id'] ?? 0),
+        (int)($studentSemesterContext['academic_year_id'] ?? 0),
+        (int)($studentProfile['level_year'] ?? ($studentProfile['year_of_study'] ?? 1))
+    );
+    $approvedFeesAmount = (float)($financialSnapshot['approved_total_fees'] ?? 0);
+    $outstandingBalance = (float)($financialSnapshot['balance_due'] ?? 0);
+    $balanceOnAccount = (float)($financialSnapshot['balance_on_account'] ?? $outstandingBalance);
 }
 
 $academicStatusMeta = getStudentAcademicStatusMeta(
@@ -419,8 +418,8 @@ body { background: #f8fafc; }
         <span style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7; color:#166534; border:1px solid #86efac; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;' : 'background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;'; ?>">
             <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?>
         </span>
-        <span style="background:#f1f5f9; color:#991b1b; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">TOTAL FEES BAL DUE: <?php echo number_format($outstandingBalance); ?>/=</span>
-        <span style="background:#2563eb; color:#fff; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">BALANCE ON ACCOUNT: <?php echo number_format((float)($studentProfile['account_balance'] ?? 0)); ?>/=</span>
+        <span style="background:#f1f5f9; color:#991b1b; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">APPROVED FEES AMOUNT: <?php echo number_format($approvedFeesAmount); ?>/=</span>
+        <span style="background:#2563eb; color:#fff; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">BALANCE ON ACCOUNT: <?php echo number_format((float)$balanceOnAccount); ?>/=</span>
     </div>
 
     <div class="results-wrap">

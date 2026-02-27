@@ -706,6 +706,269 @@ function getStudentCurrentSemesterContext($conn, $studentId) {
 }
 
 /**
+ * Resolve current finance snapshot for a student in a semester.
+ * Source priority:
+ * 1) Approved/published fee structure (program + academic year + level + semester)
+ * 2) student_balances fallback when approved fee lines are unavailable
+ */
+function getStudentFinancialSnapshot($conn, $studentId, $semesterId = 0, $programId = 0, $academicYearId = 0, $fallbackLevelYear = 1) {
+    static $memo = [];
+
+    $studentId = (int)$studentId;
+    $semesterId = (int)$semesterId;
+    $programId = (int)$programId;
+    $academicYearId = (int)$academicYearId;
+    $fallbackLevelYear = max(1, (int)$fallbackLevelYear);
+
+    $memoKey = implode(':', [$studentId, $semesterId, $programId, $academicYearId, $fallbackLevelYear]);
+    if (isset($memo[$memoKey])) {
+        return $memo[$memoKey];
+    }
+
+    $snapshot = [
+        'student_id' => $studentId,
+        'semester_id' => $semesterId,
+        'academic_year_id' => $academicYearId,
+        'program_id' => $programId,
+        'level_year' => $fallbackLevelYear,
+        'approved_total_fees' => 0.0,
+        'total_fees' => 0.0,
+        'total_paid' => 0.0,
+        'balance_due' => 0.0,
+        'balance_on_account' => 0.0,
+        'source' => 'none',
+        'fee_version_id' => 0
+    ];
+
+    if (!($conn instanceof PDO) || $studentId <= 0) {
+        return $memo[$memoKey] = $snapshot;
+    }
+
+    if ($semesterId <= 0) {
+        $ctx = getStudentCurrentSemesterContext($conn, $studentId);
+        $semesterId = (int)($ctx['id'] ?? 0);
+        if ($academicYearId <= 0) {
+            $academicYearId = (int)($ctx['academic_year_id'] ?? 0);
+        }
+        $snapshot['semester_id'] = $semesterId;
+        $snapshot['academic_year_id'] = $academicYearId;
+    }
+
+    $studentLevelYear = $fallbackLevelYear;
+    try {
+        $studentMetaStmt = $conn->prepare("
+            SELECT program_id, COALESCE(level_year, year_of_study, 1) AS resolved_level_year
+            FROM students
+            WHERE id = :student_id
+            LIMIT 1
+        ");
+        $studentMetaStmt->execute(['student_id' => $studentId]);
+        $studentMeta = $studentMetaStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        if ($programId <= 0) {
+            $programId = (int)($studentMeta['program_id'] ?? 0);
+        }
+        $studentLevelYear = max(1, (int)($studentMeta['resolved_level_year'] ?? $studentLevelYear));
+    } catch (Exception $e) {
+        // Keep supplied values.
+    }
+
+    if ($semesterId > 0 && $academicYearId <= 0) {
+        try {
+            $ayStmt = $conn->prepare("SELECT academic_year_id FROM semesters WHERE id = :semester_id LIMIT 1");
+            $ayStmt->execute(['semester_id' => $semesterId]);
+            $academicYearId = (int)$ayStmt->fetchColumn();
+        } catch (Exception $e) {
+            $academicYearId = 0;
+        }
+    }
+
+    $levelYear = $studentLevelYear;
+    if ($semesterId > 0) {
+        try {
+            $levelStmt = $conn->prepare("
+                SELECT year_of_study
+                FROM semester_registrations
+                WHERE student_id = :student_id
+                  AND semester_id = :semester_id
+                  AND status = 'approved'
+                ORDER BY id DESC
+                LIMIT 1
+            ");
+            $levelStmt->execute([
+                'student_id' => $studentId,
+                'semester_id' => $semesterId
+            ]);
+            $registeredLevel = (int)$levelStmt->fetchColumn();
+            if ($registeredLevel > 0) {
+                $levelYear = $registeredLevel;
+            }
+        } catch (Exception $e) {
+            // Keep fallback level.
+        }
+    }
+
+    $snapshot['program_id'] = $programId;
+    $snapshot['academic_year_id'] = $academicYearId;
+    $snapshot['level_year'] = $levelYear;
+
+    $totalPaid = 0.0;
+    if ($semesterId > 0) {
+        try {
+            $paidStmt = $conn->prepare("
+                SELECT COALESCE(SUM(amount), 0)
+                FROM payments
+                WHERE student_id = :student_id
+                  AND semester_id = :semester_id
+            ");
+            $paidStmt->execute([
+                'student_id' => $studentId,
+                'semester_id' => $semesterId
+            ]);
+            $totalPaid = (float)$paidStmt->fetchColumn();
+        } catch (Exception $e) {
+            $totalPaid = 0.0;
+        }
+    }
+
+    $approvedFeesTotal = 0.0;
+    $feeVersionId = 0;
+    if ($semesterId > 0 && $levelYear > 0) {
+        try {
+            if (class_exists('FeeStructureGovernance')) {
+                try {
+                    FeeStructureGovernance::ensureSchema($conn);
+                } catch (Exception $e) {
+                    // Continue without hard failing.
+                }
+            }
+
+            if (class_exists('FeeStructureGovernance') && method_exists('FeeStructureGovernance', 'findPreferredPublishedVersion')) {
+                $version = FeeStructureGovernance::findPreferredPublishedVersion($conn, $programId, $academicYearId);
+                $feeVersionId = (int)($version['id'] ?? 0);
+            }
+
+            if ($feeVersionId > 0) {
+                $feesStmt = $conn->prepare("
+                    SELECT COALESCE(SUM(GREATEST(0, COALESCE(fs.amount, 0) - COALESCE(fs.discount_amount, 0) + COALESCE(fs.fine_amount, 0))), 0)
+                    FROM fees_structure fs
+                    WHERE fs.version_id = :version_id
+                      AND fs.status = 'active'
+                      AND fs.level_year = :level_year
+                      AND fs.semester_id = :semester_id
+                ");
+                $feesStmt->execute([
+                    'version_id' => $feeVersionId,
+                    'level_year' => $levelYear,
+                    'semester_id' => $semesterId
+                ]);
+                $approvedFeesTotal = (float)$feesStmt->fetchColumn();
+            } else {
+                $feesStmt = $conn->prepare("
+                    SELECT COALESCE(SUM(GREATEST(0, COALESCE(fs.amount, 0) - COALESCE(fs.discount_amount, 0) + COALESCE(fs.fine_amount, 0))), 0)
+                    FROM fees_structure fs
+                    WHERE fs.status = 'active'
+                      AND fs.level_year = :level_year
+                      AND fs.semester_id = :semester_id
+                      AND (fs.program_id = :program_id OR fs.program_id IS NULL)
+                ");
+                $feesStmt->execute([
+                    'level_year' => $levelYear,
+                    'semester_id' => $semesterId,
+                    'program_id' => $programId
+                ]);
+                $approvedFeesTotal = (float)$feesStmt->fetchColumn();
+            }
+        } catch (Exception $e) {
+            $approvedFeesTotal = 0.0;
+            $feeVersionId = 0;
+        }
+    }
+
+    $totalFees = $approvedFeesTotal;
+    $balanceDue = 0.0;
+    $source = 'none';
+
+    if ($approvedFeesTotal > 0) {
+        $balanceDue = max($approvedFeesTotal - $totalPaid, 0);
+        $source = 'fee_structure';
+    } else if ($semesterId > 0) {
+        try {
+            $balStmt = $conn->prepare("
+                SELECT
+                    COALESCE(SUM(total_fees), 0) AS total_fees,
+                    COALESCE(SUM(total_paid), 0) AS total_paid,
+                    COALESCE(SUM(balance), 0) AS balance
+                FROM student_balances
+                WHERE student_id = :student_id
+                  AND semester_id = :semester_id
+            ");
+            $balStmt->execute([
+                'student_id' => $studentId,
+                'semester_id' => $semesterId
+            ]);
+            $balRow = $balStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+            $fallbackTotalFees = (float)($balRow['total_fees'] ?? 0);
+            $fallbackTotalPaid = (float)($balRow['total_paid'] ?? 0);
+            $fallbackBalance = (float)($balRow['balance'] ?? 0);
+
+            if ($fallbackTotalFees > 0) {
+                $totalFees = $fallbackTotalFees;
+            }
+            if ($totalPaid <= 0 && $fallbackTotalPaid > 0) {
+                $totalPaid = $fallbackTotalPaid;
+            }
+
+            if ($totalFees > 0) {
+                $balanceDue = max($totalFees - $totalPaid, 0);
+            } else {
+                $balanceDue = max($fallbackBalance, 0);
+            }
+
+            if ($totalFees > 0 || $totalPaid > 0 || $balanceDue > 0) {
+                $source = 'student_balances';
+            }
+        } catch (Exception $e) {
+            // Keep defaults.
+        }
+    }
+
+    if ($source === 'none' && $semesterId > 0) {
+        try {
+            $invoiceStmt = $conn->prepare("
+                SELECT COALESCE(SUM(total_amount), 0) AS total_fees
+                FROM invoices
+                WHERE student_id = :student_id
+                  AND semester_id = :semester_id
+            ");
+            $invoiceStmt->execute([
+                'student_id' => $studentId,
+                'semester_id' => $semesterId
+            ]);
+            $invoiceTotalFees = (float)$invoiceStmt->fetchColumn();
+
+            if ($invoiceTotalFees > 0) {
+                $totalFees = $invoiceTotalFees;
+                $balanceDue = max($totalFees - $totalPaid, 0);
+                $source = 'invoices';
+            }
+        } catch (Exception $e) {
+            // Keep defaults.
+        }
+    }
+
+    $snapshot['fee_version_id'] = $feeVersionId;
+    $snapshot['approved_total_fees'] = $approvedFeesTotal > 0 ? $approvedFeesTotal : $totalFees;
+    $snapshot['total_fees'] = $totalFees;
+    $snapshot['total_paid'] = $totalPaid;
+    $snapshot['balance_due'] = $balanceDue;
+    $snapshot['balance_on_account'] = $balanceDue;
+    $snapshot['source'] = $source;
+
+    return $memo[$memoKey] = $snapshot;
+}
+
+/**
  * Auto-assign courses to a student for a given semester.
  * Prefers explicit `course_assignments` for the semester, then falls back to courses by program/level.
  * Safe to call multiple times; avoids creating duplicates.

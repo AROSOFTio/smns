@@ -208,6 +208,10 @@ $pageTitle = 'View Student - ' . APP_NAME;
                                     <?php echo e($student['address'] ?? 'N/A'); ?>
                                 </div>
                                 <div class="mb-3">
+                                    <span class="info-label">Parish:</span>
+                                    <?php echo e($student['parish'] ?? 'N/A'); ?>
+                                </div>
+                                <div class="mb-3">
                                     <span class="info-label">Emergency Contact:</span>
                                     <?php echo e($student['emergency_contact'] ?? 'N/A'); ?>
                                 </div>

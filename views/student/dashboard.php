@@ -23,6 +23,7 @@ function ensureStudentProfileCompletionColumns(PDO $conn) {
     $columns = [
         'religion' => 'VARCHAR(100) NULL',
         'district' => 'VARCHAR(100) NULL',
+        'parish' => 'VARCHAR(100) NULL AFTER district',
         'nationality' => 'VARCHAR(100) NULL',
         'national_id' => 'VARCHAR(100) NULL',
         'passport' => 'VARCHAR(100) NULL',
@@ -89,6 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'compl
     $phone = trim(Security::sanitize($_POST['phone'] ?? ''));
     $religion = trim(Security::sanitize($_POST['religion'] ?? ''));
     $district = trim(Security::sanitize($_POST['district'] ?? ''));
+    $parish = trim(Security::sanitize($_POST['parish'] ?? ''));
     $nationality = trim(Security::sanitize($_POST['nationality'] ?? ''));
     $nationalId = trim(Security::sanitize($_POST['national_id'] ?? ''));
     $passport = trim(Security::sanitize($_POST['passport'] ?? ''));
@@ -104,6 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'compl
     if ($phone === '') $validationErrors[] = 'Telephone is required.';
     if ($religion === '') $validationErrors[] = 'Religion is required.';
     if ($district === '') $validationErrors[] = 'District is required.';
+    if ($parish === '') $validationErrors[] = 'Parish is required.';
     if ($nationality === '') $validationErrors[] = 'Nationality is required.';
     if ($nationalId === '') $validationErrors[] = 'National ID number is required.';
     if ($guardianName === '') $validationErrors[] = 'Guardian name is required.';
@@ -168,6 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'compl
             SET phone = :phone,
                 religion = :religion,
                 district = :district,
+                parish = :parish,
                 nationality = :nationality,
                 national_id = :national_id,
                 passport = :passport,
@@ -188,6 +192,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'compl
             'phone' => $phone,
             'religion' => $religion,
             'district' => $district,
+            'parish' => $parish,
             'nationality' => $nationality,
             'national_id' => $nationalId,
             'passport' => $passport !== '' ? $passport : null,
@@ -378,22 +383,21 @@ if (!empty($studentSemesterContext['id'])) {
     $currentSemester['academic_year'] = $studentSemesterContext['academic_year'] ?? '-';
 }
 
-$outstandingBalance = (float)($studentProfile['account_balance'] ?? 0);
-if (!empty($studentProfile['id']) && $currentSemester['id'] > 0) {
-    try {
-        $balStmt = $conn->prepare("
-            SELECT COALESCE(SUM(balance), 0)
-            FROM student_balances
-            WHERE student_id = :student_id AND semester_id = :semester_id
-        ");
-        $balStmt->execute([
-            'student_id' => (int)$studentProfile['id'],
-            'semester_id' => (int)$currentSemester['id']
-        ]);
-        $outstandingBalance = (float)$balStmt->fetchColumn();
-    } catch (Exception $e) {
-        $outstandingBalance = (float)($studentProfile['account_balance'] ?? 0);
-    }
+$approvedFeesAmount = 0.0;
+$outstandingBalance = 0.0;
+$balanceOnAccount = 0.0;
+if ($studentDbId > 0 && $currentSemester['id'] > 0) {
+    $financialSnapshot = getStudentFinancialSnapshot(
+        $conn,
+        $studentDbId,
+        (int)$currentSemester['id'],
+        (int)($studentProfile['program_id'] ?? 0),
+        (int)($studentSemesterContext['academic_year_id'] ?? 0),
+        (int)($studentProfile['level_year'] ?? ($studentProfile['year_of_study'] ?? 1))
+    );
+    $approvedFeesAmount = (float)($financialSnapshot['approved_total_fees'] ?? 0);
+    $outstandingBalance = (float)($financialSnapshot['balance_due'] ?? 0);
+    $balanceOnAccount = (float)($financialSnapshot['balance_on_account'] ?? $outstandingBalance);
 }
 
 $academicStatusMeta = getStudentAcademicStatusMeta(
@@ -857,17 +861,21 @@ document.addEventListener('click', function() {
                     <div class="profile-lock-section">
                         <h6>Personal Details</h6>
                         <div class="form-row">
-                            <div class="form-group col-md-4">
+                            <div class="form-group col-md-3">
                                 <label>Tel. Phone <span class="text-danger">*</span></label>
                                 <input type="text" name="phone" class="form-control form-control-sm" required value="<?php echo e($studentRow['phone'] ?? ($studentProfile['phone'] ?? '')); ?>">
                             </div>
-                            <div class="form-group col-md-4">
+                            <div class="form-group col-md-3">
                                 <label>Religion <span class="text-danger">*</span></label>
                                 <input type="text" name="religion" class="form-control form-control-sm" required value="<?php echo e($studentRow['religion'] ?? ($studentProfile['religion'] ?? '')); ?>">
                             </div>
-                            <div class="form-group col-md-4">
+                            <div class="form-group col-md-3">
                                 <label>District <span class="text-danger">*</span></label>
                                 <input type="text" name="district" class="form-control form-control-sm" required value="<?php echo e($studentRow['district'] ?? ($studentRow['city'] ?? ($studentProfile['district'] ?? ''))); ?>">
+                            </div>
+                            <div class="form-group col-md-3">
+                                <label>Parish <span class="text-danger">*</span></label>
+                                <input type="text" name="parish" class="form-control form-control-sm" required value="<?php echo e($studentRow['parish'] ?? ($studentProfile['parish'] ?? '')); ?>">
                             </div>
                         </div>
                         <div class="form-row">
@@ -953,7 +961,7 @@ document.addEventListener('click', function() {
             <div class="alert alert-danger"><?php echo e($session->getFlash('error')); ?></div>
         <?php endif; ?>
 
-        <div style="display:flex; align-items:center; gap:0.35rem; margin-bottom:1.2rem; flex-wrap:nowrap; white-space:nowrap;">
+        <div style="display:flex; align-items:center; gap:0.35rem; margin-bottom:1.2rem; flex-wrap:wrap; white-space:normal;">
             <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">CURRENT YR. <span style="color:#2563eb;"><?php echo !empty($currentSemester['academic_year']) ? e($currentSemester['academic_year']) : '-'; ?></span></span>
             <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">CURRENT SEM. <span style="color:#2563eb;"><?php echo !empty($currentSemester['semester_name']) ? e($currentSemester['semester_name']) : '-'; ?></span></span>
             <span style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7; color:#166534; border:1px solid #86efac; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;' : 'background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;'; ?>">
@@ -962,8 +970,10 @@ document.addEventListener('click', function() {
             <span style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7; color:#166534; border:1px solid #86efac; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;' : 'background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;'; ?>">
                 <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?>
             </span>
-            <span style="background:#f1f5f9; color:#991b1b; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">TOTAL FEES BAL DUE: <?php echo $formatCurrencyForDisplay((float)$outstandingBalance); ?></span>
-            <span style="background:#2563eb; color:#fff; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">BALANCE ON ACCOUNT: <?php echo $formatCurrencyForDisplay((float)($studentProfile['account_balance'] ?? 0)); ?></span>
+            <div style="display:flex; align-items:center; gap:0.35rem; white-space:nowrap; flex:0 0 auto; margin-left:auto;">
+                <span style="background:#f1f5f9; color:#991b1b; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">APPROVED FEES AMOUNT: <?php echo $formatCurrencyForDisplay((float)$approvedFeesAmount); ?></span>
+                <span style="background:#2563eb; color:#fff; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">BALANCE ON ACCOUNT: <?php echo $formatCurrencyForDisplay((float)$balanceOnAccount); ?></span>
+            </div>
         </div>
 
         <div class="bio-card">
@@ -1000,11 +1010,11 @@ document.addEventListener('click', function() {
                 <div class="tab-panel active" data-panel="personal">
                     <table class="bio-details-table">
                         <tr><td><b>SURNAME</b></td><td>:<?php echo e($studentRow['last_name'] ?? ($studentProfile['last_name'] ?? '-')); ?></td><td><b>RELIGION</b></td><td>:<?php echo e($studentRow['religion'] ?? ($studentProfile['religion'] ?? '-')); ?></td></tr>
-                        <tr><td><b>OTHER NAMES</b></td><td>:<?php echo e(trim(($studentRow['first_name'] ?? ($studentProfile['first_name'] ?? '')) . ' ' . ($studentRow['middle_name'] ?? ($studentProfile['middle_name'] ?? ''))) ?: '-'); ?></td><td><b>DISTRICT</b></td><td>:<?php echo e($studentRow['district'] ?? ($studentRow['city'] ?? ($studentProfile['district'] ?? '-'))); ?></td></tr>
-                        <tr><td><b>EMAIL</b></td><td>:<?php echo e($studentRow['email'] ?? ($studentProfile['email'] ?? '-')); ?></td><td><b>NATIONALITY</b></td><td>:<?php echo e($studentRow['nationality'] ?? ($studentRow['country'] ?? ($studentProfile['nationality'] ?? '-'))); ?></td></tr>
-                        <tr><td><b>TEL. PHONE</b></td><td>:<?php echo e($studentRow['phone'] ?? ($studentProfile['phone'] ?? '-')); ?></td><td><b>NATIONAL ID NO.</b></td><td>:<?php echo e($studentRow['national_id'] ?? ($studentProfile['national_id'] ?? '-')); ?></td></tr>
-                        <tr><td><b>SEX</b></td><td>:<?php echo e($studentRow['gender'] ?? ($studentProfile['gender'] ?? '-')); ?></td><td><b>PASSPORT</b></td><td>:<?php echo e($studentRow['passport'] ?? ($studentProfile['passport'] ?? '-')); ?></td></tr>
-                        <tr><td><b>DATE OF BIRTH</b></td><td>:<?php echo !empty($studentRow['date_of_birth'] ?? $studentProfile['date_of_birth']) ? date('d/m/Y', strtotime($studentRow['date_of_birth'] ?? $studentProfile['date_of_birth'])) : '-'; ?></td><td></td><td></td></tr>
+                        <tr><td><b>OTHER NAMES</b></td><td>:<?php echo e(trim(($studentRow['first_name'] ?? ($studentProfile['first_name'] ?? '')) . ' ' . ($studentRow['middle_name'] ?? ($studentProfile['middle_name'] ?? ''))) ?: '-'); ?></td><td><b>PARISH</b></td><td>:<?php echo e($studentRow['parish'] ?? ($studentProfile['parish'] ?? '-')); ?></td></tr>
+                        <tr><td><b>EMAIL</b></td><td>:<?php echo e($studentRow['email'] ?? ($studentProfile['email'] ?? '-')); ?></td><td><b>DISTRICT</b></td><td>:<?php echo e($studentRow['district'] ?? ($studentRow['city'] ?? ($studentProfile['district'] ?? '-'))); ?></td></tr>
+                        <tr><td><b>TEL. PHONE</b></td><td>:<?php echo e($studentRow['phone'] ?? ($studentProfile['phone'] ?? '-')); ?></td><td><b>NATIONALITY</b></td><td>:<?php echo e($studentRow['nationality'] ?? ($studentRow['country'] ?? ($studentProfile['nationality'] ?? '-'))); ?></td></tr>
+                        <tr><td><b>SEX</b></td><td>:<?php echo e($studentRow['gender'] ?? ($studentProfile['gender'] ?? '-')); ?></td><td><b>NATIONAL ID NO.</b></td><td>:<?php echo e($studentRow['national_id'] ?? ($studentProfile['national_id'] ?? '-')); ?></td></tr>
+                        <tr><td><b>DATE OF BIRTH</b></td><td>:<?php echo !empty($studentRow['date_of_birth'] ?? $studentProfile['date_of_birth']) ? date('d/m/Y', strtotime($studentRow['date_of_birth'] ?? $studentProfile['date_of_birth'])) : '-'; ?></td><td><b>PASSPORT</b></td><td>:<?php echo e($studentRow['passport'] ?? ($studentProfile['passport'] ?? '-')); ?></td></tr>
                     </table>
                     <?php if ($studentProfileLocked === 1): ?>
                         <div class="alert alert-info mt-3 mb-0">Profile is locked after first submission. Contact administration for corrections.</div>

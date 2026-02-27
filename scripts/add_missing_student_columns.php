@@ -5,6 +5,7 @@ $conn = $db->getConnection();
 $columns = [
     'secondary_number' => 'VARCHAR(30) NULL AFTER primary_number',
     'nationality' => 'VARCHAR(100) NULL AFTER secondary_number',
+    'parish' => 'VARCHAR(100) NULL AFTER city',
     'school_college' => 'VARCHAR(100) NULL AFTER nationality',
     'department' => 'VARCHAR(100) NULL AFTER school_college',
     'intake' => 'VARCHAR(50) NULL AFTER department',
