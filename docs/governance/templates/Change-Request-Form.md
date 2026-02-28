@@ -45,3 +45,18 @@
 - Result:
 - Post-change validation:
 - Follow-up actions:
+
+## Reporting & Verification
+
+- [ ] Official transcripts downloadable
+- [ ] Digitally verifiable records
+- [ ] Long-term archival format
+- [ ] Institutional & regulatory reports
+
+## Operations & People
+
+- [ ] Written SOPs for staff
+- [ ] User training provided
+- [ ] Separation of duties (academic vs finance)
+- [ ] Incident handling process
+

@@ -68,7 +68,32 @@ Owners define quality rules and approvals; IT enforces technical controls.
 2. Critical publish/approval flows must maintain approver attribution.
 3. Log retention follows the retention policy.
 
-## 10. Exceptions
+## 10. Data Subject Rights and Correction Requests
+
+1. Students have direct access to their own records through authenticated student portal pages (bio data, results, transcript, payments, and service history).
+2. Students can submit formal requests for:
+   - record access copies,
+   - record correction, and
+   - deletion/anonymization review.
+3. Correction requests must be reviewed by authorized admins and, where approved, implemented through controlled edit flows that preserve audit history.
+4. Rejected requests must include an admin response for traceability.
+
+## 11. Deletion and Anonymization Controls
+
+1. Anonymization is the default compliance action when historical academic records must be retained.
+2. Hard delete is treated as high risk and is permitted only under approved governance process.
+3. Student identity data disposal actions must be logged with actor, timestamp, reason/reference, and action mode (anonymize or hard delete).
+
+## 12. Cross-Border Data Handling
+
+1. Data owners and IT must identify whether backups, email providers, or integrated services process data outside the institution's primary jurisdiction.
+2. Cross-border data transfers require:
+   - documented legal basis/contract controls,
+   - classification review (especially `Confidential` data),
+   - and risk acknowledgment by governance owners.
+3. Export of personally identifiable student data to external systems must follow least-privilege and approved business purpose.
+
+## 13. Exceptions
 
 Exceptions require:
 
@@ -77,6 +102,6 @@ Exceptions require:
 3. owner approval, and
 4. expiry date with review.
 
-## 11. Enforcement
+## 14. Enforcement
 
 Policy non-compliance is escalated to governance leadership and may trigger access suspension until corrected.

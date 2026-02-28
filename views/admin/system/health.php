@@ -161,6 +161,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 }
                 break;
 
+            case 'run_uptime_probe':
+                $probeScript = BASE_PATH . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'uptime_monitor.php';
+                if (!is_file($probeScript)) {
+                    $actionResult = ['status' => 'fail', 'message' => 'Uptime monitor script not found.'];
+                    break;
+                }
+                $phpExec = escapeshellarg(resolvePhpExecBinary(true));
+                $out = [];
+                $retCode = 1;
+                @exec($phpExec . ' ' . escapeshellarg($probeScript) . ' 2>&1', $out, $retCode);
+                $tail = trim(implode(' | ', array_slice((array)$out, -3)));
+                if ($retCode === 0) {
+                    $actionResult = ['status' => 'success', 'message' => 'Uptime probe completed successfully.' . ($tail !== '' ? ' ' . $tail : '')];
+                } else {
+                    $actionResult = ['status' => 'warning', 'message' => 'Uptime probe reported downtime/failure.' . ($tail !== '' ? ' ' . $tail : '')];
+                }
+                break;
+
+            case 'run_restore_drill':
+                $restoreScript = BASE_PATH . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'restore_test_drill.php';
+                if (!is_file($restoreScript)) {
+                    $actionResult = ['status' => 'fail', 'message' => 'Restore drill script not found.'];
+                    break;
+                }
+                $phpExec = escapeshellarg(resolvePhpExecBinary(true));
+                $out = [];
+                $retCode = 1;
+                @exec($phpExec . ' ' . escapeshellarg($restoreScript) . ' 2>&1', $out, $retCode);
+                $tail = trim(implode(' | ', array_slice((array)$out, -3)));
+                if ($retCode === 0) {
+                    $actionResult = ['status' => 'success', 'message' => 'Restore drill passed.' . ($tail !== '' ? ' ' . $tail : '')];
+                } else {
+                    $actionResult = ['status' => 'fail', 'message' => 'Restore drill failed.' . ($tail !== '' ? ' ' . $tail : '')];
+                }
+                break;
+
             case 'purge_backups':
                 $backupDir = BackupSecurity::getBackupDirectory();
                 $deleted = 0;
@@ -284,6 +320,8 @@ function getHealthCheckMetadata($checkName) {
         'permissions' => ['label' => 'Directory Permissions', 'area' => 'Filesystem'],
         'constants' => ['label' => 'System Constants', 'area' => 'Configuration'],
         'smtp' => ['label' => 'SMTP Connectivity', 'area' => 'Email/SMTP'],
+        'uptime_slo' => ['label' => 'Availability SLO (>=99%)', 'area' => 'Reliability/Uptime'],
+        'restore_drill' => ['label' => 'Restore Drill Recency', 'area' => 'Disaster Recovery'],
         'admin_pages' => ['label' => 'Admin Module Pages', 'area' => 'Module: Admin'],
         'student_pages' => ['label' => 'Student Module Pages', 'area' => 'Module: Student'],
         'lecturer_pages' => ['label' => 'Lecturer Module Pages', 'area' => 'Module: Lecturer'],
@@ -680,6 +718,141 @@ try {
     $checks['finance_data'] = ['status' => 'fail', 'message' => 'Module data check failed: ' . $e->getMessage()];
 }
 
+// 13. Availability SLO check (based on uptime monitor evidence).
+try {
+    $dbReliability = new Database();
+    $connReliability = $dbReliability->getConnection();
+    $connReliability->exec("CREATE TABLE IF NOT EXISTS system_uptime_checks (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        checked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        target_url VARCHAR(500) NOT NULL,
+        http_status INT NULL,
+        response_ms INT NULL,
+        is_up TINYINT(1) NOT NULL DEFAULT 0,
+        status_label VARCHAR(30) NOT NULL DEFAULT 'down',
+        error_message VARCHAR(500) NULL,
+        payload_json MEDIUMTEXT NULL,
+        INDEX idx_checked_at (checked_at),
+        INDEX idx_is_up (is_up)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+    $targetPercent = (float)getSetting('availability_target_percent', defined('UPTIME_SLO_TARGET_PERCENT') ? UPTIME_SLO_TARGET_PERCENT : 99.0);
+    if ($targetPercent <= 0 || $targetPercent > 100) {
+        $targetPercent = 99.0;
+    }
+    $windowDays = (int)getSetting('availability_window_days', 30);
+    if ($windowDays <= 0) {
+        $windowDays = 30;
+    }
+    $windowStart = date('Y-m-d H:i:s', strtotime("-{$windowDays} days"));
+
+    $uptimeAggStmt = $connReliability->prepare("
+        SELECT
+            COUNT(*) AS total_checks,
+            COALESCE(SUM(is_up), 0) AS up_checks,
+            MAX(checked_at) AS last_checked_at
+        FROM system_uptime_checks
+        WHERE checked_at >= :window_start
+    ");
+    $uptimeAggStmt->execute(['window_start' => $windowStart]);
+    $uptimeAgg = $uptimeAggStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $totalChecks = (int)($uptimeAgg['total_checks'] ?? 0);
+    $upChecks = (int)($uptimeAgg['up_checks'] ?? 0);
+    $availability = $totalChecks > 0 ? round(($upChecks / $totalChecks) * 100, 3) : null;
+    $lastCheckedAt = (string)($uptimeAgg['last_checked_at'] ?? '');
+
+    if ($totalChecks < 20) {
+        $checks['uptime_slo'] = [
+            'status' => 'warning',
+            'message' => 'Not enough uptime samples for SLO evaluation. Samples: ' . $totalChecks . ' (minimum 20).'
+        ];
+    } else {
+        $freshnessWarning = '';
+        if ($lastCheckedAt !== '') {
+            $ageMinutes = (int)floor((time() - strtotime($lastCheckedAt)) / 60);
+            if ($ageMinutes > 60) {
+                $freshnessWarning = ' Last probe is stale (' . $ageMinutes . ' minutes old).';
+            }
+        }
+        if ($availability !== null && $availability >= $targetPercent) {
+            $checks['uptime_slo'] = [
+                'status' => $freshnessWarning === '' ? 'pass' : 'warning',
+                'message' => 'Availability ' . number_format((float)$availability, 3) . '% over last ' . $windowDays . ' days (target ' . number_format((float)$targetPercent, 2) . '%).' . $freshnessWarning
+            ];
+        } else {
+            $checks['uptime_slo'] = [
+                'status' => 'fail',
+                'message' => 'Availability ' . number_format((float)($availability ?? 0), 3) . '% over last ' . $windowDays . ' days is below target ' . number_format((float)$targetPercent, 2) . '%.'
+            ];
+        }
+    }
+} catch (Exception $e) {
+    $checks['uptime_slo'] = ['status' => 'fail', 'message' => 'Uptime SLO check failed: ' . $e->getMessage()];
+}
+
+// 14. Restore drill evidence recency.
+try {
+    $dbRestore = isset($dbReliability) && $dbReliability instanceof Database ? $dbReliability : new Database();
+    $connRestore = isset($connReliability) && $connReliability instanceof PDO ? $connReliability : $dbRestore->getConnection();
+    $connRestore->exec("CREATE TABLE IF NOT EXISTS system_restore_drills (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        executed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        backup_file VARCHAR(255) NULL,
+        backup_size_bytes BIGINT NULL,
+        backup_modified_at DATETIME NULL,
+        status ENUM('pass','warning','fail') NOT NULL DEFAULT 'fail',
+        duration_seconds DECIMAL(10,3) NOT NULL DEFAULT 0.000,
+        details_json MEDIUMTEXT NULL,
+        executed_by VARCHAR(100) NULL,
+        INDEX idx_executed_at (executed_at),
+        INDEX idx_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+    $latestDrillStmt = $connRestore->query("SELECT * FROM system_restore_drills ORDER BY executed_at DESC, id DESC LIMIT 1");
+    $latestDrill = $latestDrillStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    $maxAgeDays = (int)getSetting('restore_drill_max_age_days', defined('RESTORE_DRILL_MAX_AGE_DAYS') ? RESTORE_DRILL_MAX_AGE_DAYS : 90);
+    if ($maxAgeDays <= 0) {
+        $maxAgeDays = 90;
+    }
+
+    if (!$latestDrill) {
+        $checks['restore_drill'] = [
+            'status' => 'warning',
+            'message' => 'No restore drill evidence found. Run restore drill and record evidence.'
+        ];
+    } else {
+        $executedAt = (string)($latestDrill['executed_at'] ?? '');
+        $status = strtolower((string)($latestDrill['status'] ?? 'fail'));
+        $backupFile = (string)($latestDrill['backup_file'] ?? 'n/a');
+        $ageDays = $executedAt !== '' ? (int)floor((time() - strtotime($executedAt)) / 86400) : 9999;
+        $isStale = $ageDays > $maxAgeDays;
+
+        if ($status === 'pass' && !$isStale) {
+            $checks['restore_drill'] = [
+                'status' => 'pass',
+                'message' => 'Latest restore drill passed on ' . $executedAt . ' using ' . $backupFile . ' (' . $ageDays . ' days ago).'
+            ];
+        } elseif ($status === 'pass' && $isStale) {
+            $checks['restore_drill'] = [
+                'status' => 'warning',
+                'message' => 'Latest restore drill passed on ' . $executedAt . ' but is older than ' . $maxAgeDays . ' days.'
+            ];
+        } elseif ($status === 'warning') {
+            $checks['restore_drill'] = [
+                'status' => 'warning',
+                'message' => 'Latest restore drill has warning status (' . $executedAt . ', backup: ' . $backupFile . ').'
+            ];
+        } else {
+            $checks['restore_drill'] = [
+                'status' => 'fail',
+                'message' => 'Latest restore drill failed on ' . $executedAt . ' (backup: ' . $backupFile . ').'
+            ];
+        }
+    }
+} catch (Exception $e) {
+    $checks['restore_drill'] = ['status' => 'fail', 'message' => 'Restore drill check failed: ' . $e->getMessage()];
+}
+
 // Send throttled email alert to admins when warnings/failures exist.
 sendSystemHealthAlertIfNeeded($checks, $currentUser ?? []);
 
@@ -856,6 +1029,20 @@ include '../../../includes/header.php';
                                         <input type="hidden" name="csrf_token" value="<?php echo Security::generateCSRFToken(); ?>">
                                         <input type="hidden" name="action" value="clear_cache">
                                         <button type="submit" class="btn btn-warning"><i class="fas fa-broom"></i> Clean Cache</button>
+                                    </form>
+                                </div>
+
+                                <div class="btn-group mr-3" role="group">
+                                    <form method="post" onsubmit="return confirm('Run a live uptime probe now?');" style="display:inline-block;margin:0;">
+                                        <input type="hidden" name="csrf_token" value="<?php echo Security::generateCSRFToken(); ?>">
+                                        <input type="hidden" name="action" value="run_uptime_probe">
+                                        <button type="submit" class="btn btn-outline-primary"><i class="fas fa-signal"></i> Run Uptime Probe</button>
+                                    </form>
+
+                                    <form method="post" onsubmit="return confirm('Run restore drill verification on latest backup now?');" style="display:inline-block;margin:0 0 0 10px;">
+                                        <input type="hidden" name="csrf_token" value="<?php echo Security::generateCSRFToken(); ?>">
+                                        <input type="hidden" name="action" value="run_restore_drill">
+                                        <button type="submit" class="btn btn-outline-success"><i class="fas fa-life-ring"></i> Run Restore Drill</button>
                                     </form>
                                 </div>
 

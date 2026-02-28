@@ -98,6 +98,11 @@ if (!isset($currentUser) || !is_array($currentUser)) {
                 </a>
             </li>
             <li>
+                <a href="<?php echo BASE_URL; ?>/views/admin/students/list.php?status=graduated" class="<?php echo ($currentDir == 'students' && ($currentPage == 'graduation-awards.php' || (($_GET['status'] ?? '') === 'graduated'))) ? 'active' : ''; ?>">
+                    <i class="fas fa-certificate"></i><span>Graduation & Awards</span>
+                </a>
+            </li>
+            <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/lecturers/list.php" class="<?php echo ($currentDir == 'lecturers' && $currentPage !== 'schedule.php') ? 'active' : ''; ?>">
                     <i class="fas fa-chalkboard-teacher"></i><span>Lecturers</span>
                 </a>

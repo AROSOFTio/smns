@@ -436,8 +436,81 @@ if ($report === 'system') {
     $data['system'] = $systemRows;
 }
 
-// EXPORT handling (CSV / Excel)
-if ($export && in_array($export, ['csv','excel'])) {
+// EXPORT handling (CSV / Excel / XML)
+if ($export && in_array($export, ['csv','excel','xml'])) {
+    if ($export === 'xml') {
+        $filename = $report . '_report_' . date('Ymd_His') . '.xml';
+        header('Content-Type: application/xml; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+
+        $dom = new DOMDocument('1.0', 'UTF-8');
+        $dom->formatOutput = true;
+        $root = $dom->createElement('report');
+        $root->setAttribute('type', (string)$report);
+        $root->setAttribute('generated_at', date('c'));
+        $dom->appendChild($root);
+
+        $filtersNode = $dom->createElement('filters');
+        $filtersNode->appendChild($dom->createElement('from', (string)$from));
+        $filtersNode->appendChild($dom->createElement('to', (string)$to));
+        $filtersNode->appendChild($dom->createElement('semester_id', (string)$semesterId));
+        $filtersNode->appendChild($dom->createElement('program_id', (string)$programId));
+        $filtersNode->appendChild($dom->createElement('academic_year_id', (string)$academicYearId));
+        $root->appendChild($filtersNode);
+
+        if ($report === 'executive') {
+            $kpisNode = $dom->createElement('kpis');
+            foreach (($data['kpis'] ?? []) as $key => $value) {
+                $metricNode = $dom->createElement('metric');
+                $metricNode->setAttribute('name', (string)$key);
+                $metricNode->appendChild($dom->createTextNode((string)$value));
+                $kpisNode->appendChild($metricNode);
+            }
+            $root->appendChild($kpisNode);
+        } elseif ($report === 'enrollment') {
+            $seriesNode = $dom->createElement('enrollment_series');
+            foreach (($data['series'] ?? []) as $row) {
+                $rowNode = $dom->createElement('row');
+                $rowNode->appendChild($dom->createElement('period', (string)($row['period'] ?? '')));
+                $rowNode->appendChild($dom->createElement('count', (string)($row['cnt'] ?? 0)));
+                $seriesNode->appendChild($rowNode);
+            }
+            $root->appendChild($seriesNode);
+        } elseif ($report === 'financial') {
+            $collectionsNode = $dom->createElement('collections');
+            foreach (($data['collections'] ?? []) as $row) {
+                $rowNode = $dom->createElement('row');
+                $rowNode->appendChild($dom->createElement('period', (string)($row['period'] ?? '')));
+                $rowNode->appendChild($dom->createElement('total', (string)($row['total'] ?? 0)));
+                $collectionsNode->appendChild($rowNode);
+            }
+            $root->appendChild($collectionsNode);
+        } elseif ($report === 'system') {
+            $systemNode = $dom->createElement('system_overview');
+            foreach (($data['system'] ?? []) as $row) {
+                $rowNode = $dom->createElement('semester');
+                foreach ($row as $key => $value) {
+                    $rowNode->appendChild($dom->createElement((string)$key, (string)$value));
+                }
+                $systemNode->appendChild($rowNode);
+            }
+            $root->appendChild($systemNode);
+        } else {
+            $staffNode = $dom->createElement('staff_workload');
+            foreach (($data['staff'] ?? []) as $row) {
+                $rowNode = $dom->createElement('staff_member');
+                foreach ($row as $key => $value) {
+                    $rowNode->appendChild($dom->createElement((string)$key, (string)$value));
+                }
+                $staffNode->appendChild($rowNode);
+            }
+            $root->appendChild($staffNode);
+        }
+
+        echo $dom->saveXML();
+        exit;
+    }
+
     // Build filename
     $filename = $report . '_report_' . date('Ymd_His');
     header('Content-Type: text/csv; charset=utf-8');
@@ -784,6 +857,7 @@ include '../../../includes/header.php';
                         <a href="schedules.php" class="btn btn-primary btn-sm mr-2">Schedules</a>
                         <a href="?<?php echo http_build_query(array_merge($_GET, ['export'=>'csv'])); ?>" class="btn btn-outline-secondary">Export CSV</a>
                         <a href="?<?php echo http_build_query(array_merge($_GET, ['export'=>'excel'])); ?>" class="btn btn-outline-secondary">Export Excel</a>
+                        <a href="?<?php echo http_build_query(array_merge($_GET, ['export'=>'xml'])); ?>" class="btn btn-outline-secondary">Regulatory XML</a>
                         <button type="button" class="btn btn-outline-secondary" onclick="window.print()">PDF / Print</button>
                     </div>
                 </form>
@@ -1024,6 +1098,7 @@ include '../../../includes/header.php';
                     <div class="mb-3">
                         <a href="?<?php echo http_build_query(array_merge($_GET, ['export'=>'csv'])); ?>" class="btn btn-outline-secondary">Export CSV</a>
                         <a href="?<?php echo http_build_query(array_merge($_GET, ['export'=>'excel'])); ?>" class="btn btn-outline-secondary">Export Excel</a>
+                        <a href="?<?php echo http_build_query(array_merge($_GET, ['export'=>'xml'])); ?>" class="btn btn-outline-secondary">Regulatory XML</a>
                     </div>
 
                 <?php else: ?>

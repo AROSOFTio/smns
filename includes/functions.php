@@ -1463,6 +1463,25 @@ function ensureAuditTraceabilityInfrastructure(PDO $conn): void
         }
     };
 
+    $columnExists = static function (PDO $conn, string $tableName, string $columnName): bool {
+        try {
+            $stmt = $conn->prepare("
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = :table_name
+                  AND column_name = :column_name
+            ");
+            $stmt->execute([
+                'table_name' => $tableName,
+                'column_name' => $columnName
+            ]);
+            return ((int)$stmt->fetchColumn()) > 0;
+        } catch (Exception $e) {
+            return false;
+        }
+    };
+
     $triggerExists = static function (PDO $conn, string $triggerName): bool {
         try {
             $stmt = $conn->prepare("
@@ -1521,6 +1540,74 @@ function ensureAuditTraceabilityInfrastructure(PDO $conn): void
         }
     } catch (Exception $e) {
         error_log('Audit infra warning (student_profile_audit): ' . $e->getMessage());
+    }
+
+    try {
+        if ($tableExists($conn, 'students')) {
+            if (!$columnExists($conn, 'students', 'graduation_date')) {
+                $conn->exec("ALTER TABLE students ADD COLUMN graduation_date DATE NULL AFTER status");
+            }
+            if (!$columnExists($conn, 'students', 'graduation_semester_id')) {
+                $conn->exec("ALTER TABLE students ADD COLUMN graduation_semester_id INT NULL AFTER graduation_date");
+            }
+            if (!$columnExists($conn, 'students', 'graduation_award_title')) {
+                $conn->exec("ALTER TABLE students ADD COLUMN graduation_award_title VARCHAR(200) NULL AFTER graduation_semester_id");
+            }
+            if (!$columnExists($conn, 'students', 'graduation_classification')) {
+                $conn->exec("ALTER TABLE students ADD COLUMN graduation_classification VARCHAR(100) NULL AFTER graduation_award_title");
+            }
+
+            if (!$indexExists($conn, 'students', 'idx_graduation_date')) {
+                $conn->exec("ALTER TABLE students ADD INDEX idx_graduation_date (graduation_date)");
+            }
+            if (!$indexExists($conn, 'students', 'idx_graduation_semester')) {
+                $conn->exec("ALTER TABLE students ADD INDEX idx_graduation_semester (graduation_semester_id)");
+            }
+            if (!$indexExists($conn, 'students', 'idx_graduation_class')) {
+                $conn->exec("ALTER TABLE students ADD INDEX idx_graduation_class (graduation_classification)");
+            }
+        }
+    } catch (Exception $e) {
+        error_log('Audit infra warning (students graduation metadata): ' . $e->getMessage());
+    }
+
+    try {
+        if (!$tableExists($conn, 'student_graduation_awards')) {
+            $conn->exec("CREATE TABLE IF NOT EXISTS student_graduation_awards (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                student_id INT NOT NULL,
+                award_type ENUM('degree','diploma','certificate','classification','honours','other') NOT NULL DEFAULT 'degree',
+                award_title VARCHAR(200) NOT NULL,
+                classification VARCHAR(100) NULL,
+                cgpa_at_award DECIMAL(3,2) NULL,
+                award_date DATE NOT NULL,
+                approved_by_user_id INT NULL,
+                notes TEXT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                KEY idx_sga_student (student_id),
+                KEY idx_sga_award_date (award_date),
+                KEY idx_sga_type (award_type),
+                KEY idx_sga_approved_by (approved_by_user_id),
+                CONSTRAINT fk_sga_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+                CONSTRAINT fk_sga_approved_by FOREIGN KEY (approved_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        } else {
+            if (!$indexExists($conn, 'student_graduation_awards', 'idx_sga_student')) {
+                $conn->exec("ALTER TABLE student_graduation_awards ADD INDEX idx_sga_student (student_id)");
+            }
+            if (!$indexExists($conn, 'student_graduation_awards', 'idx_sga_award_date')) {
+                $conn->exec("ALTER TABLE student_graduation_awards ADD INDEX idx_sga_award_date (award_date)");
+            }
+            if (!$indexExists($conn, 'student_graduation_awards', 'idx_sga_type')) {
+                $conn->exec("ALTER TABLE student_graduation_awards ADD INDEX idx_sga_type (award_type)");
+            }
+            if (!$indexExists($conn, 'student_graduation_awards', 'idx_sga_approved_by')) {
+                $conn->exec("ALTER TABLE student_graduation_awards ADD INDEX idx_sga_approved_by (approved_by_user_id)");
+            }
+        }
+    } catch (Exception $e) {
+        error_log('Audit infra warning (student_graduation_awards): ' . $e->getMessage());
     }
 
     $createImmutableTrigger = static function (PDO $conn, string $triggerName, string $tableName, string $eventName, string $message) use ($tableExists, $triggerExists): void {

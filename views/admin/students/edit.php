@@ -555,6 +555,9 @@ $pageTitle = 'Edit Student - ' . APP_NAME;
             <a href="view.php?id=<?php echo $student['id']; ?>" class="btn btn-info mr-2">
                 <i class="fas fa-eye"></i> View Details
             </a>
+            <a href="graduation-awards.php?id=<?php echo $student['id']; ?>" class="btn btn-primary mr-2">
+                <i class="fas fa-certificate"></i> Graduation & Awards
+            </a>
             <a href="audit.php?id=<?php echo $student['id']; ?>" class="btn btn-dark mr-2">
                 <i class="fas fa-history"></i> Profile Audit
             </a>

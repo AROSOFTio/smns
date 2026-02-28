@@ -17,6 +17,30 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
 $db = new Database();
 $conn = $db->getConnection();
 
+$requestTypeLabels = [
+    'change_programme' => 'Change Of Programme',
+    'administrative_registration' => 'Administrative Registration',
+    'accommodation' => 'Apply For Accommodation',
+    'new_id_card' => 'New ID Card',
+    'semester_registration' => 'Semester Registration',
+    'enable_registration' => 'Enable Registration',
+    'student_record_access' => 'Student Record Access',
+    'student_record_correction' => 'Student Record Correction',
+    'data_deletion_anonymization' => 'Data Deletion / Anonymization',
+];
+$complianceRequestTypes = ['student_record_access', 'student_record_correction', 'data_deletion_anonymization'];
+$formatRequestType = static function (string $type) use ($requestTypeLabels): string {
+    if (isset($requestTypeLabels[$type])) {
+        return (string)$requestTypeLabels[$type];
+    }
+    return ucwords(str_replace('_', ' ', $type));
+};
+$requestView = (isset($_GET['view']) && $_GET['view'] === 'compliance') ? 'compliance' : 'all';
+$buildViewUrl = static function (string $view): string {
+    return 'student_requests.php?view=' . urlencode($view);
+};
+$redirectUrl = $buildViewUrl($requestView);
+
 // Ensure student_requests table exists (safe to run each request)
 try {
     $conn->exec("CREATE TABLE IF NOT EXISTS student_requests (
@@ -43,7 +67,7 @@ try {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'approve_all_semester_requests') {
     if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $session->setFlash('error', 'Invalid CSRF token');
-        header('Location: student_requests.php'); exit;
+        header('Location: ' . $redirectUrl); exit;
     }
 
     $semesterFilter = isset($_POST['semester_id']) && (int)$_POST['semester_id'] > 0 ? (int)$_POST['semester_id'] : null;
@@ -61,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
     if (empty($rows)) {
         $session->setFlash('info', 'No pending semester registration requests found.');
-        header('Location: student_requests.php'); exit;
+        header('Location: ' . $redirectUrl); exit;
     }
 
     $updateReq = $conn->prepare("UPDATE student_requests SET status = 'approved', admin_response = :resp, updated_at = NOW() WHERE id = :id");
@@ -151,14 +175,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $session->setFlash('error', 'Failed to approve requests.');
     }
 
-    header('Location: student_requests.php'); exit;
+    header('Location: ' . $redirectUrl); exit;
 }
 
 // Handle action (approve/reject)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array($_POST['action'], ['approve','reject'])) {
     if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $session->setFlash('error', 'Invalid CSRF token');
-        header('Location: student_requests.php'); exit;
+        header('Location: ' . $redirectUrl); exit;
     }
 
     $action = $_POST['action'];
@@ -167,7 +191,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
 
     if ($reqId <= 0) {
         $session->setFlash('error', 'Invalid request id');
-        header('Location: student_requests.php'); exit;
+        header('Location: ' . $redirectUrl); exit;
     }
 
     // Load request
@@ -176,13 +200,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
     $row = $rq->fetch(PDO::FETCH_ASSOC);
     if (!$row) {
         $session->setFlash('error', 'Request not found');
-        header('Location: student_requests.php'); exit;
+        header('Location: ' . $redirectUrl); exit;
+    }
+    $isComplianceRequest = in_array((string)($row['request_type'] ?? ''), $complianceRequestTypes, true);
+    if ($isComplianceRequest && $response === '') {
+        $session->setFlash('error', 'Admin response is required for compliance requests.');
+        header('Location: ' . $redirectUrl); exit;
     }
 
     $newStatus = $action === 'approve' ? 'approved' : 'rejected';
     if ($row['status'] === $newStatus) {
         $session->setFlash('info', 'Request already ' . $newStatus);
-        header('Location: student_requests.php'); exit;
+        header('Location: ' . $redirectUrl); exit;
     }
 
     try {
@@ -250,8 +279,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
         // Prepare student notification content (include admin response)
         $noteTitle = $action === 'approve' ? 'Request Approved' : 'Request Rejected';
         $studentName = trim(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? '')) ?: 'Student';
-        $noteMsg = $noteTitle . ': ' . ucfirst(str_replace('_',' ', $row['request_type'])) . '. Admin response: ' . ($response ?: '-');
-        $noteLink = BASE_URL . '/views/student/dashboard.php?request_id=' . $reqId;
+        $noteMsg = $noteTitle . ': ' . $formatRequestType((string)$row['request_type']) . '. Admin response: ' . ($response ?: '-');
+        $noteLink = BASE_URL . '/views/student/services.php?tab=history&request_id=' . $reqId;
 
         // First try to UPDATE the student's original submission notification (if present)
         try {
@@ -296,7 +325,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
         if (!empty($row['user_email']) && filter_var($row['user_email'], FILTER_VALIDATE_EMAIL)) {
             Helper::sendTemplatedEmail('request_response', $row['user_email'], [
                 'recipient_name' => $studentName,
-                'request_type' => ucfirst(str_replace('_', ' ', (string)$row['request_type'])),
+                'request_type' => $formatRequestType((string)$row['request_type']),
                 'status' => $newStatus,
                 'admin_response' => $response,
                 'request_id' => $reqId,
@@ -310,12 +339,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
         $session->setFlash('error', 'Failed to update request');
     }
 
-    header('Location: student_requests.php'); exit;
+    header('Location: ' . $redirectUrl); exit;
 }
 
-// Fetch requests
-$stmt = $conn->prepare('SELECT sr.*, s.first_name, s.last_name, s.student_id as reg_no, u.email as user_email FROM student_requests sr LEFT JOIN students s ON sr.student_id = s.id LEFT JOIN users u ON sr.user_id = u.id ORDER BY sr.created_at DESC');
-$stmt->execute();
+// Fetch requests (optionally filtered to compliance/legal request types only)
+$fetchSql = 'SELECT sr.*, s.first_name, s.last_name, s.student_id as reg_no, u.email as user_email FROM student_requests sr LEFT JOIN students s ON sr.student_id = s.id LEFT JOIN users u ON sr.user_id = u.id';
+$fetchParams = [];
+if ($requestView === 'compliance') {
+    $inParts = [];
+    foreach ($complianceRequestTypes as $idx => $type) {
+        $key = ':crt' . $idx;
+        $inParts[] = $key;
+        $fetchParams[$key] = $type;
+    }
+    $fetchSql .= ' WHERE sr.request_type IN (' . implode(', ', $inParts) . ')';
+}
+$fetchSql .= ' ORDER BY sr.created_at DESC';
+$stmt = $conn->prepare($fetchSql);
+$stmt->execute($fetchParams);
 $requests = $stmt->fetchAll();
 
 // fetch semesters for bulk-approve selector
@@ -367,6 +408,13 @@ include '../../includes/header.php';
             <div class="card-header">Pending / Recent Requests</div>
             <div class="card-body p-0">
                 <div class="p-3">
+                    <div class="mb-2">
+                        <a href="<?php echo e($buildViewUrl('all')); ?>" class="btn btn-sm <?php echo $requestView === 'all' ? 'btn-primary' : 'btn-outline-primary'; ?>">All Requests</a>
+                        <a href="<?php echo e($buildViewUrl('compliance')); ?>" class="btn btn-sm <?php echo $requestView === 'compliance' ? 'btn-primary' : 'btn-outline-primary'; ?>">Compliance / Legal</a>
+                    </div>
+                    <div class="alert alert-info mb-3">
+                        Compliance requests (record access, correction, deletion/anonymization) require documented admin responses.
+                    </div>
                     <form method="POST" class="form-inline mb-3" onsubmit="return confirm('Approve ALL pending semester registration requests' + (document.getElementById('bulkSemester').value ? ' for the selected semester?' : '?'))">
                         <?php echo csrfField(); ?>
                         <label class="mr-2 mb-2" style="font-weight:600;">Bulk approve semester requests:</label>
@@ -400,7 +448,7 @@ include '../../includes/header.php';
                                         <td><?php echo e(Helper::formatDateTime($r['created_at'], 'M d, Y H:i')); ?></td>
                                         <td><?php echo e(trim(($r['first_name'] ?? '') . ' ' . ($r['last_name'] ?? ''))); ?></td>
                                         <td><?php echo e($r['reg_no'] ?? '-'); ?></td>
-                                        <td><?php echo e(ucwords(str_replace('_',' ', $r['request_type']))); ?></td>                                        <td><?php echo e($r['semester_label'] ?: '-'); ?></td>                                        <td><?php echo e(mb_substr($r['reason'],0,120)); ?><?php echo strlen($r['reason'])>120 ? '...' : ''; ?></td>
+                                        <td><?php echo e($formatRequestType((string)$r['request_type'])); ?></td>                                        <td><?php echo e($r['semester_label'] ?: '-'); ?></td>                                        <td><?php echo e(mb_substr($r['reason'],0,120)); ?><?php echo strlen($r['reason'])>120 ? '...' : ''; ?></td>
                                         <td><span class="badge badge-<?php echo $r['status']==='pending' ? 'warning' : ($r['status']==='approved' ? 'success' : 'secondary'); ?>"><?php echo e(ucfirst($r['status'])); ?></span></td>
                                         <td>
                                             <?php if ($r['status'] === 'pending'): ?>
@@ -408,7 +456,7 @@ include '../../includes/header.php';
                                                 <?php echo csrfField(); ?>
                                                 <input type="hidden" name="request_id" value="<?php echo e($r['id']); ?>">
                                                 <input type="hidden" name="action" value="approve">
-                                                <input type="text" name="admin_response" placeholder="Optional response" class="form-control form-control-sm mb-1" style="width:220px; display:inline-block;">
+                                                <input type="text" name="admin_response" placeholder="Response (required for compliance requests)" class="form-control form-control-sm mb-1" style="width:220px; display:inline-block;">
                                                 <button class="btn btn-sm btn-success" type="submit">Approve</button>
                                             </form>
 
@@ -416,7 +464,7 @@ include '../../includes/header.php';
                                                 <?php echo csrfField(); ?>
                                                 <input type="hidden" name="request_id" value="<?php echo e($r['id']); ?>">
                                                 <input type="hidden" name="action" value="reject">
-                                                <input type="text" name="admin_response" placeholder="Optional response" class="form-control form-control-sm mb-1" style="width:220px; display:inline-block;">
+                                                <input type="text" name="admin_response" placeholder="Response (required for compliance requests)" class="form-control form-control-sm mb-1" style="width:220px; display:inline-block;">
                                                 <button class="btn btn-sm btn-danger" type="submit">Reject</button>
                                             </form>
                                             <?php else: ?>

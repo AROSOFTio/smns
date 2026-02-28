@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once '../../config.php';
 
 $session = new Session('student');
@@ -1494,6 +1494,7 @@ html[data-theme='dark'] .chip.balance-chip {
             <li><a href="services.php?tab=new_id">NEW ID CARDS</a></li>
         </ul>
         <li><a href="<?php echo e($linkDashboard); ?>">BIO DATA</a></li>
+        <li><a href="<?php echo BASE_URL; ?>/views/student/transcript.php">VIEW TRANSCRIPT</a></li>
         <li><a href="<?php echo e($linkMailbox); ?>">MY MAILBOX</a></li>
         <li><a href="<?php echo e($linkAcademicCalendar); ?>">ACADEMIC CALENDAR</a></li>
     </ul>

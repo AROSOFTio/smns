@@ -120,6 +120,14 @@ define('MOBILE_MONEY_AIRTEL_CLIENT_ID', '');
 define('MOBILE_MONEY_AIRTEL_CLIENT_SECRET', '');
 define('MOBILE_MONEY_AIRTEL_COUNTRY_CODE', 'UG');
 
+// Interoperability / External integrations
+define('INTEGRATION_API_TOKEN', 'replace-with-strong-integration-token');
+define('LMS_INTEGRATION_PROVIDER', 'moodle');
+define('LMS_INTEGRATION_BASE_URL', 'https://lms.your-domain.example');
+define('UPTIME_SLO_TARGET_PERCENT', 99.0);
+define('RESTORE_DRILL_MAX_AGE_DAYS', 90);
+define('UPTIME_MONITOR_TIMEOUT_SECONDS', 8);
+
 // Backup controls
 define('BACKUP_STORAGE_PATH', dirname(BASE_PATH, 2) . DIRECTORY_SEPARATOR . 'smns_secure_backups');
 define('BACKUP_ENCRYPTION_ENABLED', true);

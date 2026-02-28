@@ -31,6 +31,7 @@ Default baseline unless legal/regulatory obligations require longer retention:
 1. Archival actions must preserve traceability metadata (`archived_at`, actor when available).
 2. Archived data must remain searchable for authorized users.
 3. Hard deletes are restricted and must follow approved change process.
+4. Where legal requests require identity removal but historical records must remain, anonymization must be used in preference to hard delete.
 
 ## 5. Purge Controls
 

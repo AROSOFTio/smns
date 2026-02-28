@@ -121,3 +121,130 @@ This mapping links governance controls to policy artifacts, SOP execution record
 - [x] Control-to-system evidence traceability documented
 - [ ] Organization-specific owner names and approval signatures completed
 - [ ] Periodic evidence logs populated from operations
+
+---
+
+## 6. Academic Structure & Standards
+
+### In-System Evidence
+
+- Semester/term structure and academic calendar relationships:
+  - `Seed/schema.sql` (`academic_years`, `semesters`, `semester_registrations`)
+  - `views/admin/academic-calendar.php`
+- Standard credit unit model and course-to-term alignment:
+  - `Seed/schema.sql` (`courses.credit_hours`, `courses.semester_offered`, registration/result foreign keys)
+  - `views/student/course-registration.php`
+- GPA / CGPA rules and repeatable computation:
+  - `Seed/schema.sql` (`student_gpas`, `sp_calculate_student_gpa`)
+  - `views/student/results.php`
+  - `views/student/transcript.php`
+- Transcript generation (print/export standard format):
+  - `views/student/transcript.php` (term-by-term transcript, SGPA/CGPA, CSV/Excel/XML export, print-to-PDF official output)
+  - `views/verify/transcript.php` (digital verification by student ID + verification code/hash)
+  - `views/admin/results/view-slip.php` (official term result slip print view)
+- Graduation and award tracking:
+  - `Seed/schema.sql` (`students.graduation_*`, `student_graduation_awards`)
+  - `includes/functions.php` (`ensureAuditTraceabilityInfrastructure` bootstrap for graduation/award schema)
+  - `views/admin/students/graduation-awards.php`
+  - `views/admin/students/view.php`
+
+---
+
+## 7. Reliability & Continuity
+
+### Policy Artifacts
+
+- `docs/governance/policies/Service-Reliability-and-Continuity-Policy.md`
+- `docs/governance/sops/SOP-Disaster-Recovery-and-Continuity.md`
+- `docs/governance/sops/SOP-Retention-Backup-Purge-and-Restore.md`
+
+### In-System Evidence
+
+- Availability target and reliability controls:
+  - `config.php` (`UPTIME_SLO_TARGET_PERCENT`, `RESTORE_DRILL_MAX_AGE_DAYS`)
+- Public uptime probe endpoint:
+  - `api/health/uptime.php`
+- Scheduled uptime monitoring + alerting:
+  - `scripts/uptime_monitor.php`
+  - `views/admin/system/health.php` (`uptime_slo` check and manual probe action)
+- Disaster-recovery restore drill evidence:
+  - `scripts/restore_test_drill.php`
+  - `views/admin/system/health.php` (`restore_drill` check and manual drill action)
+- Backup and health alerting baseline:
+  - `scripts/backup_cron.php`
+  - `scripts/system_health_monitor.php`
+  - `views/admin/system/health.php`
+
+### Audit Record Templates
+
+- `docs/governance/templates/Disaster-Recovery-Drill-Log.csv`
+- `docs/governance/templates/Audit-Evidence-Register.csv`
+
+---
+
+## 8. Compliance & Legal Readiness
+
+### Policy Artifacts
+
+- `docs/governance/policies/Data-Governance-Policy.md`
+- `docs/governance/policies/Records-Retention-and-Archival-Policy.md`
+- `docs/governance/sops/SOP-Data-Subject-Rights-and-Cross-Border-Handling.md`
+
+### In-System Evidence
+
+- Student access to own records:
+  - `views/student/dashboard.php`
+  - `views/student/results.php`
+  - `views/student/transcript.php`
+  - `views/student/payments.php`
+- Correction/data-rights request process:
+  - `views/student/services.php` (request options + history)
+  - `views/student/submit-request.php` (validated request submission)
+  - `views/admin/student_requests.php` (admin approval/rejection with response trace)
+  - `views/admin/students/edit.php` + `views/admin/students/audit.php` (`student_profile_audit` correction evidence)
+- Data deletion/anonymization rules:
+  - `views/admin/students/delete.php` (anonymize-first + guarded hard-delete flow)
+  - `docs/governance/policies/Records-Retention-and-Archival-Policy.md` (hard-delete restrictions)
+- Cross-border data handling awareness:
+  - `docs/governance/sops/SOP-Data-Subject-Rights-and-Cross-Border-Handling.md` (vendor/location/legal-basis checklist)
+- Institutional and regulatory reporting:
+  - `views/admin/reports/index.php` (institutional reporting dashboards + CSV/Excel/XML regulatory export)
+
+### Audit Record Templates
+
+- `docs/governance/templates/Audit-Evidence-Register.csv`
+- `docs/governance/templates/Change-Request-Form.md`
+
+---
+
+## 9. Operations & People
+
+### Policy Artifacts
+
+- `docs/governance/policies/Roles-and-Responsibilities-Policy.md`
+- `docs/governance/sops/SOP-Operations-Runbook-and-Staff-Training.md`
+- `docs/governance/sops/SOP-Incident-Handling-and-Escalation.md`
+
+### In-System Evidence
+
+- Written SOPs for staff operations:
+  - `docs/governance/sops/SOP-Access-Provisioning-and-Role-Review.md`
+  - `docs/governance/sops/SOP-Change-Request-to-Deployment.md`
+  - `docs/governance/sops/SOP-Operations-Runbook-and-Staff-Training.md`
+- Separation of duties (academic vs finance):
+  - `Seed/schema.sql` (`users.role`)
+  - `core/session check/Role-Based-Session-Isolation-Architecture.md`
+  - `views/admin/results/*` (academic flows)
+  - `views/finance/*` and `views/admin/finance/*` (finance workflows)
+- Incident handling process evidence:
+  - `docs/governance/sops/SOP-Incident-Handling-and-Escalation.md`
+  - `views/admin/system/health.php`
+  - `views/admin/activity-recovery.php`
+  - `scripts/system_health_monitor.php`
+  - `scripts/uptime_monitor.php`
+
+### Audit Record Templates
+
+- `docs/governance/templates/User-Training-Register.csv`
+- `docs/governance/templates/Incident-Register.csv`
+- `docs/governance/templates/Audit-Evidence-Register.csv`

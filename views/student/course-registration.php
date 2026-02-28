@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Student - Course Registration
  * Modified to require admin approval before showing courses
@@ -989,7 +989,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 error_log("Assigned $assignedCount courses to student " . $studentProfile['id']);
             }
         } catch (PDOException $innerEx) {
-            // non-fatal: if course auto-assign fails, continue â€” student can still select courses manually
+            // non-fatal: if course auto-assign fails, continue — student can still select courses manually
             error_log("Course auto-assign error: " . $innerEx->getMessage());
         }
 
@@ -1375,7 +1375,7 @@ if ($isRepeatLocked && $semesterId && empty($approvedCourses)) {
 
 // Determine whether selection should be allowed. If courses were assigned by admin
 // (`course_assignments`) or the student already has approved course_registrations,
-// do not allow manual selection â€” show read-only list instead.
+// do not allow manual selection — show read-only list instead.
 $selectionAllowed = true;
 if (!empty($approvedCourses) || $fromAssignments) {
     $selectionAllowed = false;
@@ -1948,6 +1948,7 @@ include '../../includes/header.php';
         </ul>
         <li><a href="<?php echo e($linkDashboard); ?>">BIO DATA</a></li>
         <li><a href="<?php echo e($linkResults); ?>">VIEW RESULTS</a></li>
+        <li><a href="<?php echo BASE_URL; ?>/views/student/transcript.php">VIEW TRANSCRIPT</a></li>
         <li><a href="<?php echo e($linkMailbox); ?>">MY MAILBOX</a></li>
         <li><a href="<?php echo e($linkAcademicCalendar); ?>">ACADEMIC CALENDAR</a></li>
     </ul>

@@ -30,6 +30,8 @@ Define who is accountable and responsible for governance controls across academi
 | Fee Version Approval/Publish Workflow | I | R | C | A/R |
 | Backup and Recovery | I | I | A/R | R |
 | Retention and Purge Execution | C | C | A/R | R |
+| Data Subject Rights (Access/Correction/Deletion Review) | A/R | I | C | R |
+| Cross-Border Data Handling Review | C | C | A/R | R |
 | Change Request Assessment | C | C | A/R | R |
 | Production Release Approval | C | C | A | R |
 | Audit Evidence Collection | C | C | A/R | R |
@@ -46,6 +48,7 @@ Legend:
 1. No single user should request, approve, and deploy high-risk changes alone.
 2. Approver roles for academic and finance workflows must be separate from request originators where practical.
 3. Super-admin or delegated governance authority is required for irreversible actions.
+4. Academic and finance duties must remain role-separated; cross-module access must follow formal role approval and periodic review.
 
 ## 6. Minimum Review Cadence
 

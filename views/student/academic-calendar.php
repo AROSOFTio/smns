@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once dirname(__DIR__, 2) . '/config.php';
 
 $session = new Session('student');
@@ -255,6 +255,7 @@ body{background:#f2f4f7}.student-sidebar{width:230px;background:linear-gradient(
       <li><a href="services.php?tab=new_id">NEW ID CARDS</a></li>
     </ul>
     <li><a href="<?php echo e($linkDashboard); ?>">BIO DATA</a></li>
+    <li><a href="<?php echo BASE_URL; ?>/views/student/transcript.php">VIEW TRANSCRIPT</a></li>
     <li><a href="<?php echo e($linkMailbox); ?>">MY MAILBOX</a></li>
     <li class="active"><a href="<?php echo e($linkAcademicCalendar); ?>">ACADEMIC CALENDAR</a></li>
   </ul>

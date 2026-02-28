@@ -46,6 +46,23 @@ CREATE TABLE password_history (
     INDEX idx_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Transcript download rights (admin verification gate for student transcript exports)
+CREATE TABLE IF NOT EXISTS transcript_download_rights (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    student_id INT NOT NULL UNIQUE,
+    status ENUM('granted', 'revoked') NOT NULL DEFAULT 'revoked',
+    verified_by_user_id INT NULL,
+    verified_at DATETIME NULL,
+    revoked_by_user_id INT NULL,
+    revoked_at DATETIME NULL,
+    notes TEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_tdr_status (status),
+    INDEX idx_tdr_verified_at (verified_at),
+    INDEX idx_tdr_revoked_at (revoked_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- MFA login challenges (email OTP)
 CREATE TABLE auth_mfa_challenges (
     id INT PRIMARY KEY AUTO_INCREMENT,
@@ -226,16 +243,24 @@ CREATE TABLE students (
     entry_semester_id INT NULL,
     photo VARCHAR(255) NULL,
     status ENUM('active', 'graduated', 'withdrawn', 'suspended') DEFAULT 'active',
+    graduation_date DATE NULL,
+    graduation_semester_id INT NULL,
+    graduation_award_title VARCHAR(200) NULL,
+    graduation_classification VARCHAR(100) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (program_id) REFERENCES programs(id) ON DELETE RESTRICT,
     FOREIGN KEY (entry_semester_id) REFERENCES semesters(id) ON DELETE SET NULL,
+    FOREIGN KEY (graduation_semester_id) REFERENCES semesters(id) ON DELETE SET NULL,
     INDEX idx_student_id (student_id),
     INDEX idx_user_id (user_id),
     INDEX idx_program (program_id),
     INDEX idx_status (status),
-    INDEX idx_level (level_year)
+    INDEX idx_level (level_year),
+    INDEX idx_graduation_date (graduation_date),
+    INDEX idx_graduation_semester (graduation_semester_id),
+    INDEX idx_graduation_class (graduation_classification)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Student Profile Audit Trail (versioned corrections on identity/profile records)
@@ -254,6 +279,27 @@ CREATE TABLE IF NOT EXISTS student_profile_audit (
     INDEX idx_spa_student (student_id),
     INDEX idx_spa_user (changed_by_user_id),
     INDEX idx_spa_changed_at (changed_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Graduation / awards register
+CREATE TABLE IF NOT EXISTS student_graduation_awards (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    student_id INT NOT NULL,
+    award_type ENUM('degree','diploma','certificate','classification','honours','other') NOT NULL DEFAULT 'degree',
+    award_title VARCHAR(200) NOT NULL,
+    classification VARCHAR(100) NULL,
+    cgpa_at_award DECIMAL(3,2) NULL,
+    award_date DATE NOT NULL,
+    approved_by_user_id INT NULL,
+    notes TEXT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    FOREIGN KEY (approved_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_sga_student (student_id),
+    INDEX idx_sga_award_date (award_date),
+    INDEX idx_sga_type (award_type),
+    INDEX idx_sga_approved_by (approved_by_user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Semester registrations: students request semester registration (admin approves)

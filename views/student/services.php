@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once '../../config.php';
 
 $session = new Session('student');
@@ -25,6 +25,26 @@ $validTabs = ['apply', 'history', 'new_id'];
 if (!in_array($tab, $validTabs, true)) {
     $tab = 'apply';
 }
+
+$requestCatalog = [
+    'change_programme' => ['label' => 'CHANGE OF PROGRAMME', 'icon' => 'fas fa-user-graduate'],
+    'administrative_registration' => ['label' => 'ADMINISTRATIVE REGISTRATION', 'icon' => 'fas fa-user-tie'],
+    'accommodation' => ['label' => 'APPLY FOR ACCOMMODATION', 'icon' => 'fas fa-home'],
+    'student_record_access' => ['label' => 'REQUEST RECORD ACCESS', 'icon' => 'fas fa-folder-open'],
+    'student_record_correction' => ['label' => 'REQUEST RECORD CORRECTION', 'icon' => 'fas fa-pen-to-square'],
+    'data_deletion_anonymization' => ['label' => 'DATA DELETION / ANONYMIZATION', 'icon' => 'fas fa-user-shield'],
+];
+$selectedRequestType = trim((string)($_GET['request'] ?? ''));
+if ($selectedRequestType !== '' && !array_key_exists($selectedRequestType, $requestCatalog)) {
+    $selectedRequestType = '';
+}
+$formatRequestType = static function (?string $requestType) use ($requestCatalog): string {
+    $requestType = (string)$requestType;
+    if ($requestType !== '' && isset($requestCatalog[$requestType]['label'])) {
+        return (string)$requestCatalog[$requestType]['label'];
+    }
+    return $requestType === '' ? '-' : ucwords(str_replace('_', ' ', $requestType));
+};
 
 $currentSemester = [
     'academic_year' => '-',
@@ -227,6 +247,7 @@ html[data-theme='dark'] .service-tile i {
             <li class="<?php echo $tab === 'new_id' ? 'active' : ''; ?>"><a href="services.php?tab=new_id">NEW ID CARDS</a></li>
         </ul>
         <li><a href="<?php echo e($linkDashboard); ?>">BIO DATA</a></li>
+        <li><a href="<?php echo BASE_URL; ?>/views/student/transcript.php">VIEW TRANSCRIPT</a></li>
         <li><a href="<?php echo e($linkMailbox); ?>">MY MAILBOX</a></li>
         <li><a href="<?php echo e($linkAcademicCalendar); ?>">ACADEMIC CALENDAR</a></li>
     </ul>
@@ -273,16 +294,21 @@ html[data-theme='dark'] .service-tile i {
         <div class="cardx">
             <?php if ($tab === 'apply'): ?>
                 <div class="service-grid">
-                    <a class="service-tile" href="services.php?tab=apply&request=change_programme"><i class="fas fa-user-graduate"></i>CHANGE OF PROGRAMME</a>
-                    <a class="service-tile" href="services.php?tab=apply&request=administrative_registration"><i class="fas fa-user-tie"></i>ADMINISTRATIVE REGISTRATION</a>
-                    <a class="service-tile" href="services.php?tab=apply&request=accommodation"><i class="fas fa-home"></i>APPLY FOR ACCOMMODATION</a>
+                    <?php foreach ($requestCatalog as $requestKey => $requestMeta): ?>
+                        <a class="service-tile" href="services.php?tab=apply&request=<?php echo urlencode((string)$requestKey); ?>">
+                            <i class="<?php echo e((string)$requestMeta['icon']); ?>"></i><?php echo e((string)$requestMeta['label']); ?>
+                        </a>
+                    <?php endforeach; ?>
                 </div>
-                <?php if (!empty($_GET['request'])): ?>
+                <div class="alert alert-info mt-3 mb-0">
+                    Compliance requests are handled here: record access, correction, and deletion/anonymization.
+                </div>
+                <?php if ($selectedRequestType !== ''): ?>
                     <div style="margin-top:14px;" class="request-box">
                         <form method="POST" action="submit-request.php">
                             <?php echo csrfField(); ?>
-                            <input type="hidden" name="request_type" value="<?php echo e((string)$_GET['request']); ?>">
-                            <label>Reason</label>
+                            <input type="hidden" name="request_type" value="<?php echo e($selectedRequestType); ?>">
+                            <label>Reason for <?php echo e($formatRequestType($selectedRequestType)); ?></label>
                             <textarea name="reason" required></textarea>
                             <button type="submit">Submit Request</button>
                         </form>
@@ -299,7 +325,7 @@ html[data-theme='dark'] .service-tile i {
                                 <?php $st = strtolower((string)($h['status'] ?? 'pending')); ?>
                                 <tr>
                                     <td><?php echo !empty($h['created_at']) ? e(date('d M Y H:i', strtotime($h['created_at']))) : '-'; ?></td>
-                                    <td><?php echo e(ucwords(str_replace('_', ' ', (string)($h['request_type'] ?? '-')))); ?></td>
+                                    <td><?php echo e($formatRequestType((string)($h['request_type'] ?? ''))); ?></td>
                                     <td><?php echo e($h['reason'] ?? '-'); ?></td>
                                     <td><span class="status-pill <?php echo e($st); ?>"><?php echo e(strtoupper($st)); ?></span></td>
                                     <td><?php echo e($h['admin_response'] ?? '-'); ?></td>

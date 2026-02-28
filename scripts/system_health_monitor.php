@@ -10,6 +10,8 @@ function monitorCheckMetadata($checkName) {
         'database' => ['label' => 'Database Connection', 'area' => 'Core/Database'],
         'classes' => ['label' => 'Core Class Loading', 'area' => 'Core'],
         'smtp' => ['label' => 'SMTP Connectivity', 'area' => 'Email/SMTP'],
+        'uptime_slo' => ['label' => 'Availability SLO (>=99%)', 'area' => 'Reliability/Uptime'],
+        'restore_drill' => ['label' => 'Restore Drill Recency', 'area' => 'Disaster Recovery'],
         'admin_pages' => ['label' => 'Admin Module Pages', 'area' => 'Module: Admin'],
         'student_pages' => ['label' => 'Student Module Pages', 'area' => 'Module: Student'],
         'lecturer_pages' => ['label' => 'Lecturer Module Pages', 'area' => 'Module: Lecturer'],
@@ -149,6 +151,104 @@ function monitorRunChecks() {
         }
     } catch (Exception $e) {
         $checks['smtp'] = ['status' => 'fail', 'message' => 'SMTP check error: ' . $e->getMessage()];
+    }
+
+    // Uptime SLO evidence check
+    try {
+        $conn->exec("CREATE TABLE IF NOT EXISTS system_uptime_checks (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            checked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            target_url VARCHAR(500) NOT NULL,
+            http_status INT NULL,
+            response_ms INT NULL,
+            is_up TINYINT(1) NOT NULL DEFAULT 0,
+            status_label VARCHAR(30) NOT NULL DEFAULT 'down',
+            error_message VARCHAR(500) NULL,
+            payload_json MEDIUMTEXT NULL,
+            INDEX idx_checked_at (checked_at),
+            INDEX idx_is_up (is_up)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+        $targetPercent = (float)getSetting('availability_target_percent', defined('UPTIME_SLO_TARGET_PERCENT') ? UPTIME_SLO_TARGET_PERCENT : 99.0);
+        if ($targetPercent <= 0 || $targetPercent > 100) {
+            $targetPercent = 99.0;
+        }
+        $windowDays = (int)getSetting('availability_window_days', 30);
+        if ($windowDays <= 0) {
+            $windowDays = 30;
+        }
+        $windowStart = date('Y-m-d H:i:s', strtotime("-{$windowDays} days"));
+
+        $stmt = $conn->prepare("
+            SELECT COUNT(*) AS total_checks, COALESCE(SUM(is_up), 0) AS up_checks, MAX(checked_at) AS last_checked_at
+            FROM system_uptime_checks
+            WHERE checked_at >= :window_start
+        ");
+        $stmt->execute(['window_start' => $windowStart]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $total = (int)($row['total_checks'] ?? 0);
+        $up = (int)($row['up_checks'] ?? 0);
+        $availability = $total > 0 ? round(($up / $total) * 100, 3) : null;
+        $lastCheck = (string)($row['last_checked_at'] ?? '');
+
+        if ($total < 20) {
+            $checks['uptime_slo'] = ['status' => 'warning', 'message' => 'Uptime evidence insufficient: ' . $total . ' probes in window.'];
+        } elseif ($availability !== null && $availability >= $targetPercent) {
+            $ageWarn = '';
+            if ($lastCheck !== '' && (time() - strtotime($lastCheck)) > 3600) {
+                $ageWarn = ' Last probe older than 60 minutes.';
+            }
+            $checks['uptime_slo'] = [
+                'status' => $ageWarn === '' ? 'pass' : 'warning',
+                'message' => 'Availability ' . number_format((float)$availability, 3) . '% (target ' . number_format((float)$targetPercent, 2) . '%).' . $ageWarn
+            ];
+        } else {
+            $checks['uptime_slo'] = ['status' => 'fail', 'message' => 'Availability ' . number_format((float)($availability ?? 0), 3) . '% below target ' . number_format((float)$targetPercent, 2) . '%.'];
+        }
+    } catch (Exception $e) {
+        $checks['uptime_slo'] = ['status' => 'fail', 'message' => 'Uptime SLO check failed: ' . $e->getMessage()];
+    }
+
+    // Restore drill recency check
+    try {
+        $conn->exec("CREATE TABLE IF NOT EXISTS system_restore_drills (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            executed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            backup_file VARCHAR(255) NULL,
+            backup_size_bytes BIGINT NULL,
+            backup_modified_at DATETIME NULL,
+            status ENUM('pass','warning','fail') NOT NULL DEFAULT 'fail',
+            duration_seconds DECIMAL(10,3) NOT NULL DEFAULT 0.000,
+            details_json MEDIUMTEXT NULL,
+            executed_by VARCHAR(100) NULL,
+            INDEX idx_executed_at (executed_at),
+            INDEX idx_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+        $maxAgeDays = (int)getSetting('restore_drill_max_age_days', defined('RESTORE_DRILL_MAX_AGE_DAYS') ? RESTORE_DRILL_MAX_AGE_DAYS : 90);
+        if ($maxAgeDays <= 0) {
+            $maxAgeDays = 90;
+        }
+        $latest = $conn->query("SELECT status, executed_at, backup_file FROM system_restore_drills ORDER BY executed_at DESC, id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+        if (!$latest) {
+            $checks['restore_drill'] = ['status' => 'warning', 'message' => 'No restore drill evidence found.'];
+        } else {
+            $st = strtolower((string)($latest['status'] ?? 'fail'));
+            $when = (string)($latest['executed_at'] ?? '');
+            $file = (string)($latest['backup_file'] ?? 'n/a');
+            $ageDays = $when !== '' ? (int)floor((time() - strtotime($when)) / 86400) : 9999;
+            if ($st === 'pass' && $ageDays <= $maxAgeDays) {
+                $checks['restore_drill'] = ['status' => 'pass', 'message' => 'Latest restore drill passed on ' . $when . ' (' . $ageDays . ' days ago, backup: ' . $file . ').'];
+            } elseif ($st === 'pass') {
+                $checks['restore_drill'] = ['status' => 'warning', 'message' => 'Latest restore drill is older than ' . $maxAgeDays . ' days (' . $when . ').'];
+            } elseif ($st === 'warning') {
+                $checks['restore_drill'] = ['status' => 'warning', 'message' => 'Latest restore drill has warning status (' . $when . ', backup: ' . $file . ').'];
+            } else {
+                $checks['restore_drill'] = ['status' => 'fail', 'message' => 'Latest restore drill failed on ' . $when . ' (backup: ' . $file . ').'];
+            }
+        }
+    } catch (Exception $e) {
+        $checks['restore_drill'] = ['status' => 'fail', 'message' => 'Restore drill check failed: ' . $e->getMessage()];
     }
 
     return $checks;

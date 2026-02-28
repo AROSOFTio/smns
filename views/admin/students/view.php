@@ -29,6 +29,23 @@ $db = new Database();
 $conn = $db->getConnection();
 
 try {
+    $conn->exec("CREATE TABLE IF NOT EXISTS transcript_download_rights (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        student_id INT NOT NULL UNIQUE,
+        status ENUM('granted','revoked') NOT NULL DEFAULT 'revoked',
+        verified_by_user_id INT NULL,
+        verified_at DATETIME NULL,
+        revoked_by_user_id INT NULL,
+        revoked_at DATETIME NULL,
+        notes TEXT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+} catch (Exception $e) {
+}
+
+try {
     $stmt = $conn->prepare("
         SELECT s.*, p.program_code, p.program_name, u.username, u.status as user_status, u.created_at as user_created_at, u.last_login, u.failed_login_attempts
         FROM students s
@@ -62,6 +79,73 @@ try {
     header('Location: list.php?error=database_error');
     exit;
 }
+
+// Admin-controlled transcript download rights.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['transcript_rights_action'])) {
+    if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $session->setFlash('error', 'Invalid request token.');
+        header('Location: view.php?id=' . urlencode((string)$studentId));
+        exit;
+    }
+
+    $rightsAction = (string)($_POST['transcript_rights_action'] ?? '');
+    $rightsNotes = trim((string)($_POST['transcript_rights_notes'] ?? ''));
+
+    try {
+        if ($rightsAction === 'grant') {
+            $stmt = $conn->prepare("
+                INSERT INTO transcript_download_rights (student_id, status, verified_by_user_id, verified_at, notes)
+                VALUES (:student_id, 'granted', :admin_id, NOW(), :notes)
+                ON DUPLICATE KEY UPDATE
+                    status = 'granted',
+                    verified_by_user_id = VALUES(verified_by_user_id),
+                    verified_at = VALUES(verified_at),
+                    notes = VALUES(notes),
+                    revoked_by_user_id = NULL,
+                    revoked_at = NULL
+            ");
+            $stmt->execute([
+                'student_id' => (int)$student['id'],
+                'admin_id' => (int)($currentUser['id'] ?? 0),
+                'notes' => $rightsNotes
+            ]);
+            $session->setFlash('success', 'Transcript download rights granted.');
+        } elseif ($rightsAction === 'revoke') {
+            $stmt = $conn->prepare("
+                INSERT INTO transcript_download_rights (student_id, status, revoked_by_user_id, revoked_at, notes)
+                VALUES (:student_id, 'revoked', :admin_id, NOW(), :notes)
+                ON DUPLICATE KEY UPDATE
+                    status = 'revoked',
+                    revoked_by_user_id = VALUES(revoked_by_user_id),
+                    revoked_at = VALUES(revoked_at),
+                    notes = VALUES(notes)
+            ");
+            $stmt->execute([
+                'student_id' => (int)$student['id'],
+                'admin_id' => (int)($currentUser['id'] ?? 0),
+                'notes' => $rightsNotes
+            ]);
+            $session->setFlash('success', 'Transcript download rights revoked.');
+        } else {
+            $session->setFlash('error', 'Invalid transcript rights action.');
+        }
+    } catch (Exception $e) {
+        $session->setFlash('error', 'Failed to update transcript rights.');
+    }
+
+    header('Location: view.php?id=' . urlencode((string)$studentId));
+    exit;
+}
+
+$transcriptRights = null;
+try {
+    $rightsStmt = $conn->prepare("SELECT * FROM transcript_download_rights WHERE student_id = :student_id LIMIT 1");
+    $rightsStmt->execute(['student_id' => (int)$student['id']]);
+    $transcriptRights = $rightsStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+} catch (Exception $e) {
+    $transcriptRights = null;
+}
+$transcriptRightsGranted = (bool)($transcriptRights && ($transcriptRights['status'] ?? '') === 'granted');
 
 // Check if student is registered for the current semester
 $currentSemester = Helper::getCurrentSemester();
@@ -136,6 +220,9 @@ $pageTitle = 'View Student - ' . APP_NAME;
         <div class="topbar-right">
             <a href="list.php" class="btn btn-secondary mr-2">
                 <i class="fas fa-arrow-left"></i> Back to List
+            </a>
+            <a href="graduation-awards.php?id=<?php echo $student['id']; ?>" class="btn btn-primary mr-2">
+                <i class="fas fa-certificate"></i> Graduation & Awards
             </a>
             <a href="audit.php?id=<?php echo $student['id']; ?>" class="btn btn-dark mr-2">
                 <i class="fas fa-history"></i> Profile Audit
@@ -267,12 +354,24 @@ $pageTitle = 'View Student - ' . APP_NAME;
                                     <?php echo e(!empty($student['enrollment_date']) ? Helper::formatDate($student['enrollment_date'], 'M d, Y') : 'N/A'); ?>
                                 </div>
                                 <div class="mb-3">
+                                    <span class="info-label">Graduation Date:</span>
+                                    <?php echo e(!empty($student['graduation_date']) ? Helper::formatDate($student['graduation_date'], 'M d, Y') : 'N/A'); ?>
+                                </div>
+                                <div class="mb-3">
                                     <span class="info-label">Specialization:</span>
                                     <?php echo e($student['specialization'] ?? 'N/A'); ?>
                                 </div>
                                 <div class="mb-3">
                                     <span class="info-label">Qualifications:</span>
                                     <?php echo e($student['qualifications'] ?? 'N/A'); ?>
+                                </div>
+                                <div class="mb-3">
+                                    <span class="info-label">Award:</span>
+                                    <?php echo e($student['graduation_award_title'] ?? 'N/A'); ?>
+                                </div>
+                                <div class="mb-3">
+                                    <span class="info-label">Classification:</span>
+                                    <?php echo e($student['graduation_classification'] ?? 'N/A'); ?>
                                 </div>
                                 <div class="mb-3">
                                     <span class="info-label">Account Status:</span>
@@ -319,6 +418,40 @@ $pageTitle = 'View Student - ' . APP_NAME;
                         </div>
                     </div>
                 </div>
+
+                <div class="card info-card">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0"><i class="fas fa-file-signature"></i> Transcript Download Rights</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="mb-2">
+                            <strong>Current Status:</strong>
+                            <?php if ($transcriptRightsGranted): ?>
+                                <span class="badge badge-success">GRANTED</span>
+                            <?php else: ?>
+                                <span class="badge badge-danger">LOCKED</span>
+                            <?php endif; ?>
+                        </p>
+                        <p class="text-muted mb-3">Student transcript export/official PDF is blocked until rights are granted here by admin.</p>
+
+                        <?php if (!empty($transcriptRights['verified_at'])): ?>
+                            <div class="small text-muted mb-1">Last Verified: <?php echo e(Helper::formatDateTime($transcriptRights['verified_at'], 'M d, Y g:i A')); ?></div>
+                        <?php endif; ?>
+                        <?php if (!empty($transcriptRights['revoked_at'])): ?>
+                            <div class="small text-muted mb-2">Last Revoked: <?php echo e(Helper::formatDateTime($transcriptRights['revoked_at'], 'M d, Y g:i A')); ?></div>
+                        <?php endif; ?>
+
+                        <form method="POST" class="form-inline">
+                            <?php echo csrfField(); ?>
+                            <input type="text" name="transcript_rights_notes" class="form-control form-control-sm mr-2 mb-2" style="min-width:280px;" placeholder="Optional note (reason/reference)">
+                            <?php if ($transcriptRightsGranted): ?>
+                                <button type="submit" name="transcript_rights_action" value="revoke" class="btn btn-sm btn-danger mb-2">Revoke Rights</button>
+                            <?php else: ?>
+                                <button type="submit" name="transcript_rights_action" value="grant" class="btn btn-sm btn-success mb-2">Grant Rights</button>
+                            <?php endif; ?>
+                        </form>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -336,6 +469,9 @@ $pageTitle = 'View Student - ' . APP_NAME;
                 </a>
                 <a href="audit.php?id=<?php echo $student['id']; ?>" class="btn btn-dark mr-2">
                     <i class="fas fa-history"></i> Profile Audit
+                </a>
+                <a href="graduation-awards.php?id=<?php echo $student['id']; ?>" class="btn btn-primary mr-2">
+                    <i class="fas fa-certificate"></i> Graduation & Awards
                 </a>
                 <button type="button" class="btn btn-danger" onclick="deleteStudent(<?php echo $student['id']; ?>)">
                     <i class="fas fa-trash"></i> Delete Student

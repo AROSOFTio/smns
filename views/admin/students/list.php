@@ -338,6 +338,9 @@ body {
                                                         <a class="dropdown-item" href="send_invite.php?id=<?php echo $student['id']; ?>">
                                                             <i class="fas fa-envelope"></i> Send Invite
                                                         </a>
+                                                        <a class="dropdown-item" href="graduation-awards.php?id=<?php echo $student['id']; ?>">
+                                                            <i class="fas fa-certificate"></i> Graduation & Awards
+                                                        </a>
                                                         <div class="dropdown-divider"></div>
                                                         <a class="dropdown-item text-danger" href="delete.php?id=<?php echo $student['id']; ?>" onclick="return confirm('Are you sure you want to delete this student?')">
                                                             <i class="fas fa-trash"></i> Delete
