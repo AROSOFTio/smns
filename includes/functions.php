@@ -1417,3 +1417,132 @@ function auto_assign_courses(PDO $conn, int $studentId, int $semesterId, $adminI
     }
 }
 
+/**
+ * Audit & Traceability infrastructure bootstrap.
+ * Creates core audit tables/indexes and immutable triggers when missing.
+ */
+function ensureAuditTraceabilityInfrastructure(PDO $conn): void
+{
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    $ensured = true;
+
+    $tableExists = static function (PDO $conn, string $tableName): bool {
+        try {
+            $stmt = $conn->prepare("
+                SELECT COUNT(*)
+                FROM information_schema.tables
+                WHERE table_schema = DATABASE()
+                  AND table_name = :table_name
+            ");
+            $stmt->execute(['table_name' => $tableName]);
+            return ((int)$stmt->fetchColumn()) > 0;
+        } catch (Exception $e) {
+            return false;
+        }
+    };
+
+    $indexExists = static function (PDO $conn, string $tableName, string $indexName): bool {
+        try {
+            $stmt = $conn->prepare("
+                SELECT COUNT(*)
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = :table_name
+                  AND index_name = :index_name
+            ");
+            $stmt->execute([
+                'table_name' => $tableName,
+                'index_name' => $indexName
+            ]);
+            return ((int)$stmt->fetchColumn()) > 0;
+        } catch (Exception $e) {
+            return false;
+        }
+    };
+
+    $triggerExists = static function (PDO $conn, string $triggerName): bool {
+        try {
+            $stmt = $conn->prepare("
+                SELECT COUNT(*)
+                FROM information_schema.triggers
+                WHERE trigger_schema = DATABASE()
+                  AND trigger_name = :trigger_name
+            ");
+            $stmt->execute(['trigger_name' => $triggerName]);
+            return ((int)$stmt->fetchColumn()) > 0;
+        } catch (Exception $e) {
+            return false;
+        }
+    };
+
+    try {
+        if (!$tableExists($conn, 'results_audit')) {
+            $conn->exec("CREATE TABLE IF NOT EXISTS `results_audit` (
+                `id` INT(11) NOT NULL AUTO_INCREMENT,
+                `result_id` INT(11) NOT NULL,
+                `student_id` INT(11) NOT NULL,
+                `course_id` INT(11) NOT NULL,
+                `changed_by_user_id` INT(11) NOT NULL,
+                `change_type` ENUM('publish','edit') NOT NULL,
+                `old_marks` LONGTEXT DEFAULT NULL,
+                `new_marks` LONGTEXT NOT NULL,
+                `reason` TEXT DEFAULT NULL,
+                `changed_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                KEY `idx_results_audit_result` (`result_id`),
+                KEY `idx_results_audit_student` (`student_id`),
+                KEY `idx_results_audit_course` (`course_id`),
+                KEY `idx_results_audit_actor` (`changed_by_user_id`),
+                KEY `idx_results_audit_changed_at` (`changed_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        } else {
+            if (!$indexExists($conn, 'results_audit', 'idx_results_audit_actor')) {
+                $conn->exec("ALTER TABLE results_audit ADD INDEX idx_results_audit_actor (changed_by_user_id)");
+            }
+            if (!$indexExists($conn, 'results_audit', 'idx_results_audit_changed_at')) {
+                $conn->exec("ALTER TABLE results_audit ADD INDEX idx_results_audit_changed_at (changed_at)");
+            }
+        }
+    } catch (Exception $e) {
+        error_log('Audit infra warning (results_audit): ' . $e->getMessage());
+    }
+
+    try {
+        if ($tableExists($conn, 'student_profile_audit')) {
+            if (!$indexExists($conn, 'student_profile_audit', 'idx_spa_changed_at')) {
+                $conn->exec("ALTER TABLE student_profile_audit ADD INDEX idx_spa_changed_at (changed_at)");
+            }
+            if (!$indexExists($conn, 'student_profile_audit', 'idx_spa_user')) {
+                $conn->exec("ALTER TABLE student_profile_audit ADD INDEX idx_spa_user (changed_by_user_id)");
+            }
+        }
+    } catch (Exception $e) {
+        error_log('Audit infra warning (student_profile_audit): ' . $e->getMessage());
+    }
+
+    $createImmutableTrigger = static function (PDO $conn, string $triggerName, string $tableName, string $eventName, string $message) use ($tableExists, $triggerExists): void {
+        try {
+            if (!$tableExists($conn, $tableName) || $triggerExists($conn, $triggerName)) {
+                return;
+            }
+            $sql = "CREATE TRIGGER {$triggerName}
+                    BEFORE {$eventName} ON {$tableName}
+                    FOR EACH ROW
+                    SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = " . $conn->quote($message);
+            $conn->exec($sql);
+        } catch (Exception $e) {
+            error_log('Audit trigger warning (' . $triggerName . '): ' . $e->getMessage());
+        }
+    };
+
+    $createImmutableTrigger($conn, 'trg_results_audit_lock_update', 'results_audit', 'UPDATE', 'results_audit is immutable');
+    $createImmutableTrigger($conn, 'trg_results_audit_lock_delete', 'results_audit', 'DELETE', 'results_audit cannot be deleted');
+    $createImmutableTrigger($conn, 'trg_student_profile_audit_lock_update', 'student_profile_audit', 'UPDATE', 'student_profile_audit is immutable');
+    $createImmutableTrigger($conn, 'trg_student_profile_audit_lock_delete', 'student_profile_audit', 'DELETE', 'student_profile_audit cannot be deleted');
+    $createImmutableTrigger($conn, 'trg_activity_logs_lock_update', 'activity_logs', 'UPDATE', 'activity_logs updates are not allowed');
+}
+

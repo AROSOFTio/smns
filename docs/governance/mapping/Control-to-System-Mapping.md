@@ -96,6 +96,13 @@ This mapping links governance controls to policy artifacts, SOP execution record
 - Academic results change audit and publish confirmation:
   - `views/admin/results/submitted.php` (`results_audit` write path)
   - `views/admin/results/provisional.php` (audit confirmation before publish)
+  - `views/admin/students/edit.php` (`student_profile_audit` write path for profile corrections)
+  - `Seed/schema.sql` (`student_profile_audit` table definition)
+  - `Seed/schema.sql` (`results_audit` table + immutable audit triggers)
+  - `includes/functions.php` (`ensureAuditTraceabilityInfrastructure` bootstrap + immutable trigger guard)
+  - `views/admin/results/audit.php` (audit export CSV/Excel)
+  - `views/admin/students/audit.php` (profile audit export CSV/Excel)
+  - `views/admin/change-tracker.php` + `views/admin/activity-recovery.php` (cross-module audit retrieval and exports)
 - Operational/admin change trails:
   - `views/admin/system/health.php` (backup/purge actions logged and notified)
   - `Seed/schema.sql` (`activity_logs`)

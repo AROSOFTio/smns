@@ -80,10 +80,23 @@ $pageTitle = 'View Student - ' . APP_NAME;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+        (function () {
+            try {
+                var mode = localStorage.getItem('smns_theme_mode');
+                if (mode === 'dark') {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                }
+            } catch (e) {}
+        })();
+    </script>
     <title><?php echo $pageTitle; ?></title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../../../assets/css/style.css">
+    <link rel="stylesheet" href="../../../assets/css/theme-shared.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
     <link rel="stylesheet" href="../../../assets/css/responsive-nav.css">
 </head>
 <body>
@@ -123,6 +136,9 @@ $pageTitle = 'View Student - ' . APP_NAME;
         <div class="topbar-right">
             <a href="list.php" class="btn btn-secondary mr-2">
                 <i class="fas fa-arrow-left"></i> Back to List
+            </a>
+            <a href="audit.php?id=<?php echo $student['id']; ?>" class="btn btn-dark mr-2">
+                <i class="fas fa-history"></i> Profile Audit
             </a>
             <a href="edit.php?id=<?php echo $student['id']; ?>" class="btn btn-warning mr-2">
                 <i class="fas fa-edit"></i> Edit Student
@@ -317,6 +333,9 @@ $pageTitle = 'View Student - ' . APP_NAME;
                 </a>
                 <a href="send_invite.php?id=<?php echo $student['id']; ?>" class="btn btn-success mr-2">
                     <i class="fas fa-envelope"></i> Send Invite
+                </a>
+                <a href="audit.php?id=<?php echo $student['id']; ?>" class="btn btn-dark mr-2">
+                    <i class="fas fa-history"></i> Profile Audit
                 </a>
                 <button type="button" class="btn btn-danger" onclick="deleteStudent(<?php echo $student['id']; ?>)">
                     <i class="fas fa-trash"></i> Delete Student

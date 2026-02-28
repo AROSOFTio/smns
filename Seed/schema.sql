@@ -238,6 +238,24 @@ CREATE TABLE students (
     INDEX idx_level (level_year)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Student Profile Audit Trail (versioned corrections on identity/profile records)
+CREATE TABLE IF NOT EXISTS student_profile_audit (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    student_id INT NOT NULL,
+    changed_by_user_id INT NOT NULL,
+    change_type ENUM('profile_update','status_update') NOT NULL DEFAULT 'profile_update',
+    old_data LONGTEXT NULL,
+    new_data LONGTEXT NOT NULL,
+    changed_fields LONGTEXT NULL,
+    reason TEXT NOT NULL,
+    changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    FOREIGN KEY (changed_by_user_id) REFERENCES users(id) ON DELETE RESTRICT,
+    INDEX idx_spa_student (student_id),
+    INDEX idx_spa_user (changed_by_user_id),
+    INDEX idx_spa_changed_at (changed_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Semester registrations: students request semester registration (admin approves)
 CREATE TABLE IF NOT EXISTS semester_registrations (
     id INT PRIMARY KEY AUTO_INCREMENT,
@@ -408,6 +426,28 @@ CREATE TABLE results (
     INDEX idx_semester (semester_id),
     INDEX idx_status (status),
     INDEX idx_grade (grade)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Results audit trail (immutable correction/publish history)
+CREATE TABLE IF NOT EXISTS results_audit (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    result_id INT NOT NULL,
+    student_id INT NOT NULL,
+    course_id INT NOT NULL,
+    changed_by_user_id INT NOT NULL,
+    change_type ENUM('publish','edit') NOT NULL,
+    old_marks LONGTEXT NULL,
+    new_marks LONGTEXT NOT NULL,
+    reason TEXT NULL,
+    changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (changed_by_user_id) REFERENCES users(id) ON DELETE RESTRICT,
+    INDEX idx_results_audit_result (result_id),
+    INDEX idx_results_audit_student (student_id),
+    INDEX idx_results_audit_course (course_id),
+    INDEX idx_results_audit_actor (changed_by_user_id),
+    INDEX idx_results_audit_changed_at (changed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- GPA Calculations Table (Cached GPAs for performance)
@@ -1092,6 +1132,27 @@ BEGIN
     -- Update student balance
     CALL sp_update_student_balance(NEW.student_id, NEW.semester_id);
 END //
+
+-- Immutable audit trails: prevent mutation of audit records
+CREATE TRIGGER trg_results_audit_lock_update BEFORE UPDATE ON results_audit
+FOR EACH ROW
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'results_audit is immutable' //
+
+CREATE TRIGGER trg_results_audit_lock_delete BEFORE DELETE ON results_audit
+FOR EACH ROW
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'results_audit cannot be deleted' //
+
+CREATE TRIGGER trg_student_profile_audit_lock_update BEFORE UPDATE ON student_profile_audit
+FOR EACH ROW
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'student_profile_audit is immutable' //
+
+CREATE TRIGGER trg_student_profile_audit_lock_delete BEFORE DELETE ON student_profile_audit
+FOR EACH ROW
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'student_profile_audit cannot be deleted' //
+
+CREATE TRIGGER trg_activity_logs_lock_update BEFORE UPDATE ON activity_logs
+FOR EACH ROW
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'activity_logs updates are not allowed' //
 
 DELIMITER ;
 

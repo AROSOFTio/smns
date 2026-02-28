@@ -274,6 +274,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['publish']) || isset(
         }
 
         $conn->commit();
+        try {
+            $logger = new Logger();
+            $logger->log(
+                (int)($currentUser['id'] ?? 0),
+                'publish_results',
+                'results',
+                'Published ' . (int)count($resultsToPublish) . ' approved result row(s) to student portal.',
+                [
+                    'part' => 'results_publish',
+                    'where' => '/views/admin/results/provisional.php',
+                    'target' => $isBulkPublish ? ('semester#' . (int)$semesterId) : ('course#' . (int)$selectedCourseId)
+                ]
+            );
+        } catch (Exception $logEx) {
+            // Non-fatal.
+        }
         $session->setFlash('success', 'Publishing successful. ' . count($resultsToPublish) . ' result(s) are now visible on student portals.');
 
         header('Location: ' . $redirectProvisional($selectedAcademicYearId, $selectedSemesterNumber, $selectedCourseId, $selectedLevelYear, $selectedProgramId));

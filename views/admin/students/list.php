@@ -290,7 +290,7 @@ body {
                                     <th style="width: 120px;">Program</th>
                                     <th style="width: 60px;">Level</th>
                                     <th style="width: 90px;">Status</th>
-                                    <th style="width: 160px;" class="text-center">Actions</th>
+                                    <th style="width: 210px;" class="text-center">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -323,6 +323,9 @@ body {
                                                 </a>
                                                 <a href="edit.php?id=<?php echo $student['id']; ?>" class="btn btn-warning" title="Edit Student">
                                                     <i class="fas fa-edit"></i>
+                                                </a>
+                                                <a href="audit.php?id=<?php echo $student['id']; ?>" class="btn btn-dark" title="Profile Audit">
+                                                    <i class="fas fa-history"></i>
                                                 </a>
                                                 <div class="btn-group btn-group-sm" role="group">
                                                     <button type="button" class="btn btn-secondary dropdown-toggle" data-toggle="dropdown" title="More Actions" data-boundary="viewport">

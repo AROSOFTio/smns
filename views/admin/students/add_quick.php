@@ -24,6 +24,34 @@ $success = '';
 $pstmt = $conn->query("SELECT id, program_name FROM programs WHERE status='active' ORDER BY program_name");
 $programs = $pstmt->fetchAll();
 
+function generateQuickStudentCode(PDO $conn): string
+{
+    $year = date('Y');
+    $prefix = strtoupper((string)preg_replace('/[^A-Z0-9]/i', '', getSetting('student_id_prefix', 'STD')));
+    if ($prefix === '') {
+        $prefix = 'STD';
+    }
+    $codePrefix = $year . '-' . $prefix . '-';
+    $stmt = $conn->prepare("SELECT student_id FROM students WHERE student_id LIKE :pattern ORDER BY student_id DESC LIMIT 1");
+    $stmt->execute(['pattern' => $codePrefix . '%']);
+    $lastCode = (string)($stmt->fetchColumn() ?: '');
+    $next = 1;
+    if ($lastCode !== '' && preg_match('/(\d+)$/', $lastCode, $m)) {
+        $next = ((int)$m[1]) + 1;
+    }
+
+    for ($i = 0; $i < 1000; $i++) {
+        $candidate = $codePrefix . str_pad($next + $i, 3, '0', STR_PAD_LEFT);
+        $check = $conn->prepare("SELECT id FROM students WHERE student_id = :student_id LIMIT 1");
+        $check->execute(['student_id' => $candidate]);
+        if (!$check->fetch(PDO::FETCH_ASSOC)) {
+            return $candidate;
+        }
+    }
+
+    throw new Exception('Unable to allocate unique student ID.');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $first_name = trim($_POST['first_name'] ?? '');
     $last_name = trim($_POST['last_name'] ?? '');
@@ -46,6 +74,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception('Email already registered');
             }
 
+            $sEmailCheck = $conn->prepare("SELECT id, student_id FROM students WHERE email = :email LIMIT 1");
+            $sEmailCheck->execute(['email' => $email]);
+            $existingByEmail = $sEmailCheck->fetch(PDO::FETCH_ASSOC);
+            if ($existingByEmail) {
+                throw new Exception('Student email already exists under ID ' . $existingByEmail['student_id']);
+            }
+
+            $identityCheck = $conn->prepare("
+                SELECT id, student_id
+                FROM students
+                WHERE LOWER(first_name) = LOWER(:first_name)
+                  AND LOWER(last_name) = LOWER(:last_name)
+                  AND program_id <=> :program_id
+                  AND level_year = :level_year
+                LIMIT 1
+            ");
+            $identityCheck->execute([
+                'first_name' => $first_name,
+                'last_name' => $last_name,
+                'program_id' => $program_id,
+                'level_year' => $level_year
+            ]);
+            $possibleDuplicate = $identityCheck->fetch(PDO::FETCH_ASSOC);
+            if ($possibleDuplicate) {
+                throw new Exception('Possible duplicate student record detected (' . $possibleDuplicate['student_id'] . '). Use full Add Student form to verify identity details.');
+            }
+
             // Create user
             $usernameBase = strtolower(preg_replace('/[^a-z0-9]/', '', explode('@', $email)[0] ?? 'student')) ?: 'student';
             $username = $usernameBase;
@@ -63,14 +118,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ust->execute(['username' => $username, 'email' => $email, 'hash' => $passwordHash]);
             $newUserId = $conn->lastInsertId();
 
-            // Generate student code
-            $year = date('Y');
-            $prefix = strtoupper(preg_replace('/[^A-Z0-9]/i', '', getSetting('student_id_prefix', 'STD')));
-            $pattern = $year . '-' . $prefix . '-%';
-            $cstmt = $conn->prepare("SELECT COUNT(*) as cnt FROM students WHERE student_id LIKE :pattern");
-            $cstmt->execute(['pattern' => $pattern]);
-            $cnt = $cstmt->fetch()['cnt'] ?? 0;
-            $studentCode = $year . '-' . $prefix . '-' . str_pad(intval($cnt)+1, 3, '0', STR_PAD_LEFT);
+            // Generate permanent student code (PRN-like) with collision guard.
+            $studentCode = generateQuickStudentCode($conn);
 
             $sstmt = $conn->prepare("INSERT INTO students (user_id, student_id, first_name, last_name, email, program_id, level_year, status, created_at) VALUES (:user_id,:student_id,:first_name,:last_name,:email,:program_id,:level_year,'active',NOW())");
             $sstmt->execute([

@@ -283,6 +283,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['bulk_approve_course'
         }
 
         $conn->commit();
+        try {
+            $logger = new Logger();
+            $logger->log(
+                (int)($currentUser['id'] ?? 0),
+                'bulk_approve_results',
+                'results',
+                'Bulk approved ' . (int)$approvedCount . ' submitted result row(s).',
+                [
+                    'part' => 'results_approval',
+                    'where' => '/views/admin/results/submitted.php',
+                    'target' => $scopeCourseId > 0 ? ('course#' . (int)$scopeCourseId) : ('semester#' . (int)$semesterId)
+                ]
+            );
+        } catch (Exception $logEx) {
+            // Non-fatal.
+        }
         $session->setFlash('success', 'Bulk approval completed. ' . $approvedCount . ' result(s) moved to Approved status.');
         header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $scopeCourseId, $selectedLevelYear, $selectedProgramId));
         exit;
@@ -310,13 +326,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam']) && $semesterI
     }
 
     $examData = $_POST['exam']; // [result_id => exam_mark]
-    $editReason = trim($_POST['edit_reason'] ?? 'Exam marks entry/update');
+    $editReason = trim($_POST['edit_reason'] ?? '');
     $now      = date('Y-m-d H:i:s');
     $adminId  = $adminProfile['id'] ?? null;
     $adminUserId = $currentUser['id'] ?? 0;
 
     if (!$adminId) {
         $session->setFlash('error', 'Admin profile not found. Cannot save results.');
+        header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $selectedCourseId, $selectedLevelYear, $selectedProgramId));
+        exit;
+    }
+    if ($editReason === '') {
+        $session->setFlash('error', 'Change reason is required for any exam-mark update.');
         header('Location: ' . $redirectSubmitted($selectedAcademicYearId, $selectedSemesterNumber, $selectedCourseId, $selectedLevelYear, $selectedProgramId));
         exit;
     }
@@ -346,11 +367,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam']) && $semesterI
             }
 
             // Fetch old marks before updating for audit log
-            $oldStmt = $conn->prepare("SELECT student_id, course_id, assignment_marks, final_exam_marks, total_marks, grade, status FROM results WHERE id = :id");
+            $oldStmt = $conn->prepare("SELECT student_id, course_id, assignment_marks, final_exam_marks, total_marks, grade, status, approved_by, approved_date, published_date FROM results WHERE id = :id");
             $oldStmt->execute(['id' => $resultId]);
             $oldResult = $oldStmt->fetch(PDO::FETCH_ASSOC);
 
             if (!$oldResult) {
+                continue;
+            }
+            $examUnchanged = ((float)($oldResult['final_exam_marks'] ?? -1)) === (float)$examMark;
+            $alreadySubmittedOnly = (string)($oldResult['status'] ?? '') === 'submitted'
+                && empty($oldResult['approved_by'])
+                && empty($oldResult['approved_date'])
+                && empty($oldResult['published_date']);
+            if ($examUnchanged && $alreadySubmittedOnly) {
                 continue;
             }
             $wasPublished = ((string)($oldResult['status'] ?? '') === 'published');
@@ -383,27 +412,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam']) && $semesterI
                 if ($wasPublished) {
                     $revertedPublishedCount++;
                 }
+                // Fetch new marks after update
+                $newStmt = $conn->prepare("SELECT assignment_marks, final_exam_marks, total_marks, grade, status FROM results WHERE id = :id");
+                $newStmt->execute(['id' => $resultId]);
+                $newResult = $newStmt->fetch(PDO::FETCH_ASSOC);
+
+                // Log to audit table
+                $auditStmt = $conn->prepare("INSERT INTO results_audit (result_id, student_id, course_id, changed_by_user_id, change_type, old_marks, new_marks, reason) VALUES (:result_id, :student_id, :course_id, :user_id, 'edit', :old_marks, :new_marks, :reason)");
+                $auditStmt->execute([
+                    'result_id'   => $resultId,
+                    'student_id'  => $oldResult['student_id'],
+                    'course_id'   => $selectedCourseId,
+                    'user_id'     => $adminUserId,
+                    'old_marks'   => json_encode($oldResult),
+                    'new_marks'   => json_encode($newResult),
+                    'reason'      => $editReason
+                ]);
             }
-
-            // Fetch new marks after update
-            $newStmt = $conn->prepare("SELECT assignment_marks, final_exam_marks, total_marks, grade, status FROM results WHERE id = :id");
-            $newStmt->execute(['id' => $resultId]);
-            $newResult = $newStmt->fetch(PDO::FETCH_ASSOC);
-
-            // Log to audit table
-            $auditStmt = $conn->prepare("INSERT INTO results_audit (result_id, student_id, course_id, changed_by_user_id, change_type, old_marks, new_marks, reason) VALUES (:result_id, :student_id, :course_id, :user_id, 'edit', :old_marks, :new_marks, :reason)");
-            $auditStmt->execute([
-                'result_id'   => $resultId,
-                'student_id'  => $oldResult['student_id'],
-                'course_id'   => $selectedCourseId,
-                'user_id'     => $adminUserId,
-                'old_marks'   => json_encode($oldResult),
-                'new_marks'   => json_encode($newResult),
-                'reason'      => $editReason
-            ]);
         }
 
     $conn->commit();
+    try {
+        $logger = new Logger();
+        $logger->log(
+            (int)($currentUser['id'] ?? 0),
+            'update_exam_marks',
+            'results',
+            'Updated exam marks for ' . (int)$updatedCount . ' result row(s); reverted published rows: ' . (int)$revertedPublishedCount . '.',
+            [
+                'part' => 'exam_marks',
+                'where' => '/views/admin/results/submitted.php',
+                'target' => 'course#' . (int)$selectedCourseId
+            ]
+        );
+    } catch (Exception $logEx) {
+        // Non-fatal.
+    }
     $successMsg = 'Exam marks saved to Submitted (audit pending). Updated rows: ' . (int)$updatedCount . '. Review and bulk approve before publishing from Provisional Results.';
     if ($revertedPublishedCount > 0) {
         $successMsg .= ' Any edited published rows are automatically removed from student portal until re-approved and re-published.';
@@ -761,8 +805,8 @@ include '../../../includes/header.php';
                             </div>
 
                             <div class="mt-3">
-                                <label class="d-block mb-2"><strong>Reason for Changes (Optional):</strong></label>
-                                <textarea name="edit_reason" class="form-control mb-2" rows="2" placeholder="Enter reason for editing marks (optional, will be logged in audit trail)"></textarea>
+                                <label class="d-block mb-2"><strong>Reason for Changes (Required):</strong></label>
+                                <textarea name="edit_reason" class="form-control mb-2" rows="2" placeholder="Enter reason for editing marks (required, logged in audit trail)" required></textarea>
                                 
                                 <button type="submit" class="btn btn-primary btn-sm" onclick="return confirm('Save exam marks? Changes will be logged in the audit trail.');">
                                     Save Exam Marks

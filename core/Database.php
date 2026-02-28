@@ -10,6 +10,7 @@ class Database {
     private $password;
     private $conn;
     private $charset = 'utf8mb4';
+    private static $auditInfraEnsured = false;
     
     public function __construct($host = null, $db_name = null, $username = null, $password = null) {
         $this->host = $host ?? DB_HOST;
@@ -46,6 +47,14 @@ class Database {
             }
             
             $this->conn = new PDO($dsn, $this->username, $this->password, $options);
+            if (!self::$auditInfraEnsured && function_exists('ensureAuditTraceabilityInfrastructure')) {
+                self::$auditInfraEnsured = true;
+                try {
+                    ensureAuditTraceabilityInfrastructure($this->conn);
+                } catch (Exception $e) {
+                    error_log('Audit infrastructure bootstrap failed: ' . $e->getMessage());
+                }
+            }
         } catch(PDOException $exception) {
             error_log("Connection error: " . $exception->getMessage());
             throw new Exception("Database connection failed");

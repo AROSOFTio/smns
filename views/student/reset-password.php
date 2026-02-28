@@ -50,8 +50,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <script>
+        (function () {
+            try {
+                var mode = localStorage.getItem('smns_theme_mode');
+                if (mode === 'dark') {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                }
+            } catch (e) {}
+        })();
+    </script>
     <title>Reset Student Password</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="../../assets/css/theme-shared.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
 </head>
 <body>
 <div class="container mt-5">

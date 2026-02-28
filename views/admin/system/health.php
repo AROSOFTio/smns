@@ -200,6 +200,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 try {
                     $days = (int)getSetting('log_retention_days', defined('LOG_RETENTION_DAYS') ? LOG_RETENTION_DAYS : 90);
                     $pdo = (new Database())->getConnection();
+                    $currentUser = $auth->getCurrentUser();
+                    $currentUserId = (int)($currentUser['id'] ?? 0);
+                    if (!FeeStructureGovernance::isSuperAdmin($pdo, $currentUserId)) {
+                        $actionResult = ['status' => 'fail', 'message' => 'Only super-admin can purge activity logs.'];
+                        break;
+                    }
                     $stmt = $pdo->prepare("DELETE FROM activity_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL :days DAY)");
                     $stmt->bindValue(':days', (int)$days, PDO::PARAM_INT);
                     $stmt->execute();

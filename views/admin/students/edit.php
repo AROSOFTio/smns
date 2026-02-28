@@ -41,7 +41,42 @@ function ensureStudentParishColumn(PDO $conn): void
     }
 }
 
+function ensureStudentProfileAuditTable(PDO $conn): void
+{
+    try {
+        $conn->exec("CREATE TABLE IF NOT EXISTS student_profile_audit (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            student_id INT NOT NULL,
+            changed_by_user_id INT NOT NULL,
+            change_type ENUM('profile_update','status_update') NOT NULL DEFAULT 'profile_update',
+            old_data LONGTEXT NULL,
+            new_data LONGTEXT NOT NULL,
+            changed_fields LONGTEXT NULL,
+            reason TEXT NOT NULL,
+            changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_student_id (student_id),
+            KEY idx_changed_by_user_id (changed_by_user_id),
+            KEY idx_changed_at (changed_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (Exception $e) {
+        // Keep page functional even if schema update is restricted.
+    }
+}
+
+function auditValueChanged($oldValue, $newValue): bool
+{
+    $normalize = static function ($value) {
+        if ($value === null) {
+            return '';
+        }
+        return trim((string)$value);
+    };
+
+    return $normalize($oldValue) !== $normalize($newValue);
+}
+
 ensureStudentParishColumn($conn);
+ensureStudentProfileAuditTable($conn);
 
 try {
     $stmt = $conn->prepare("
@@ -97,6 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $specialization = Security::sanitize($_POST['specialization'] ?? '');
     $qualifications = Security::sanitize($_POST['qualifications'] ?? '');
     $status = Security::sanitize($_POST['status'] ?? 'active');
+    $correctionReason = trim(Security::sanitize($_POST['correction_reason'] ?? ''));
 
     // Validate required fields
     $missing = [];
@@ -109,6 +145,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!empty($missing)) {
         $errors[] = 'Required fields missing: ' . implode(', ', $missing);
+    }
+
+    if ($correctionReason === '') {
+        $errors[] = 'Correction reason is required for student record updates.';
     }
 
     // Validate email format
@@ -139,6 +179,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } catch (Exception $e) {
             $errors[] = 'Database error checking user email uniqueness';
+        }
+    }
+
+    // Duplicate identity guard for the same key profile (name + DOB + program).
+    if (!empty($first_name) && !empty($last_name) && !empty($date_of_birth) && $program_id > 0) {
+        try {
+            $dupStmt = $conn->prepare("
+                SELECT id, student_id
+                FROM students
+                WHERE id != :id
+                  AND LOWER(first_name) = LOWER(:first_name)
+                  AND LOWER(last_name) = LOWER(:last_name)
+                  AND date_of_birth = :date_of_birth
+                  AND program_id = :program_id
+                LIMIT 1
+            ");
+            $dupStmt->execute([
+                'id' => $studentId,
+                'first_name' => $first_name,
+                'last_name' => $last_name,
+                'date_of_birth' => $date_of_birth,
+                'program_id' => $program_id
+            ]);
+            $dup = $dupStmt->fetch(PDO::FETCH_ASSOC);
+            if ($dup) {
+                $errors[] = 'Possible duplicate student identity found under ID ' . $dup['student_id'] . '.';
+            }
+        } catch (Exception $e) {
+            $errors[] = 'Database error checking duplicate identity records';
         }
     }
 
@@ -176,12 +245,78 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // If no errors, update student
+    // If no errors, update student and log immutable audit history.
     if (empty($errors)) {
+        $previousEmail = trim((string)($student['user_email'] ?? $student['email'] ?? ''));
+        $emailChanged = strcasecmp($previousEmail, $email) !== 0;
+
+        $oldSnapshot = [
+            'student_id' => $student['student_id'] ?? null,
+            'title' => $student['title'] ?? null,
+            'first_name' => $student['first_name'] ?? null,
+            'middle_name' => $student['middle_name'] ?? null,
+            'last_name' => $student['last_name'] ?? null,
+            'gender' => $student['gender'] ?? null,
+            'date_of_birth' => $student['date_of_birth'] ?? null,
+            'national_id' => $student['national_id'] ?? null,
+            'phone' => $student['phone'] ?? null,
+            'email' => $previousEmail,
+            'address' => $student['address'] ?? null,
+            'parish' => $student['parish'] ?? null,
+            'emergency_contact_name' => $student['emergency_contact_name'] ?? null,
+            'emergency_contact_phone' => $student['emergency_contact_phone'] ?? null,
+            'emergency_contact_relationship' => $student['emergency_contact_relationship'] ?? null,
+            'program_id' => $student['program_id'] ?? null,
+            'level_year' => $student['level_year'] ?? null,
+            'specialization' => $student['specialization'] ?? null,
+            'qualifications' => $student['qualifications'] ?? null,
+            'photo' => $student['photo'] ?? null,
+            'status' => $student['status'] ?? null,
+        ];
+
+        $newSnapshot = [
+            'student_id' => $student['student_id'] ?? null, // Permanent ID: immutable.
+            'title' => $title !== '' ? $title : null,
+            'first_name' => $first_name,
+            'middle_name' => $middle_name !== '' ? $middle_name : null,
+            'last_name' => $last_name,
+            'gender' => $gender,
+            'date_of_birth' => $date_of_birth !== '' ? $date_of_birth : null,
+            'national_id' => $national_id !== '' ? $national_id : null,
+            'phone' => $phone,
+            'email' => $email,
+            'address' => $address !== '' ? $address : null,
+            'parish' => $parish !== '' ? $parish : null,
+            'emergency_contact_name' => $emergency_contact_name !== '' ? $emergency_contact_name : null,
+            'emergency_contact_phone' => $emergency_contact_phone !== '' ? $emergency_contact_phone : null,
+            'emergency_contact_relationship' => $emergency_contact_relationship !== '' ? $emergency_contact_relationship : null,
+            'program_id' => $program_id,
+            'level_year' => $level_year,
+            'specialization' => $specialization !== '' ? $specialization : null,
+            'qualifications' => $qualifications !== '' ? $qualifications : null,
+            'photo' => $photo_path,
+            'status' => $status,
+        ];
+
+        $changedFields = [];
+        foreach ($newSnapshot as $field => $newValue) {
+            $oldValue = $oldSnapshot[$field] ?? null;
+            if (auditValueChanged($oldValue, $newValue)) {
+                $changedFields[$field] = [
+                    'old' => $oldValue,
+                    'new' => $newValue
+                ];
+            }
+        }
+
+        if (empty($changedFields)) {
+            $session->setFlash('info', 'No changes detected. Student record remains unchanged.');
+            header('Location: view.php?id=' . $studentId);
+            exit;
+        }
+
         try {
             $conn->beginTransaction();
-            $previousEmail = trim((string)($student['user_email'] ?? $student['email'] ?? ''));
-            $emailChanged = strcasecmp($previousEmail, $email) !== 0;
             $generatedPassword = '';
             $passwordHash = '';
             if ($emailChanged) {
@@ -217,24 +352,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ");
 
             $stmt->execute([
-                'title' => $title,
+                'title' => $title !== '' ? $title : null,
                 'first_name' => $first_name,
-                'middle_name' => $middle_name,
+                'middle_name' => $middle_name !== '' ? $middle_name : null,
                 'last_name' => $last_name,
                 'gender' => $gender,
-                'date_of_birth' => $date_of_birth,
-                'national_id' => $national_id,
+                'date_of_birth' => $date_of_birth !== '' ? $date_of_birth : null,
+                'national_id' => $national_id !== '' ? $national_id : null,
                 'phone' => $phone,
                 'email' => $email,
-                'address' => $address,
+                'address' => $address !== '' ? $address : null,
                 'parish' => $parish !== '' ? $parish : null,
-                'emergency_contact_name' => $emergency_contact_name,
-                'emergency_contact_phone' => $emergency_contact_phone,
-                'emergency_contact_relationship' => $emergency_contact_relationship,
+                'emergency_contact_name' => $emergency_contact_name !== '' ? $emergency_contact_name : null,
+                'emergency_contact_phone' => $emergency_contact_phone !== '' ? $emergency_contact_phone : null,
+                'emergency_contact_relationship' => $emergency_contact_relationship !== '' ? $emergency_contact_relationship : null,
                 'program_id' => $program_id,
                 'level_year' => $level_year,
-                'specialization' => $specialization,
-                'qualifications' => $qualifications,
+                'specialization' => $specialization !== '' ? $specialization : null,
+                'qualifications' => $qualifications !== '' ? $qualifications : null,
                 'photo' => $photo_path,
                 'status' => $status,
                 'id' => $studentId
@@ -257,6 +392,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $userUpdateSql .= " WHERE id = :user_id";
             $stmt = $conn->prepare($userUpdateSql);
             $stmt->execute($userParams);
+
+            $auditStmt = $conn->prepare("
+                INSERT INTO student_profile_audit
+                    (student_id, changed_by_user_id, change_type, old_data, new_data, changed_fields, reason)
+                VALUES
+                    (:student_id, :changed_by_user_id, :change_type, :old_data, :new_data, :changed_fields, :reason)
+            ");
+            $changeType = (isset($changedFields['status']) && count($changedFields) === 1) ? 'status_update' : 'profile_update';
+            $auditStmt->execute([
+                'student_id' => (int)$studentId,
+                'changed_by_user_id' => (int)($currentUser['id'] ?? 0),
+                'change_type' => $changeType,
+                'old_data' => json_encode($oldSnapshot),
+                'new_data' => json_encode($newSnapshot),
+                'changed_fields' => json_encode($changedFields),
+                'reason' => $correctionReason
+            ]);
+
+            // Notify all active admins so audit profile updates are visible in the bell.
+            try {
+                $adminUsersStmt = $conn->query("SELECT id FROM users WHERE role = 'admin' AND status = 'active'");
+                $adminUserIds = $adminUsersStmt ? ($adminUsersStmt->fetchAll(PDO::FETCH_COLUMN) ?: []) : [];
+                if (!empty($adminUserIds)) {
+                    $actorName = trim((string)(
+                        ($currentUser['profile']['first_name'] ?? '') . ' ' . ($currentUser['profile']['last_name'] ?? '')
+                    ));
+                    if ($actorName === '') {
+                        $actorName = (string)($currentUser['username'] ?? 'Admin');
+                    }
+                    $studentLabel = trim((string)($first_name . ' ' . $last_name));
+                    if ($studentLabel === '') {
+                        $studentLabel = trim((string)(($student['first_name'] ?? '') . ' ' . ($student['last_name'] ?? '')));
+                    }
+                    $reasonPreview = $correctionReason;
+                    if (strlen($reasonPreview) > 140) {
+                        $reasonPreview = substr($reasonPreview, 0, 140) . '...';
+                    }
+
+                    $notifTitle = 'Student Profile Correction Logged';
+                    $notifMessage = $actorName . ' updated ' . $studentLabel . ' (' . (string)($student['student_id'] ?? '') . '). Reason: ' . $reasonPreview;
+                    $notifLink = BASE_URL . '/views/admin/students/audit.php?id=' . (int)$studentId;
+
+                    $notifStmt = $conn->prepare("
+                        INSERT INTO notifications (user_id, title, message, type, link, created_at)
+                        VALUES (:uid, :title, :msg, :type, :link, NOW())
+                    ");
+                    foreach ($adminUserIds as $adminUserId) {
+                        $notifStmt->execute([
+                            'uid' => (int)$adminUserId,
+                            'title' => $notifTitle,
+                            'msg' => $notifMessage,
+                            'type' => 'info',
+                            'link' => $notifLink
+                        ]);
+                    }
+                }
+            } catch (Exception $notifyEx) {
+                // Non-fatal: audit change should still succeed if notification insert fails.
+            }
+
+            // Central activity log entry for cross-module traceability.
+            try {
+                $logger = new Logger();
+                $changedFieldNames = implode(', ', array_keys($changedFields));
+                $logger->log(
+                    (int)($currentUser['id'] ?? 0),
+                    'update_student_profile',
+                    'students',
+                    'Updated student profile ' . (string)($student['student_id'] ?? ('#' . (int)$studentId)) . ' fields: ' . $changedFieldNames,
+                    [
+                        'part' => 'student_profile_audit',
+                        'where' => '/views/admin/students/edit.php',
+                        'target' => 'students#' . (int)$studentId
+                    ]
+                );
+            } catch (Exception $logEx) {
+                // Non-fatal.
+            }
 
             $conn->commit();
             $successMessage = 'Student updated successfully';
@@ -286,7 +499,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
 
         } catch (Exception $e) {
-            $conn->rollBack();
+            if ($conn->inTransaction()) {
+                $conn->rollBack();
+            }
             $errors[] = 'Failed to update student: ' . $e->getMessage();
         }
     }
@@ -300,10 +515,23 @@ $pageTitle = 'Edit Student - ' . APP_NAME;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+        (function () {
+            try {
+                var mode = localStorage.getItem('smns_theme_mode');
+                if (mode === 'dark') {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                }
+            } catch (e) {}
+        })();
+    </script>
     <title><?php echo $pageTitle; ?></title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../../../assets/css/style.css">
+    <link rel="stylesheet" href="../../../assets/css/theme-shared.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
     <link rel="stylesheet" href="../../../assets/css/responsive-nav.css">
 </head>
 <body>
@@ -326,6 +554,9 @@ $pageTitle = 'Edit Student - ' . APP_NAME;
         <div class="topbar-right">
             <a href="view.php?id=<?php echo $student['id']; ?>" class="btn btn-info mr-2">
                 <i class="fas fa-eye"></i> View Details
+            </a>
+            <a href="audit.php?id=<?php echo $student['id']; ?>" class="btn btn-dark mr-2">
+                <i class="fas fa-history"></i> Profile Audit
             </a>
             <a href="list.php" class="btn btn-secondary mr-2">
                 <i class="fas fa-arrow-left"></i> Back to List
@@ -442,7 +673,12 @@ $pageTitle = 'Edit Student - ' . APP_NAME;
                 </div>
                 <div class="card-body">
                     <div class="form-row">
-                        <div class="form-group col-md-4">
+                        <div class="form-group col-md-3">
+                            <label>Student ID (Permanent)</label>
+                            <input type="text" class="form-control" value="<?php echo e($student['student_id'] ?? ''); ?>" readonly>
+                            <small class="form-text text-muted">Permanent PRN/Student ID cannot be edited.</small>
+                        </div>
+                        <div class="form-group col-md-3">
                             <label>Program <span class="text-danger">*</span></label>
                             <select name="program_id" class="form-control" required>
                                 <option value="">Select Program</option>
@@ -461,11 +697,11 @@ $pageTitle = 'Edit Student - ' . APP_NAME;
                                 <?php endfor; ?>
                             </select>
                         </div>
-                        <div class="form-group col-md-3">
+                        <div class="form-group col-md-2">
                             <label>Specialization</label>
                             <input type="text" name="specialization" class="form-control" value="<?php echo e($student['specialization'] ?? ''); ?>">
                         </div>
-                        <div class="form-group col-md-3">
+                        <div class="form-group col-md-2">
                             <label>Status</label>
                             <select name="status" class="form-control">
                                 <option value="active" <?php echo $student['status'] === 'active' ? 'selected' : ''; ?>>Active</option>
@@ -507,6 +743,24 @@ $pageTitle = 'Edit Student - ' . APP_NAME;
                             <input type="file" name="photo" class="form-control-file" accept="image/*">
                             <small class="form-text text-muted">Leave empty to keep current photo. Max size: 2MB. Formats: JPG, PNG, GIF</small>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0"><i class="fas fa-clipboard-check"></i> Correction Audit</h5>
+                </div>
+                <div class="card-body">
+                    <div class="form-group mb-0">
+                        <label>Reason for this correction <span class="text-danger">*</span></label>
+                        <textarea
+                            name="correction_reason"
+                            class="form-control"
+                            rows="2"
+                            placeholder="Explain why this student record is being updated."
+                            required><?php echo e($_POST['correction_reason'] ?? ''); ?></textarea>
+                        <small class="form-text text-muted">This reason is stored in the profile audit history for traceability.</small>
                     </div>
                 </div>
             </div>

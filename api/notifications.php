@@ -255,6 +255,10 @@ switch ($action) {
                 try {
                     $days = (int)getSetting('log_retention_days', defined('LOG_RETENTION_DAYS') ? LOG_RETENTION_DAYS : 90);
                     $pdo = (new Database())->getConnection();
+                    if (!FeeStructureGovernance::isSuperAdmin($pdo, (int)$userId)) {
+                        $result = ['success' => false, 'message' => 'Only super-admin can purge activity logs.'];
+                        break;
+                    }
                     $stmt = $pdo->prepare("DELETE FROM activity_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL :days DAY)");
                     $stmt->bindValue(':days', $days, PDO::PARAM_INT);
                     $stmt->execute();

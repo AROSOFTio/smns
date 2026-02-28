@@ -95,6 +95,10 @@ class MfaService {
         $userId = (int)$userId;
         $module = strtolower(trim((string)$module));
         $email = trim((string)$email);
+        $adminOtpEmail = trim((string)self::getSettingValue('admin_mfa_email', (defined('ADMIN_MFA_EMAIL') ? ADMIN_MFA_EMAIL : '')));
+        if ($module === 'admin' && filter_var($adminOtpEmail, FILTER_VALIDATE_EMAIL)) {
+            $email = $adminOtpEmail;
+        }
         if ($userId <= 0 || $module === '') {
             return ['success' => false, 'message' => 'Unable to prepare MFA challenge.'];
         }
@@ -173,17 +177,17 @@ class MfaService {
         $stmt->execute(['user_id' => $userId, 'module' => $module]);
         $challenge = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$challenge) {
-            return ['success' => false, 'message' => 'No active MFA challenge found. Please login again.'];
+            return ['success' => false, 'message' => 'No active MFA challenge found. Click Resend Code or login again.'];
         }
 
         if (strtotime((string)$challenge['expires_at']) < time()) {
-            return ['success' => false, 'message' => 'Verification code expired. Please login again.'];
+            return ['success' => false, 'message' => 'Verification code expired. Click Resend Code to get a new code.'];
         }
 
         $attempts = (int)($challenge['attempts'] ?? 0);
         $maxAttempts = (int)($challenge['max_attempts'] ?? 5);
         if ($attempts >= $maxAttempts) {
-            return ['success' => false, 'message' => 'Maximum verification attempts reached. Please login again.'];
+            return ['success' => false, 'message' => 'Maximum verification attempts reached. Click Resend Code to request a new code.'];
         }
 
         if (!password_verify($code, (string)$challenge['code_hash'])) {

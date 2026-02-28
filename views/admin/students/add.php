@@ -24,19 +24,46 @@ $success = '';
 $mailStatus = '';
 
 function generateAdmissionNumber($conn) {
-    $prefix = 'ADM';
     $year = date('Y');
-    $stmt = $conn->query("SELECT COUNT(*) FROM students WHERE YEAR(created_at) = $year");
-    $count = (int)$stmt->fetchColumn() + 1;
-    return $prefix . $year . str_pad($count, 4, '0', STR_PAD_LEFT);
+    $prefix = 'ADM' . $year;
+    try {
+        $stmt = $conn->prepare("SELECT admission_number FROM students WHERE admission_number LIKE :prefix ORDER BY admission_number DESC LIMIT 1");
+        $stmt->execute(['prefix' => $prefix . '%']);
+        $lastAdmission = (string)($stmt->fetchColumn() ?: '');
+        $nextNumber = 1;
+        if ($lastAdmission !== '' && preg_match('/(\d+)$/', $lastAdmission, $m)) {
+            $nextNumber = ((int)$m[1]) + 1;
+        }
+        return $prefix . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+    } catch (Exception $e) {
+        $stmt = $conn->query("SELECT COUNT(*) FROM students WHERE YEAR(created_at) = " . (int)$year);
+        $count = (int)$stmt->fetchColumn() + 1;
+        return $prefix . str_pad($count, 4, '0', STR_PAD_LEFT);
+    }
 }
 // Generate registration number in 'YYYY-STU-XXX' format
 function generateStudentReg($conn) {
     $year = date('Y');
-    $stmt = $conn->query("SELECT COUNT(*) FROM students WHERE YEAR(created_at) = $year");
-    $count = $stmt->fetchColumn();
-    $nextNumber = str_pad($count + 1, 3, '0', STR_PAD_LEFT);
-    return "$year-STU-$nextNumber";
+    $prefix = $year . '-STU-';
+    $stmt = $conn->prepare("SELECT student_id FROM students WHERE student_id LIKE :prefix ORDER BY student_id DESC LIMIT 1");
+    $stmt->execute(['prefix' => $prefix . '%']);
+    $lastStudentId = (string)($stmt->fetchColumn() ?: '');
+    $next = 1;
+    if ($lastStudentId !== '' && preg_match('/(\d+)$/', $lastStudentId, $m)) {
+        $next = ((int)$m[1]) + 1;
+    }
+
+    // Safety loop to avoid collisions from historical/manual records.
+    for ($i = 0; $i < 1000; $i++) {
+        $candidate = $prefix . str_pad($next + $i, 3, '0', STR_PAD_LEFT);
+        $checkStmt = $conn->prepare("SELECT id FROM students WHERE student_id = :sid LIMIT 1");
+        $checkStmt->execute(['sid' => $candidate]);
+        if (!$checkStmt->fetch(PDO::FETCH_ASSOC)) {
+            return $candidate;
+        }
+    }
+
+    throw new Exception('Unable to allocate a unique student ID.');
 }
 $registration_number = generateStudentReg($conn);
 
@@ -100,16 +127,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$current_semester) $errors[] = 'Current Semester required';
     if (!$academic_status) $errors[] = 'Academic Status required';
 
+    // Duplicate controls for student identity/data integrity.
+    if (!$errors) {
+        $emailUserStmt = $conn->prepare("SELECT id FROM users WHERE email = :email LIMIT 1");
+        $emailUserStmt->execute(['email' => $email]);
+        if ($emailUserStmt->fetch(PDO::FETCH_ASSOC)) {
+            $errors[] = 'Email address is already used by another account.';
+        }
+
+        $emailStudentStmt = $conn->prepare("SELECT id, student_id FROM students WHERE email = :email LIMIT 1");
+        $emailStudentStmt->execute(['email' => $email]);
+        $existingStudentByEmail = $emailStudentStmt->fetch(PDO::FETCH_ASSOC);
+        if ($existingStudentByEmail) {
+            $errors[] = 'A student record with this email already exists (' . $existingStudentByEmail['student_id'] . ').';
+        }
+
+        if ($dob && $program_id) {
+            $identityStmt = $conn->prepare("
+                SELECT id, student_id
+                FROM students
+                WHERE LOWER(first_name) = LOWER(:first_name)
+                  AND LOWER(last_name) = LOWER(:last_name)
+                  AND date_of_birth = :date_of_birth
+                  AND program_id = :program_id
+                LIMIT 1
+            ");
+            $identityStmt->execute([
+                'first_name' => $first_name,
+                'last_name' => $last_name,
+                'date_of_birth' => $dob,
+                'program_id' => $program_id
+            ]);
+            $existingByIdentity = $identityStmt->fetch(PDO::FETCH_ASSOC);
+            if ($existingByIdentity) {
+                $errors[] = 'Possible duplicate student identity found (' . $existingByIdentity['student_id'] . ').';
+            }
+        }
+
+        if ($primary_number !== '') {
+            $phoneStmt = $conn->prepare("SELECT id, student_id FROM students WHERE primary_number = :primary_number LIMIT 1");
+            $phoneStmt->execute(['primary_number' => $primary_number]);
+            $existingByPhone = $phoneStmt->fetch(PDO::FETCH_ASSOC);
+            if ($existingByPhone) {
+                $errors[] = 'Primary phone number is already linked to student ' . $existingByPhone['student_id'] . '.';
+            }
+        }
+    }
+
     if (empty($errors)) {
         try {
             $conn->beginTransaction();
-            $username = strtolower(explode('@', $email)[0]);
+            $usernameBase = strtolower((string)preg_replace('/[^a-z0-9]/', '', explode('@', $email)[0] ?? ''));
+            if ($usernameBase === '') {
+                $usernameBase = 'student';
+            }
+            $username = $usernameBase;
             $suffix = 1;
             while (true) {
                 $checkStmt = $conn->prepare("SELECT id FROM users WHERE username = :u");
                 $checkStmt->execute(['u' => $username]);
                 if (!$checkStmt->fetch()) break;
-                $username = $username . $suffix;
+                $username = $usernameBase . $suffix;
                 $suffix++;
             }
             $password = Security::generatePassword(10);
@@ -162,7 +240,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $success = 'Student added successfully!';
         } catch (Exception $e) {
             if ($conn->inTransaction()) $conn->rollBack();
-            $errors[] = 'Database error: ' . $e->getMessage();
+            $msg = $e->getMessage();
+            if (stripos($msg, 'Duplicate entry') !== false && stripos($msg, 'student_id') !== false) {
+                $errors[] = 'Student ID conflict detected. Please submit again.';
+            } else {
+                $errors[] = 'Database error: ' . $msg;
+            }
         }
     }
 }

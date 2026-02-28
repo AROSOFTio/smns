@@ -549,6 +549,156 @@ class Auth {
         ];
     }
 
+    private function getPendingLoginCookieName($module) {
+        return 'SMNS_PENDING_' . strtoupper(trim((string)$module));
+    }
+
+    private function getPendingLoginCookiePath() {
+        $path = '/';
+        if (defined('BASE_URL')) {
+            $parsedPath = (string)parse_url((string)BASE_URL, PHP_URL_PATH);
+            if ($parsedPath !== '') {
+                $path = $parsedPath;
+            }
+        }
+        if ($path === '') {
+            $path = '/';
+        }
+        if (substr($path, -1) !== '/') {
+            $path .= '/';
+        }
+        return $path;
+    }
+
+    private function getPendingLoginCookieSecret() {
+        if (defined('BACKUP_ENCRYPTION_KEY') && trim((string)BACKUP_ENCRYPTION_KEY) !== '') {
+            return (string)BACKUP_ENCRYPTION_KEY;
+        }
+        return hash('sha256', (defined('DB_NAME') ? DB_NAME : 'smns') . '|' . (defined('DB_USER') ? DB_USER : 'root') . '|' . __FILE__);
+    }
+
+    private function signPendingLoginCookie($module, $userId, $reason, $expiresAt) {
+        $data = strtolower(trim((string)$module)) . '|' . (int)$userId . '|' . trim((string)$reason) . '|' . (int)$expiresAt;
+        return hash_hmac('sha256', $data, $this->getPendingLoginCookieSecret());
+    }
+
+    private function setPendingLoginCookie($module, $userId, $reason, $expiresAt) {
+        if (headers_sent()) {
+            return;
+        }
+        $moduleName = strtolower(trim((string)$module));
+        if ($moduleName === '' || (int)$userId <= 0 || (int)$expiresAt <= 0) {
+            return;
+        }
+
+        $payload = [
+            'u' => (int)$userId,
+            'r' => trim((string)$reason),
+            'e' => (int)$expiresAt
+        ];
+        $payload['s'] = $this->signPendingLoginCookie($moduleName, (int)$payload['u'], (string)$payload['r'], (int)$payload['e']);
+        $encoded = base64_encode((string)json_encode($payload));
+        $cookieName = $this->getPendingLoginCookieName($moduleName);
+        $cookiePath = $this->getPendingLoginCookiePath();
+        $cookieSecure = (bool)(defined('SESSION_COOKIE_SECURE') ? SESSION_COOKIE_SECURE : smnsIsHttpsRequest());
+        $cookieSameSite = (string)(defined('SESSION_COOKIE_SAMESITE') ? SESSION_COOKIE_SAMESITE : 'Strict');
+
+        if (PHP_VERSION_ID >= 70300) {
+            setcookie($cookieName, $encoded, [
+                'expires' => (int)$expiresAt,
+                'path' => $cookiePath,
+                'secure' => $cookieSecure,
+                'httponly' => true,
+                'samesite' => $cookieSameSite
+            ]);
+        } else {
+            setcookie(
+                $cookieName,
+                $encoded,
+                (int)$expiresAt,
+                $cookiePath . '; samesite=' . $cookieSameSite,
+                '',
+                $cookieSecure,
+                true
+            );
+        }
+    }
+
+    private function clearPendingLoginCookie($module) {
+        if (headers_sent()) {
+            return;
+        }
+        $moduleName = strtolower(trim((string)$module));
+        if ($moduleName === '') {
+            return;
+        }
+        $cookieName = $this->getPendingLoginCookieName($moduleName);
+        $cookiePath = $this->getPendingLoginCookiePath();
+        $cookieSecure = (bool)(defined('SESSION_COOKIE_SECURE') ? SESSION_COOKIE_SECURE : smnsIsHttpsRequest());
+        $cookieSameSite = (string)(defined('SESSION_COOKIE_SAMESITE') ? SESSION_COOKIE_SAMESITE : 'Strict');
+
+        if (PHP_VERSION_ID >= 70300) {
+            setcookie($cookieName, '', [
+                'expires' => time() - 3600,
+                'path' => $cookiePath,
+                'secure' => $cookieSecure,
+                'httponly' => true,
+                'samesite' => $cookieSameSite
+            ]);
+        } else {
+            setcookie(
+                $cookieName,
+                '',
+                time() - 3600,
+                $cookiePath . '; samesite=' . $cookieSameSite,
+                '',
+                $cookieSecure,
+                true
+            );
+        }
+    }
+
+    private function getPendingLoginContextFromCookie($module) {
+        $moduleName = strtolower(trim((string)$module));
+        if ($moduleName === '') {
+            return null;
+        }
+        $cookieName = $this->getPendingLoginCookieName($moduleName);
+        $raw = (string)($_COOKIE[$cookieName] ?? '');
+        if ($raw === '') {
+            return null;
+        }
+
+        $decodedJson = base64_decode($raw, true);
+        if ($decodedJson === false) {
+            return null;
+        }
+        $data = json_decode($decodedJson, true);
+        if (!is_array($data)) {
+            return null;
+        }
+
+        $uid = (int)($data['u'] ?? 0);
+        $reason = trim((string)($data['r'] ?? ''));
+        $expiresAt = (int)($data['e'] ?? 0);
+        $sig = (string)($data['s'] ?? '');
+        if ($uid <= 0 || $reason === '' || $expiresAt <= 0 || $sig === '') {
+            return null;
+        }
+
+        $expected = $this->signPendingLoginCookie($moduleName, $uid, $reason, $expiresAt);
+        if (!hash_equals($expected, $sig)) {
+            return null;
+        }
+
+        return [
+            'module' => $moduleName,
+            'user_id' => $uid,
+            'reason' => $reason,
+            'expires_at' => $expiresAt
+        ];
+    }
+
     private function setPendingLoginContext($module, $userId, $reason, $notice = '') {
         $module = strtolower(trim((string)$module));
         if ($module === '') {
@@ -559,18 +709,41 @@ class Auth {
         if ($ttl < 60) {
             $ttl = 300;
         }
+        $expiresAt = time() + $ttl;
         $_SESSION[$module . '_pending_user_id'] = (int)$userId;
         $_SESSION[$module . '_pending_reason'] = trim((string)$reason);
-        $_SESSION[$module . '_pending_expires_at'] = time() + $ttl;
+        $_SESSION[$module . '_pending_expires_at'] = $expiresAt;
         $noticeValue = trim((string)$notice);
         if ($noticeValue !== '') {
             $_SESSION[$module . '_pending_notice'] = $noticeValue;
         } else {
             unset($_SESSION[$module . '_pending_notice']);
         }
+        $this->setPendingLoginCookie($module, (int)$userId, trim((string)$reason), (int)$expiresAt);
     }
 
-    private function getPendingLoginContext($module = null) {
+    private function getPendingLoginContext($module = null, $allowExpired = false) {
+        $ctx = $this->getPendingLoginContextRaw($module);
+        if (!$ctx) {
+            return null;
+        }
+
+        $isExpired = time() > (int)$ctx['expires_at'];
+        if ($isExpired && !$allowExpired) {
+            return null;
+        }
+
+        // Cleanup very old pending contexts to avoid stale session buildup.
+        if (time() > ((int)$ctx['expires_at'] + 86400)) {
+            $this->clearPendingLoginContext((string)$ctx['module']);
+            return null;
+        }
+
+        $ctx['expired'] = $isExpired;
+        return $ctx;
+    }
+
+    private function getPendingLoginContextRaw($module = null) {
         $moduleName = $module ? strtolower(trim((string)$module)) : strtolower(trim((string)$this->module));
         if ($moduleName === '') {
             return null;
@@ -578,7 +751,18 @@ class Auth {
         $uid = (int)($_SESSION[$moduleName . '_pending_user_id'] ?? 0);
         $reason = (string)($_SESSION[$moduleName . '_pending_reason'] ?? '');
         $expiresAt = (int)($_SESSION[$moduleName . '_pending_expires_at'] ?? 0);
-        if ($uid <= 0 || $expiresAt <= 0 || time() > $expiresAt) {
+        if ($uid <= 0 || $expiresAt <= 0 || trim($reason) === '') {
+            $cookieCtx = $this->getPendingLoginContextFromCookie($moduleName);
+            if ($cookieCtx) {
+                $uid = (int)$cookieCtx['user_id'];
+                $reason = (string)$cookieCtx['reason'];
+                $expiresAt = (int)$cookieCtx['expires_at'];
+                $_SESSION[$moduleName . '_pending_user_id'] = $uid;
+                $_SESSION[$moduleName . '_pending_reason'] = $reason;
+                $_SESSION[$moduleName . '_pending_expires_at'] = $expiresAt;
+            }
+        }
+        if ($uid <= 0 || $expiresAt <= 0) {
             $this->clearPendingLoginContext($moduleName);
             return null;
         }
@@ -599,6 +783,7 @@ class Auth {
         unset($_SESSION[$moduleName . '_pending_reason']);
         unset($_SESSION[$moduleName . '_pending_expires_at']);
         unset($_SESSION[$moduleName . '_pending_notice']);
+        $this->clearPendingLoginCookie($moduleName);
     }
 
     public function consumePendingLoginNotice($module = null) {
@@ -623,9 +808,12 @@ class Auth {
      */
     public function verifyPendingMfa($code) {
         try {
-            $ctx = $this->getPendingLoginContext();
+            $ctx = $this->getPendingLoginContext(null, true);
             if (!$ctx || $ctx['reason'] !== 'mfa') {
                 return ['success' => false, 'message' => 'No pending MFA verification found.'];
+            }
+            if (!empty($ctx['expired'])) {
+                return ['success' => false, 'message' => 'Verification code expired. Click Resend Code to get a new code.'];
             }
 
             $user = $this->getUserById((int)$ctx['user_id']);
@@ -667,7 +855,7 @@ class Auth {
      */
     public function resendPendingMfaChallenge() {
         try {
-            $ctx = $this->getPendingLoginContext();
+            $ctx = $this->getPendingLoginContext(null, true);
             if (!$ctx || $ctx['reason'] !== 'mfa') {
                 return ['success' => false, 'message' => 'No pending MFA challenge found.'];
             }
@@ -676,7 +864,11 @@ class Auth {
                 return ['success' => false, 'message' => 'User account is not active.'];
             }
             $mfa = new MfaService($this->db);
-            return $mfa->issueChallenge((int)$ctx['user_id'], (string)$ctx['module'], (string)($user['email'] ?? ''));
+            $resent = $mfa->issueChallenge((int)$ctx['user_id'], (string)$ctx['module'], (string)($user['email'] ?? ''));
+            if (!empty($resent['success'])) {
+                $this->setPendingLoginContext((string)$ctx['module'], (int)$ctx['user_id'], 'mfa', (string)($resent['message'] ?? 'Verification code resent.'));
+            }
+            return $resent;
         } catch (Exception $e) {
             return ['success' => false, 'message' => 'Unable to resend verification code.'];
         }

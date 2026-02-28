@@ -56,6 +56,7 @@ $courseSearch = trim($_GET['course'] ?? '');
 $changeType = $_GET['change_type'] ?? '';
 $dateFrom = $_GET['date_from'] ?? '';
 $dateTo = $_GET['date_to'] ?? '';
+$export = strtolower(trim((string)($_GET['export'] ?? '')));
 
 // Build query
 $sql = "SELECT ra.*, 
@@ -213,6 +214,71 @@ foreach ($auditRecords as $row) {
         $auditUiSummary[$changeTypeKey]++;
     }
 }
+
+if ($export === 'csv' || $export === 'excel') {
+    $isExcel = ($export === 'excel');
+    $filename = 'results_audit_' . $activeTab . '_' . date('Ymd_His') . ($isExcel ? '.xls' : '.csv');
+    if ($isExcel) {
+        header('Content-Type: application/vnd.ms-excel; charset=utf-8');
+    } else {
+        header('Content-Type: text/csv; charset=utf-8');
+    }
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    $out = fopen('php://output', 'w');
+
+    if ($activeTab === 'published') {
+        fputcsv($out, ['Result ID', 'Student PRN', 'Student Name', 'Course', 'Semester #', 'Academic Year ID', 'CW', 'Exam', 'Total', 'Grade', 'Status']);
+        foreach ($publishedResults as $row) {
+            $studentName = trim((string)(($row['student_first'] ?? '') . ' ' . ($row['student_last'] ?? '')));
+            $courseName = trim((string)(($row['course_code'] ?? '') . ' ' . ($row['course_name'] ?? '')));
+            fputcsv($out, [
+                (string)($row['result_id'] ?? ''),
+                (string)($row['reg_no'] ?? ''),
+                $studentName,
+                $courseName,
+                (string)($row['semester_number'] ?? ''),
+                (string)($row['academic_year_id'] ?? ''),
+                (string)($row['assignment_marks'] ?? ''),
+                (string)($row['final_exam_marks'] ?? ''),
+                (string)($row['total_marks'] ?? ''),
+                (string)($row['grade'] ?? ''),
+                (string)($row['status'] ?? ''),
+            ]);
+        }
+    } else {
+        fputcsv($out, ['Changed At', 'Change Type', 'Student PRN', 'Student Name', 'Course', 'Changed By', 'Reason', 'Old Marks JSON', 'New Marks JSON']);
+        foreach ($auditRecords as $row) {
+            $changedBy = trim((string)(($row['admin_first'] ?? '') . ' ' . ($row['admin_last'] ?? '')));
+            if ($changedBy === '') {
+                $changedBy = (string)($row['changed_by_username'] ?? 'Unknown');
+            }
+            $studentName = trim((string)(($row['student_first'] ?? '') . ' ' . ($row['student_last'] ?? '')));
+            $courseName = trim((string)(($row['course_code'] ?? '') . ' ' . ($row['course_name'] ?? '')));
+            fputcsv($out, [
+                (string)($row['changed_at'] ?? ''),
+                (string)($row['change_type'] ?? ''),
+                (string)($row['reg_no'] ?? ''),
+                $studentName,
+                $courseName,
+                $changedBy,
+                (string)($row['reason'] ?? ''),
+                (string)($row['old_marks'] ?? ''),
+                (string)($row['new_marks'] ?? ''),
+            ]);
+        }
+    }
+
+    fclose($out);
+    exit;
+}
+
+$csvExportQuery = $_GET;
+$csvExportQuery['export'] = 'csv';
+$csvExportHref = '?' . http_build_query($csvExportQuery);
+
+$excelExportQuery = $_GET;
+$excelExportQuery['export'] = 'excel';
+$excelExportHref = '?' . http_build_query($excelExportQuery);
 
 $unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
 
@@ -453,6 +519,12 @@ include '../../../includes/header.php';
             <h4><i class="fas fa-history"></i> Results Audit Trail</h4>
         </div>
         <div class="topbar-right">
+            <a href="<?php echo e($csvExportHref); ?>" class="btn btn-outline-primary btn-sm mr-2">
+                <i class="fas fa-file-csv"></i> Export CSV
+            </a>
+            <a href="<?php echo e($excelExportHref); ?>" class="btn btn-outline-success btn-sm mr-2">
+                <i class="fas fa-file-excel"></i> Export Excel
+            </a>
             <?php include '../../../includes/notification_bell.php'; ?>
         </div>
     </div>
