@@ -160,6 +160,19 @@ smns/
 
 For issues, questions, or contributions, please contact the system administrator.
 
+## Governance and Compliance
+
+A compliance-ready governance pack is available at:
+
+- `docs/governance/README.md`
+
+It contains policy documents, SOP templates, control-to-system mapping, and audit evidence templates for:
+
+- data governance policy,
+- role/responsibility governance,
+- retention and archival controls,
+- change management and approval controls.
+
 ## License
 
 MIT License - see LICENSE file for details

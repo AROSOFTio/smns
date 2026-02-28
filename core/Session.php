@@ -41,10 +41,12 @@ class Session {
                 session_write_close();
                 
                 // Configure and start the correct session
+                $cookieSecure = (int)(defined('SESSION_COOKIE_SECURE') ? SESSION_COOKIE_SECURE : smnsIsHttpsRequest());
+                $cookieSameSite = defined('SESSION_COOKIE_SAMESITE') ? (string)SESSION_COOKIE_SAMESITE : 'Strict';
                 ini_set('session.cookie_httponly', 1);
                 ini_set('session.use_only_cookies', 1);
-                ini_set('session.cookie_secure', 0);
-                ini_set('session.cookie_samesite', 'Strict');
+                ini_set('session.cookie_secure', $cookieSecure);
+                ini_set('session.cookie_samesite', $cookieSameSite);
                 ini_set('session.gc_maxlifetime', defined('SESSION_TIMEOUT') ? SESSION_TIMEOUT : 3600);
                 ini_set('session.use_strict_mode', 1);
                 
@@ -54,10 +56,12 @@ class Session {
             // If same name, session is already correct - do nothing
         } else {
             // No active session - configure and start fresh
+            $cookieSecure = (int)(defined('SESSION_COOKIE_SECURE') ? SESSION_COOKIE_SECURE : smnsIsHttpsRequest());
+            $cookieSameSite = defined('SESSION_COOKIE_SAMESITE') ? (string)SESSION_COOKIE_SAMESITE : 'Strict';
             ini_set('session.cookie_httponly', 1);
             ini_set('session.use_only_cookies', 1);
-            ini_set('session.cookie_secure', 0);
-            ini_set('session.cookie_samesite', 'Strict');
+            ini_set('session.cookie_secure', $cookieSecure);
+            ini_set('session.cookie_samesite', $cookieSameSite);
             ini_set('session.gc_maxlifetime', defined('SESSION_TIMEOUT') ? SESSION_TIMEOUT : 3600);
             ini_set('session.use_strict_mode', 1);
             
@@ -180,10 +184,26 @@ class Session {
         
         if (ini_get("session.use_cookies")) {
             $params = session_get_cookie_params();
-            setcookie(session_name(), '', time() - 42000,
-                $params["path"], $params["domain"],
-                $params["secure"], $params["httponly"]
-            );
+            if (PHP_VERSION_ID >= 70300) {
+                setcookie(session_name(), '', [
+                    'expires' => time() - 42000,
+                    'path' => $params['path'] ?? '/',
+                    'domain' => $params['domain'] ?? '',
+                    'secure' => (bool)($params['secure'] ?? false),
+                    'httponly' => (bool)($params['httponly'] ?? true),
+                    'samesite' => defined('SESSION_COOKIE_SAMESITE') ? (string)SESSION_COOKIE_SAMESITE : 'Strict'
+                ]);
+            } else {
+                setcookie(
+                    session_name(),
+                    '',
+                    time() - 42000,
+                    ($params['path'] ?? '/') . '; samesite=' . (defined('SESSION_COOKIE_SAMESITE') ? SESSION_COOKIE_SAMESITE : 'Strict'),
+                    $params['domain'] ?? '',
+                    (bool)($params['secure'] ?? false),
+                    (bool)($params['httponly'] ?? true)
+                );
+            }
         }
         
         if (session_status() === PHP_SESSION_ACTIVE) {

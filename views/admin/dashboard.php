@@ -2220,7 +2220,7 @@ document.querySelectorAll('.foldable-header').forEach(function(header) {
 // CONFIGURATION
 // ============================================================================
 if (!defined('BASE_URL')) {
-    define('BASE_URL', 'http://localhost/smns'); // Change this to your base URL
+    define('BASE_URL', '/smns');
 }
 
 // ============================================================================

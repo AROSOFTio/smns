@@ -32,6 +32,18 @@ class Database {
                 PDO::ATTR_EMULATE_PREPARES => false,
                 PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"
             ];
+
+            if (defined('DB_SSL_ENABLED') && DB_SSL_ENABLED) {
+                if (defined('PDO::MYSQL_ATTR_SSL_CA') && defined('DB_SSL_CA') && DB_SSL_CA !== '') {
+                    $options[PDO::MYSQL_ATTR_SSL_CA] = DB_SSL_CA;
+                }
+                if (defined('PDO::MYSQL_ATTR_SSL_CERT') && defined('DB_SSL_CERT') && DB_SSL_CERT !== '') {
+                    $options[PDO::MYSQL_ATTR_SSL_CERT] = DB_SSL_CERT;
+                }
+                if (defined('PDO::MYSQL_ATTR_SSL_KEY') && defined('DB_SSL_KEY') && DB_SSL_KEY !== '') {
+                    $options[PDO::MYSQL_ATTR_SSL_KEY] = DB_SSL_KEY;
+                }
+            }
             
             $this->conn = new PDO($dsn, $this->username, $this->password, $options);
         } catch(PDOException $exception) {

@@ -13,16 +13,63 @@ define('DB_HOST', 'localhost');
 define('DB_NAME', 'smns');
 define('DB_USER', 'root');
 define('DB_PASS', '');
+define('DB_SSL_ENABLED', false);
+define('DB_SSL_CA', '/path/to/ca.pem');
+define('DB_SSL_CERT', '/path/to/client-cert.pem');
+define('DB_SSL_KEY', '/path/to/client-key.pem');
 
 // Application Configuration
 define('APP_NAME', 'Seminary Results Management System');
 define('APP_SHORT_NAME', 'SMNS');
 define('APP_VERSION', '1.0.0');
-define('BASE_URL', 'http://localhost/smns');
+define('BASE_URL', 'https://your-domain.example/smns');
 define('BASE_PATH', __DIR__);
 
 // Timezone
 date_default_timezone_set('UTC');
+
+/**
+ * Detect whether the current HTTP request is already protected by TLS.
+ * Supports direct HTTPS and reverse-proxy forwarded headers.
+ */
+if (!function_exists('smnsIsHttpsRequest')) {
+    function smnsIsHttpsRequest() {
+        if (php_sapi_name() === 'cli') {
+            return true;
+        }
+        $https = strtolower((string)($_SERVER['HTTPS'] ?? ''));
+        if ($https !== '' && $https !== 'off' && $https !== '0') {
+            return true;
+        }
+        $scheme = strtolower((string)($_SERVER['REQUEST_SCHEME'] ?? ''));
+        if ($scheme === 'https') {
+            return true;
+        }
+        $forwardedProto = strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''));
+        if ($forwardedProto === 'https') {
+            return true;
+        }
+        $forwardedSsl = strtolower((string)($_SERVER['HTTP_X_FORWARDED_SSL'] ?? ''));
+        return $forwardedSsl === 'on' || $forwardedSsl === '1';
+    }
+}
+
+// Transport Security / HTTPS
+define('FORCE_HTTPS', true);
+define('SESSION_COOKIE_SECURE', true);
+define('SESSION_COOKIE_SAMESITE', 'Strict');
+define('HSTS_ENABLED', true);
+define('HSTS_MAX_AGE', 31536000);
+
+if (php_sapi_name() !== 'cli' && FORCE_HTTPS && !smnsIsHttpsRequest() && !headers_sent()) {
+    $redirectHost = (string)($_SERVER['HTTP_HOST'] ?? 'localhost');
+    $redirectUri = (string)($_SERVER['REQUEST_URI'] ?? '/');
+    header('Location: https://' . $redirectHost . $redirectUri, true, 301);
+    exit;
+}
+if (php_sapi_name() !== 'cli' && HSTS_ENABLED && smnsIsHttpsRequest() && !headers_sent()) {
+    header('Strict-Transport-Security: max-age=' . (int)HSTS_MAX_AGE . '; includeSubDomains');
+}
 
 // Session Configuration
 define('SESSION_TIMEOUT', 3600);
@@ -30,6 +77,24 @@ define('SESSION_TIMEOUT', 3600);
 // Security Configuration
 define('MAX_LOGIN_ATTEMPTS', 5);
 define('ACCOUNT_LOCKOUT_DURATION', 30);
+define('PASSWORD_MIN_LENGTH', 12);
+define('PASSWORD_REQUIRE_UPPERCASE', true);
+define('PASSWORD_REQUIRE_LOWERCASE', true);
+define('PASSWORD_REQUIRE_NUMBER', true);
+define('PASSWORD_REQUIRE_SPECIAL', true);
+define('PASSWORD_HISTORY_LIMIT', 5);
+
+// MFA (email OTP scaffold)
+define('MFA_ENABLED', true);
+define('MFA_ENFORCED_ROLES', 'admin,finance');
+define('MFA_CODE_LENGTH', 6);
+define('MFA_CHALLENGE_TTL_SECONDS', 300);
+define('MFA_MAX_ATTEMPTS', 5);
+
+// Privacy consent controls
+define('PRIVACY_CONSENT_REQUIRED', true);
+define('PRIVACY_CONSENT_KEY', 'privacy_notice');
+define('PRIVACY_NOTICE_VERSION', '2026-02-28');
 
 // File Upload Configuration
 define('UPLOAD_PATH', BASE_PATH . '/uploads');
@@ -54,6 +119,11 @@ define('MOBILE_MONEY_AIRTEL_BEARER_TOKEN', '');
 define('MOBILE_MONEY_AIRTEL_CLIENT_ID', '');
 define('MOBILE_MONEY_AIRTEL_CLIENT_SECRET', '');
 define('MOBILE_MONEY_AIRTEL_COUNTRY_CODE', 'UG');
+
+// Backup controls
+define('BACKUP_STORAGE_PATH', dirname(BASE_PATH, 2) . DIRECTORY_SEPARATOR . 'smns_secure_backups');
+define('BACKUP_ENCRYPTION_ENABLED', true);
+define('BACKUP_ENCRYPTION_KEY', 'replace-with-strong-random-backup-key');
 
 // Academic Configuration
 define('STUDENT_ID_PREFIX', 'STD');

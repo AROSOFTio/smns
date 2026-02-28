@@ -25,6 +25,10 @@ Thumbs.db
 # Ignore database backups
 /database/backups/*
 !/database/backups/.gitkeep
+/database backup/*
+!/database backup/.gitkeep
+/smns_secure_backups/*
+!/smns_secure_backups/.gitkeep
 
 # Ignore vendor (if using Composer)
 /vendor/

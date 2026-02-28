@@ -7,6 +7,33 @@ class Helper {
     private static $lastEmailError = '';
     private static $emailFailureTableEnsured = false;
 
+    private static function getSettingValue($key, $default = null) {
+        if (function_exists('getSetting')) {
+            try {
+                $value = getSetting((string)$key, null);
+                if ($value !== null && $value !== '') {
+                    return $value;
+                }
+            } catch (Exception $e) {
+                // Fallback to defaults when settings table is unavailable.
+            }
+        }
+        return $default;
+    }
+
+    private static function isTruthy($value, $default = false) {
+        $raw = strtolower(trim((string)$value));
+        if ($raw === '') {
+            return (bool)$default;
+        }
+        return in_array($raw, ['1', 'true', 'yes', 'on'], true);
+    }
+
+    private static function normalizeTransport($transport) {
+        $value = strtolower(trim((string)$transport));
+        return in_array($value, ['nodemailer', 'php_mail'], true) ? $value : 'php_mail';
+    }
+
     /**
      * Send an email using the configured transport.
      */
@@ -22,8 +49,29 @@ class Helper {
             return false;
         }
 
-        $fromEmail = $options['from_email'] ?? (defined('SMTP_FROM_EMAIL') ? SMTP_FROM_EMAIL : null);
-        $fromName = $options['from_name'] ?? (defined('SMTP_FROM_NAME') ? SMTP_FROM_NAME : APP_NAME);
+        $smtpHost = (string)self::getSettingValue('smtp_host', (defined('SMTP_HOST') ? SMTP_HOST : ''));
+        $smtpPortRaw = (int)self::getSettingValue('smtp_port', (defined('SMTP_PORT') ? (int)SMTP_PORT : 587));
+        $smtpPort = ($smtpPortRaw >= 1 && $smtpPortRaw <= 65535) ? $smtpPortRaw : 587;
+        $smtpUsernameDefault = defined('SMTP_USERNAME') ? SMTP_USERNAME : (defined('SMTP_USER') ? SMTP_USER : '');
+        $smtpPasswordDefault = defined('SMTP_PASSWORD') ? SMTP_PASSWORD : (defined('SMTP_PASS') ? SMTP_PASS : '');
+        $smtpUsername = (string)self::getSettingValue('smtp_username', $smtpUsernameDefault);
+        $smtpPassword = (string)self::getSettingValue('smtp_password', $smtpPasswordDefault);
+        if (in_array(strtolower(trim($smtpPassword)), ['replace-with-app-password', 'your-app-password', 'your-gmail-app-password'], true)) {
+            $smtpPassword = '';
+        }
+        $smtpSecureDefault = defined('SMTP_SECURE') ? (SMTP_SECURE ? '1' : '0') : '0';
+        $smtpSecure = self::isTruthy(self::getSettingValue('smtp_secure', $smtpSecureDefault), false);
+
+        $fromEmailDefault = (string)self::getSettingValue('smtp_from_email', (defined('SMTP_FROM_EMAIL') ? SMTP_FROM_EMAIL : ''));
+        $fromNameDefault = (string)self::getSettingValue('smtp_from_name', (defined('SMTP_FROM_NAME') ? SMTP_FROM_NAME : APP_NAME));
+        $fromEmail = trim((string)($options['from_email'] ?? $fromEmailDefault));
+        if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
+            $fromEmail = filter_var($fromEmailDefault, FILTER_VALIDATE_EMAIL) ? $fromEmailDefault : 'no-reply@localhost';
+        }
+        $fromName = trim((string)($options['from_name'] ?? $fromNameDefault));
+        if ($fromName === '') {
+            $fromName = defined('SMTP_FROM_NAME') ? SMTP_FROM_NAME : APP_NAME;
+        }
         $html = $options['html'] ?? null;
         $notifyAdminOnFailure = !array_key_exists('notify_admin_on_failure', $options) || (bool)$options['notify_admin_on_failure'];
         $transportError = '';
@@ -36,11 +84,19 @@ class Helper {
         if ($retryDelayMs < 0) {
             $retryDelayMs = 0;
         }
+        $fallbackDefault = self::isTruthy(
+            self::getSettingValue(
+                'email_fallback_php_mail',
+                (defined('EMAIL_FALLBACK_PHP_MAIL') && EMAIL_FALLBACK_PHP_MAIL) ? '1' : '0'
+            ),
+            (defined('EMAIL_FALLBACK_PHP_MAIL') && EMAIL_FALLBACK_PHP_MAIL)
+        );
         $allowPhpFallback = array_key_exists('allow_php_fallback', $options)
             ? (bool)$options['allow_php_fallback']
-            : (defined('EMAIL_FALLBACK_PHP_MAIL') && EMAIL_FALLBACK_PHP_MAIL);
+            : $fallbackDefault;
 
-        $transport = strtolower((string)($options['transport'] ?? (defined('EMAIL_TRANSPORT') ? EMAIL_TRANSPORT : 'php_mail')));
+        $transportDefault = (string)self::getSettingValue('email_transport', (defined('EMAIL_TRANSPORT') ? EMAIL_TRANSPORT : 'php_mail'));
+        $transport = self::normalizeTransport($options['transport'] ?? $transportDefault);
         if ($transport === 'nodemailer') {
             $nodeScript = $options['node_script'] ?? (defined('NODEMAILER_SCRIPT') ? NODEMAILER_SCRIPT : (BASE_PATH . '/scripts/mailer/send-email.js'));
             $nodeBin = $options['node_bin'] ?? (defined('NODE_BIN') ? NODE_BIN : 'node');
@@ -57,11 +113,11 @@ class Helper {
                         'name' => $fromName
                     ],
                     'smtp' => [
-                        'host' => defined('SMTP_HOST') ? SMTP_HOST : '',
-                        'port' => defined('SMTP_PORT') ? (int)SMTP_PORT : 587,
-                        'username' => defined('SMTP_USERNAME') ? SMTP_USERNAME : '',
-                        'password' => defined('SMTP_PASSWORD') ? SMTP_PASSWORD : '',
-                        'secure' => defined('SMTP_SECURE') ? (bool)SMTP_SECURE : false
+                        'host' => $smtpHost,
+                        'port' => $smtpPort,
+                        'username' => $smtpUsername,
+                        'password' => $smtpPassword,
+                        'secure' => $smtpSecure
                     ]
                 ];
 

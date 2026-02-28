@@ -390,6 +390,7 @@
         --app-text: #1f2937;
         --app-muted: #6b7280;
         --app-surface: #ffffff;
+        --app-surface-1: #ffffff;
         --app-surface-2: #f8fafc;
         --app-border: #e5e7eb;
     }
@@ -398,6 +399,7 @@
         --app-text: #e5e7eb;
         --app-muted: #9ca3af;
         --app-surface: #111827;
+        --app-surface-1: #0f172a;
         --app-surface-2: #1f2937;
         --app-border: #334155;
     }
@@ -473,20 +475,38 @@
         border-color: var(--app-border) !important;
     }
     html[data-theme='dark'] .modal-content,
-    html[data-theme='dark'] .dropdown-menu,
-    html[data-theme='dark'] #profileDropMenu {
+    html[data-theme='dark'] .dropdown-menu {
         background: var(--app-surface) !important;
         color: var(--app-text) !important;
         border-color: var(--app-border) !important;
     }
-    html[data-theme='dark'] .user-dropdown-menu {
+    html[data-theme='dark'] .user-dropdown-menu,
+    html[data-theme='dark'] #userDropdownMenu,
+    html[data-theme='dark'] #profileDropMenu {
         background: var(--app-surface-1) !important;
+        background-color: var(--app-surface-1) !important;
         border: 1px solid var(--app-border) !important;
         box-shadow: 0 10px 24px rgba(2, 6, 23, 0.55) !important;
+        opacity: 1 !important;
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
     }
     html[data-theme='dark'] .user-profile-meta {
         background: var(--app-surface-1) !important;
         border-bottom-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .user-dropdown-menu .dropdown-item,
+    html[data-theme='dark'] #profileDropMenu a {
+        background: var(--app-surface-1) !important;
+        color: var(--app-text) !important;
+        border-bottom-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] .user-dropdown-menu .dropdown-item:hover,
+    html[data-theme='dark'] .user-dropdown-menu .dropdown-item:focus,
+    html[data-theme='dark'] #profileDropMenu a:hover,
+    html[data-theme='dark'] #profileDropMenu a:focus {
+        background: var(--app-surface-2) !important;
+        color: #ffffff !important;
     }
     html[data-theme='dark'] .user-profile-meta .user-fullname {
         color: #f8fafc !important;
@@ -501,12 +521,6 @@
     html[data-theme='dark'] #profileDropMenu a {
         color: #e5e7eb !important;
         border-bottom-color: var(--app-border) !important;
-        background: transparent !important;
-    }
-    html[data-theme='dark'] #profileDropMenu a:hover,
-    html[data-theme='dark'] #profileDropMenu a:focus {
-        background: var(--app-surface-2) !important;
-        color: #f8fafc !important;
     }
     html[data-theme='dark'] #profileDropMenu a[href*='logout'] {
         color: #fca5a5 !important;

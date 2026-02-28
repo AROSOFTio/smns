@@ -16,8 +16,7 @@ if (php_sapi_name() === 'cli') {
 
 // minimal environment for CLI
 try {
-    $backupDir = BASE_PATH . DIRECTORY_SEPARATOR . 'database backup';
-    if (!is_dir($backupDir)) { @mkdir($backupDir, 0777, true); }
+    $backupDir = BackupSecurity::ensureBackupDirectory();
 
     $timestamp = date('Ymd_His');
     $fileName = 'smns_backup_' . $timestamp . '.sql';
@@ -60,11 +59,16 @@ try {
         if (file_exists($filePath)) { $created = true; }
     }
 
+    if ($created) {
+        $filePath = BackupSecurity::encryptIfEnabled($filePath);
+        $fileName = basename($filePath);
+    }
+
     // retention (prefer DB settings when available)
     $retentionDays = (int)getSetting('backup_retention_days', defined('BACKUP_RETENTION_DAYS') ? BACKUP_RETENTION_DAYS : 30);
     $maxFiles = (int)getSetting('backup_retention_max_files', defined('BACKUP_RETENTION_MAX_FILES') ? BACKUP_RETENTION_MAX_FILES : 50);
     $deleted = 0;
-    $files = glob($backupDir . DIRECTORY_SEPARATOR . '*.sql');
+    $files = BackupSecurity::listBackupFiles();
     if (!empty($files)) {
         foreach ($files as $f) {
             if (filemtime($f) < strtotime("-{$retentionDays} days")) { @unlink($f) && $deleted++; }
@@ -86,7 +90,7 @@ try {
         $recips = trim(getSetting('scheduled_backup_recipients', SMTP_FROM_EMAIL));
         $emails = array_filter(array_map('trim', explode(',', $recips)));
         $subject = APP_NAME . ' - Scheduled Backup ' . ($created ? 'Succeeded' : 'FAILED');
-        $body = ($created ? "Backup created: " . BASE_URL . '/database%20backup/' . basename($filePath) : "Backup failed on " . date('Y-m-d H:i:s')) . "\n\nRegards,\n" . APP_NAME;
+        $body = ($created ? "Backup created: " . basename($filePath) : "Backup failed on " . date('Y-m-d H:i:s')) . "\n\nLocation: Admin > System Health > Recent Backups\n\nRegards,\n" . APP_NAME;
         if (!empty($emails)) {
             Helper::sendEmail($emails, $subject, $body);
         }

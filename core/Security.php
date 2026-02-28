@@ -102,6 +102,66 @@ class Security {
     public static function hashPassword($password) {
         return password_hash($password, PASSWORD_DEFAULT);
     }
+
+    /**
+     * Validate password against configured policy.
+     */
+    public static function validatePasswordPolicy($password, &$errors = []) {
+        $errors = [];
+        $pwd = (string)$password;
+        $minLen = defined('PASSWORD_MIN_LENGTH') ? (int)PASSWORD_MIN_LENGTH : 8;
+        if (strlen($pwd) < $minLen) {
+            $errors[] = 'Password must be at least ' . $minLen . ' characters.';
+        }
+        if ((defined('PASSWORD_REQUIRE_UPPERCASE') ? PASSWORD_REQUIRE_UPPERCASE : false) && !preg_match('/[A-Z]/', $pwd)) {
+            $errors[] = 'Password must include at least one uppercase letter.';
+        }
+        if ((defined('PASSWORD_REQUIRE_LOWERCASE') ? PASSWORD_REQUIRE_LOWERCASE : false) && !preg_match('/[a-z]/', $pwd)) {
+            $errors[] = 'Password must include at least one lowercase letter.';
+        }
+        if ((defined('PASSWORD_REQUIRE_NUMBER') ? PASSWORD_REQUIRE_NUMBER : false) && !preg_match('/[0-9]/', $pwd)) {
+            $errors[] = 'Password must include at least one number.';
+        }
+        if ((defined('PASSWORD_REQUIRE_SPECIAL') ? PASSWORD_REQUIRE_SPECIAL : false) && !preg_match('/[^A-Za-z0-9]/', $pwd)) {
+            $errors[] = 'Password must include at least one special character.';
+        }
+        return empty($errors);
+    }
+
+    /**
+     * Check whether a password appears in recent password history.
+     */
+    public static function isPasswordReused($conn, $userId, $password, $limit = null) {
+        if (!($conn instanceof PDO)) {
+            return false;
+        }
+        $userId = (int)$userId;
+        if ($userId <= 0) {
+            return false;
+        }
+        $historyLimit = $limit !== null ? (int)$limit : (defined('PASSWORD_HISTORY_LIMIT') ? (int)PASSWORD_HISTORY_LIMIT : 5);
+        if ($historyLimit < 1) {
+            $historyLimit = 5;
+        }
+        try {
+            $stmt = $conn->prepare("
+                SELECT password_hash
+                FROM password_history
+                WHERE user_id = :user_id
+                ORDER BY id DESC
+                LIMIT {$historyLimit}
+            ");
+            $stmt->execute(['user_id' => $userId]);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                if (!empty($row['password_hash']) && password_verify((string)$password, (string)$row['password_hash'])) {
+                    return true;
+                }
+            }
+        } catch (Exception $e) {
+            return false;
+        }
+        return false;
+    }
     
     /**
      * Verify password

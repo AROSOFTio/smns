@@ -3,7 +3,7 @@ require_once '../../../config.php';
 
 $session = new Session('admin');
 $auth = new Auth('admin');
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
+if (!$auth->isLoggedIn() || $auth->getRole() !== 'admin') {
     header('Location: ' . BASE_URL . '/views/auth/login.php');
     exit;
 }
@@ -11,11 +11,16 @@ $currentUser = $auth->getCurrentUser();
 
 $file = $_GET['file'] ?? '';
 $basename = basename($file);
-$backupDir = BASE_PATH . DIRECTORY_SEPARATOR . 'database backup';
+$backupDir = BackupSecurity::getBackupDirectory();
 $fullPath = realpath($backupDir . DIRECTORY_SEPARATOR . $basename);
 if (!$fullPath || strpos($fullPath, realpath($backupDir)) !== 0 || !file_exists($fullPath)) {
     header($_SERVER['SERVER_PROTOCOL'] . ' 404 Not Found');
     echo 'File not found';
+    exit;
+}
+if (!preg_match('/\.sql$/i', $basename)) {
+    header($_SERVER['SERVER_PROTOCOL'] . ' 400 Bad Request');
+    echo 'Comparison supports plain .sql backups only.';
     exit;
 }
 

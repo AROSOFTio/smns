@@ -4,17 +4,12 @@
  */
 require_once '../config.php';
 
-// Simple session handling
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
 // Initialize session and auth with admin module context
 $session = new Session('admin');
 $auth = new Auth('admin');
 
 // Verify admin access
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true || $_SESSION['admin_role'] !== 'admin') {
+if (!$auth->isLoggedIn() || $auth->getRole() !== 'admin') {
     http_response_code(401);
     echo json_encode(['error' => 'Unauthorized']);
     exit;

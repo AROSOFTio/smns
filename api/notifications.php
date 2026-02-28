@@ -236,12 +236,12 @@ switch ($action) {
                 break;
 
             case 'purge_backups':
-                $backupDir = BASE_PATH . DIRECTORY_SEPARATOR . 'database backup';
+                $backupDir = BackupSecurity::getBackupDirectory();
                 $deleted = 0;
                 $retentionDays = (int)getSetting('backup_retention_days', defined('BACKUP_RETENTION_DAYS') ? BACKUP_RETENTION_DAYS : 30);
                 $maxFiles = (int)getSetting('backup_retention_max_files', defined('BACKUP_RETENTION_MAX_FILES') ? BACKUP_RETENTION_MAX_FILES : 50);
                 if (is_dir($backupDir)) {
-                    $files = glob($backupDir . DIRECTORY_SEPARATOR . '*.sql');
+                    $files = BackupSecurity::listBackupFiles();
                     foreach ($files as $f) {
                         if (filemtime($f) < strtotime("-{$retentionDays} days")) { @unlink($f) && $deleted++; }
                     }

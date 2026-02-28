@@ -33,9 +33,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'All fields are required.';
         } elseif ($new_password !== $confirm_password) {
             $error = 'Passwords do not match.';
-        } elseif (strlen($new_password) < 8) {
-            $error = 'Password must be at least 8 characters.';
         } else {
+            $policyErrors = [];
+            if (!Security::validatePasswordPolicy($new_password, $policyErrors)) {
+                $error = implode(' ', $policyErrors);
+            }
+        }
+        if (empty($error)) {
             $db = new Database();
             $conn = $db->getConnection();
             $stmt = $conn->prepare('SELECT password_hash FROM users WHERE id = :id');
@@ -43,6 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $row = $stmt->fetch();
             if (!$row || !Security::verifyPassword($current_password, $row['password_hash'])) {
                 $error = 'Current password is incorrect.';
+            } elseif (Security::isPasswordReused($conn, (int)$userId, $new_password)) {
+                $error = 'You cannot reuse a recent password.';
             } else {
                 $hash = Security::hashPassword($new_password);
                 $ust = $conn->prepare('UPDATE users SET password_hash = :hash, require_password_change = 0 WHERE id = :id');
@@ -54,6 +60,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $success = 'Password changed successfully.';
             }
+        } else {
+            // keep validation error
         }
     }
 }

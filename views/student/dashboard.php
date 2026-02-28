@@ -311,8 +311,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'chang
         header('Location: ' . BASE_URL . '/views/student/dashboard.php');
         exit;
     }
-    if (strlen($newPassword) < 8) {
-        $session->setFlash('error', 'Password must be at least 8 characters.');
+    $policyErrors = [];
+    if (!Security::validatePasswordPolicy($newPassword, $policyErrors)) {
+        $session->setFlash('error', implode(' ', $policyErrors));
         header('Location: ' . BASE_URL . '/views/student/dashboard.php');
         exit;
     }
@@ -324,6 +325,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'chang
 
         if (!$row || !Security::verifyPassword($currentPassword, $row['password_hash'])) {
             $session->setFlash('error', 'Current password is incorrect.');
+            header('Location: ' . BASE_URL . '/views/student/dashboard.php');
+            exit;
+        }
+        if (Security::isPasswordReused($conn, (int)$currentUserId, $newPassword)) {
+            $session->setFlash('error', 'You cannot reuse a recent password.');
             header('Location: ' . BASE_URL . '/views/student/dashboard.php');
             exit;
         }
@@ -408,6 +414,51 @@ $academicStatusMeta = getStudentAcademicStatusMeta(
 );
 $academicStatus = (string)($academicStatusMeta['label'] ?? 'Status Pending');
 $academicStatusStyle = (string)($academicStatusMeta['style'] ?? getAcademicStatusChipStyle('neutral'));
+
+// Resolve study progress as "Year X Sem Y" using approved semester registrations.
+$resolvedStudyYear = (int)($studentRow['level_year'] ?? ($studentProfile['level_year'] ?? ($studentProfile['year_of_study'] ?? 0)));
+$resolvedStudySemesterNumber = (int)($currentSemester['semester_number'] ?? 0);
+if ($studentDbId > 0) {
+    try {
+        $studyProgressStmt = $conn->prepare("
+            SELECT
+                COALESCE(sr.year_of_study, s.level_year, s.year_of_study, 0) AS study_year,
+                COALESCE(sem.semester_number, 0) AS semester_number
+            FROM semester_registrations sr
+            INNER JOIN students s ON s.id = sr.student_id
+            INNER JOIN semesters sem ON sem.id = sr.semester_id
+            WHERE sr.student_id = :student_id
+              AND sr.status = 'approved'
+            ORDER BY
+                CASE WHEN sr.semester_id = :current_semester_id THEN 0 ELSE 1 END ASC,
+                COALESCE(sr.updated_at, sr.approval_date, sr.request_date, sr.created_at) DESC,
+                sr.id DESC
+            LIMIT 1
+        ");
+        $studyProgressStmt->execute([
+            'student_id' => $studentDbId,
+            'current_semester_id' => (int)($currentSemester['id'] ?? 0)
+        ]);
+        $studyProgressRow = $studyProgressStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $approvedStudyYear = (int)($studyProgressRow['study_year'] ?? 0);
+        $approvedSemesterNumber = (int)($studyProgressRow['semester_number'] ?? 0);
+        if ($approvedStudyYear > 0) {
+            $resolvedStudyYear = $approvedStudyYear;
+        }
+        if ($approvedSemesterNumber > 0) {
+            $resolvedStudySemesterNumber = $approvedSemesterNumber;
+        }
+    } catch (Exception $e) {
+        // Keep fallback values when registrations are unavailable.
+    }
+}
+if ($resolvedStudyYear <= 0) {
+    $resolvedStudyYear = 1;
+}
+$studyProgressLabel = 'Year ' . (int)$resolvedStudyYear;
+if ($resolvedStudySemesterNumber > 0) {
+    $studyProgressLabel .= ' Sem ' . (int)$resolvedStudySemesterNumber;
+}
 
 // Always resolve programme from admin-assigned student record.
 $registeredProgramName = '-';
@@ -1027,7 +1078,7 @@ document.addEventListener('click', function() {
 
                 <div class="tab-panel" data-panel="academic">
                     <table class="bio-details-table">
-                        <tr><td><b>PROGRAMME</b></td><td>:<?php echo e($registeredProgramName); ?></td><td><b>YEAR OF STUDY</b></td><td>:<?php echo e($studentRow['level_year'] ?? ($studentProfile['level_year'] ?? '-')); ?></td></tr>
+                        <tr><td><b>PROGRAMME</b></td><td>:<?php echo e($registeredProgramName); ?></td><td><b>YEAR OF STUDY</b></td><td>:<?php echo e($studyProgressLabel); ?></td></tr>
                         <tr><td><b>ENTRY YEAR</b></td><td>:<?php echo e($studentRow['entry_year'] ?? ($studentProfile['entry_year'] ?? '-')); ?></td><td><b>ENTRY MODE</b></td><td>:<?php echo e($studentRow['entry_mode'] ?? ($studentProfile['entry_mode'] ?? '-')); ?></td></tr>
                         <tr><td><b>ENROLLMENT TYPE</b></td><td>:<?php echo e($studentRow['enrollment_type'] ?? ($studentProfile['enrollment_type'] ?? '-')); ?></td><td><b>ACADEMIC STATUS</b></td><td>:<?php echo e($academicStatus); ?></td></tr>
                     </table>

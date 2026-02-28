@@ -118,7 +118,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $auth = new Auth('student');
             $result = $auth->login($entered_username, $password);
             
-            if ($result['success'] && $result['role'] === 'student') {
+            if (!empty($result['mfa_required'])) {
+                header('Location: ' . BASE_URL . '/views/auth/mfa-verify.php?module=student');
+                exit;
+            } elseif (!empty($result['consent_required'])) {
+                header('Location: ' . BASE_URL . '/views/auth/privacy-consent.php?module=student');
+                exit;
+            } elseif ($result['success'] && $result['role'] === 'student') {
                 // Login successful - check if password change required
                 if (!empty($result['require_password_change'])) {
                     // User must change password first

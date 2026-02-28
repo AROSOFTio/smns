@@ -46,6 +46,40 @@ CREATE TABLE password_history (
     INDEX idx_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- MFA login challenges (email OTP)
+CREATE TABLE auth_mfa_challenges (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    module VARCHAR(20) NOT NULL,
+    code_hash VARCHAR(255) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    max_attempts INT NOT NULL DEFAULT 5,
+    used_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_module (user_id, module),
+    INDEX idx_expires (expires_at),
+    INDEX idx_used (used_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Privacy consent records (auditable)
+CREATE TABLE privacy_consents (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    consent_key VARCHAR(100) NOT NULL,
+    consent_version VARCHAR(50) NOT NULL,
+    status ENUM('granted', 'withdrawn') NOT NULL DEFAULT 'granted',
+    ip_address VARCHAR(45) NULL,
+    user_agent VARCHAR(255) NULL,
+    granted_at DATETIME NULL,
+    withdrawn_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_user_key_ver (user_id, consent_key, consent_version),
+    INDEX idx_status (status),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ============================================================================
 -- ACADEMIC STRUCTURE TABLES
 -- ============================================================================

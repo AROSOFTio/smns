@@ -19,21 +19,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'All fields are required.';
     } elseif ($new_password !== $confirm_password) {
         $error = 'Passwords do not match.';
-    } elseif (strlen($new_password) < 8) {
-        $error = 'Password must be at least 8 characters.';
     } else {
-        $auth = new Auth('student');
-        $user = $auth->usernameExists($username);
-        if (!$user || $user['role'] !== 'student') {
-            $error = 'Invalid username.';
-        } else {
-            // Update password using Database connection
-            $db = new Database();
-            $conn = $db->getConnection();
-            $hash = password_hash($new_password, PASSWORD_DEFAULT);
-            $stmt = $conn->prepare('UPDATE users SET password_hash = :hash WHERE id = :id');
-            $stmt->execute(['hash' => $hash, 'id' => $user['id']]);
-            $success = 'Password reset successful.';
+        $policyErrors = [];
+        if (!Security::validatePasswordPolicy($new_password, $policyErrors)) {
+            $error = implode(' ', $policyErrors);
+        }
+        if (empty($error)) {
+            $auth = new Auth('student');
+            $user = $auth->usernameExists($username);
+            if (!$user || $user['role'] !== 'student') {
+                $error = 'Invalid username.';
+            } else {
+                // Update password using Database connection
+                $db = new Database();
+                $conn = $db->getConnection();
+                if (Security::isPasswordReused($conn, (int)$user['id'], $new_password)) {
+                    $error = 'You cannot reuse a recent password.';
+                } else {
+                $hash = password_hash($new_password, PASSWORD_DEFAULT);
+                $stmt = $conn->prepare('UPDATE users SET password_hash = :hash WHERE id = :id');
+                $stmt->execute(['hash' => $hash, 'id' => $user['id']]);
+                $success = 'Password reset successful.';
+                }
+            }
         }
     }
 }

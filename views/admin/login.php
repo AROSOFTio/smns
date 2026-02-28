@@ -91,7 +91,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $auth = new Auth('admin');
             $result = $auth->login($entered_username, $password);
             
-            if ($result['success'] && $result['role'] === 'admin') {
+            if (!empty($result['mfa_required'])) {
+                header('Location: ' . BASE_URL . '/views/auth/mfa-verify.php?module=admin');
+                exit;
+            } elseif (!empty($result['consent_required'])) {
+                header('Location: ' . BASE_URL . '/views/auth/privacy-consent.php?module=admin');
+                exit;
+            } elseif ($result['success'] && $result['role'] === 'admin') {
+                if (!empty($result['require_password_change'])) {
+                    header('Location: change-password.php');
+                    exit;
+                }
                 // Login successful - redirect to dashboard
                 header('Location: dashboard.php');
                 exit;

@@ -365,6 +365,10 @@ if ($forcedRepeatDecision) {
         'Your last SGPA is ' . number_format((float)($forcedRepeatDecision['semester_gpa'] ?? 0), 2) . '.';
 }
 
+// Recompute window against final resolved semester context (important after repeat-lock override).
+$currentSemesterWindow = $getSemesterRegistrationWindow((int)$semesterId);
+$isEnrollmentWindowOpen = (bool)$currentSemesterWindow['open'];
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'enroll_now')) {
     if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $session->setFlash('error', 'Invalid CSRF token.');
@@ -2144,7 +2148,7 @@ include '../../includes/header.php';
                             </div>
                             <div class="enroll-field">
                                 <label>SEMESTER <span class="req">*</span></label>
-                                <select name="semester_number" <?php echo $isRepeatLocked ? 'disabled' : ''; ?>>
+                                <select id="semester_number_select" name="semester_number" <?php echo $isRepeatLocked ? 'disabled' : ''; ?>>
                                     <option value="1" <?php echo $selectedSemesterNumber == 1 ? 'selected' : ''; ?>>Semester 1</option>
                                     <option value="2" <?php echo $selectedSemesterNumber == 2 ? 'selected' : ''; ?>>Semester 2</option>
                                 </select>
@@ -2154,7 +2158,7 @@ include '../../includes/header.php';
                             </div>
                             <div class="enroll-field">
                                 <label>ENROLLING AS? <span class="req">*</span></label>
-                                <select name="enrolling_as">
+                                <select id="enrolling_as_select" name="enrolling_as">
                                     <option value="normal" <?php echo $selectedEnrollingAs === 'normal' ? 'selected' : ''; ?>>Normal Student</option>
                                     <option value="private" <?php echo $selectedEnrollingAs === 'private' ? 'selected' : ''; ?>>Private Student</option>
                                     <option value="supplementary" <?php echo $selectedEnrollingAs === 'supplementary' ? 'selected' : ''; ?>>Supplementary</option>
@@ -2162,12 +2166,12 @@ include '../../includes/header.php';
                             </div>
                             <div class="enroll-field">
                                 <label>HAVE RETAKES? <span class="req">*</span></label>
-                                <select name="has_retakes">
+                                <select id="has_retakes_select" name="has_retakes">
                                     <option value="no" <?php echo $selectedHasRetakes === 'no' ? 'selected' : ''; ?>>No</option>
                                     <option value="yes" <?php echo $selectedHasRetakes === 'yes' ? 'selected' : ''; ?>>Yes</option>
                                 </select>
                             </div>
-                            <input type="hidden" name="academic_year_id" value="<?php echo (int)$selectedAcademicYearId; ?>">
+                            <input type="hidden" id="academic_year_id_input" name="academic_year_id" value="<?php echo (int)$selectedAcademicYearId; ?>">
                         </div>
                         <div class="enroll-action-row">
                             <button type="submit" class="enroll-now-btn" <?php echo !$isEnrollmentWindowOpen ? 'disabled title="Enrollment window closed. Contact admin."' : ''; ?>>
@@ -2322,6 +2326,36 @@ document.addEventListener('click', function() {
     var menu = document.getElementById('profileDropMenu');
     if (menu) menu.style.display = 'none';
 });
+
+var semesterSelect = document.getElementById('semester_number_select');
+if (semesterSelect && !semesterSelect.disabled) {
+    semesterSelect.addEventListener('change', function() {
+        var params = new URLSearchParams(window.location.search);
+        var academicYearInput = document.getElementById('academic_year_id_input');
+        var yearSelect = document.getElementById('year_of_study_select');
+        var enrollingAsSelect = document.getElementById('enrolling_as_select');
+        var retakesSelect = document.getElementById('has_retakes_select');
+
+        params.set('tab', 'enroll');
+        params.delete('semester_id');
+        params.set('semester_number', semesterSelect.value || '1');
+
+        if (academicYearInput && academicYearInput.value) {
+            params.set('academic_year_id', academicYearInput.value);
+        }
+        if (yearSelect && yearSelect.value) {
+            params.set('year_of_study', yearSelect.value);
+        }
+        if (enrollingAsSelect && enrollingAsSelect.value) {
+            params.set('enrolling_as', enrollingAsSelect.value);
+        }
+        if (retakesSelect && retakesSelect.value) {
+            params.set('has_retakes', retakesSelect.value);
+        }
+
+        window.location.href = 'course-registration.php?' + params.toString();
+    });
+}
 </script>
 
 <?php include '../../includes/footer.php'; ?>

@@ -32,8 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
         switch ($action) {
             case 'backup_db':
                 // manual backup (same behavior as scheduled script)
-                $backupDir = BASE_PATH . DIRECTORY_SEPARATOR . 'database backup';
-                if (!is_dir($backupDir)) { @mkdir($backupDir, 0777, true); }
+                $backupDir = BackupSecurity::ensureBackupDirectory();
                 $timestamp = date('Ymd_His');
                 $fileName = 'smns_backup_' . $timestamp . '.sql';
                 $filePath = $backupDir . DIRECTORY_SEPARATOR . $fileName;
@@ -44,6 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 @exec($cmd, $out, $ret);
 
                 if ($ret === 0 && file_exists($filePath)) {
+                    $filePath = BackupSecurity::encryptIfEnabled($filePath);
+                    $fileName = basename($filePath);
                     $actionResult = ['status' => 'success', 'message' => 'Database backup created: ' . $fileName, 'path' => $filePath];
                     $backupCreated = true;
                 } else {
@@ -73,6 +74,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                         }
                         file_put_contents($filePath, $dump);
                         if (file_exists($filePath)) {
+                            $filePath = BackupSecurity::encryptIfEnabled($filePath);
+                            $fileName = basename($filePath);
                             $actionResult = ['status' => 'success', 'message' => 'Database backup created (PHP fallback): ' . $fileName, 'path' => $filePath];
                             $backupCreated = true;
                         } else {
@@ -159,13 +162,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 break;
 
             case 'purge_backups':
-                $backupDir = BASE_PATH . DIRECTORY_SEPARATOR . 'database backup';
+                $backupDir = BackupSecurity::getBackupDirectory();
                 $deleted = 0;
                 $retentionDays = (int)getSetting('backup_retention_days', defined('BACKUP_RETENTION_DAYS') ? BACKUP_RETENTION_DAYS : 30);
                 $maxFiles = defined('BACKUP_RETENTION_MAX_FILES') ? BACKUP_RETENTION_MAX_FILES : 50;
 
                 if (is_dir($backupDir)) {
-                    $files = glob($backupDir . DIRECTORY_SEPARATOR . '*.sql');
+                    $files = BackupSecurity::listBackupFiles();
                     // delete by age
                     foreach ($files as $f) {
                         if (filemtime($f) < strtotime("-{$retentionDays} days")) { @unlink($f) && $deleted++; }
@@ -814,7 +817,8 @@ include '../../../includes/header.php';
                                 <div class="alert alert-<?php echo $actionResult['status'] === 'success' ? 'success' : ($actionResult['status'] === 'warning' ? 'warning' : 'danger'); ?>">
                                     <?php echo e($actionResult['message']); ?>
                                     <?php if (!empty($actionResult['path'])): ?>
-                                        <div class="mt-2"><a href="<?php echo e(str_replace(BASE_PATH, BASE_URL, $actionResult['path'])); ?>" target="_blank">Open backup file</a></div>
+                                        <?php $openBackupUrl = BASE_URL . '/views/admin/backup/download.php?file=' . urlencode(basename((string)$actionResult['path'])); ?>
+                                        <div class="mt-2"><a href="<?php echo e($openBackupUrl); ?>" target="_blank">Download backup file</a></div>
                                     <?php endif; ?>
                                 </div>
                             <?php endif; ?>
@@ -852,10 +856,10 @@ include '../../../includes/header.php';
                                 <div class="btn-group" role="group">
                                     <?php
                                     // List recent backups
-                                    $backupDir = BASE_PATH . DIRECTORY_SEPARATOR . 'database backup';
+                                    $backupDir = BackupSecurity::getBackupDirectory();
                                     $backups = [];
                                     if (is_dir($backupDir)) {
-                                        foreach (glob($backupDir . DIRECTORY_SEPARATOR . '*.sql') as $f) {
+                                        foreach (BackupSecurity::listBackupFiles() as $f) {
                                             $backups[filemtime($f)] = $f;
                                         }
                                         krsort($backups);
@@ -870,11 +874,14 @@ include '../../../includes/header.php';
                                             <div class="dropdown-menu" aria-labelledby="backupMenu">
                                                 <?php foreach (array_slice($backups, 0, 8) as $b): ?>
                                                     <?php $downloadUrl = BASE_URL . '/views/admin/backup/download.php?file=' . urlencode(basename($b)); ?>
-                                                    <?php $compareUrl = BASE_URL . '/views/admin/backup/compare.php?file=' . urlencode(basename($b)); ?>
+                                                    <?php $isEncryptedBackup = (substr((string)$b, -8) === '.sql.enc'); ?>
+                                                    <?php $compareUrl = $isEncryptedBackup ? '' : (BASE_URL . '/views/admin/backup/compare.php?file=' . urlencode(basename($b))); ?>
                                                     <div class="dropdown-item d-flex justify-content-between align-items-center">
                                                         <div><a href="<?php echo e($downloadUrl); ?>"><?php echo e(basename($b)); ?></a><br><small class="text-muted"><?php echo date('Y-m-d H:i', filemtime($b)); ?></small></div>
                                                         <div class="btn-group btn-group-sm">
-                                                            <a class="btn btn-sm btn-outline-primary" href="<?php echo e($compareUrl); ?>">Compare</a>
+                                                            <?php if (!$isEncryptedBackup): ?>
+                                                                <a class="btn btn-sm btn-outline-primary" href="<?php echo e($compareUrl); ?>">Compare</a>
+                                                            <?php endif; ?>
                                                             <a class="btn btn-sm btn-outline-secondary" href="<?php echo e($downloadUrl); ?>">Download</a>
                                                         </div>
                                                     </div>

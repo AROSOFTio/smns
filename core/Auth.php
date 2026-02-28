@@ -6,6 +6,8 @@
  */
 require_once __DIR__ . '/Database.php';
 require_once __DIR__ . '/Session.php';
+require_once __DIR__ . '/MfaService.php';
+require_once __DIR__ . '/PrivacyConsentService.php';
 
 class Auth {
         /**
@@ -42,6 +44,27 @@ class Auth {
     private $db;
     private $session;
     private $module; // The current module context (admin, student, lecturer, finance)
+
+    private function isLocalRequest() {
+        if (php_sapi_name() === 'cli') {
+            return true;
+        }
+        $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+        $serverName = strtolower((string)($_SERVER['SERVER_NAME'] ?? ''));
+        $remoteAddr = strtolower((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+        $serverAddr = strtolower((string)($_SERVER['SERVER_ADDR'] ?? ''));
+
+        $hostOnly = $host;
+        if (strpos($hostOnly, ':') !== false) {
+            $hostOnly = substr($hostOnly, 0, (int)strpos($hostOnly, ':'));
+        }
+
+        $locals = ['localhost', '127.0.0.1', '::1'];
+        return in_array($hostOnly, $locals, true)
+            || in_array($serverName, $locals, true)
+            || in_array($remoteAddr, $locals, true)
+            || in_array($serverAddr, $locals, true);
+    }
     
     public function __construct($role = null) {
         $database = new Database();
@@ -121,7 +144,7 @@ class Auth {
                 }
             }
 
-            // Check if account is locked
+            // Check user by username/email
             $sql = "SELECT * FROM users WHERE username = :username OR email = :email";
             $stmt = $this->db->prepare($sql);
             $stmt->execute(['username' => $username, 'email' => $username]);
@@ -131,22 +154,27 @@ class Auth {
                 return ['success' => false, 'message' => 'Invalid credentials'];
             }
 
-            // Ensure 'require_password_change' column exists
-            $col = $this->db->query("SHOW COLUMNS FROM users LIKE 'require_password_change'")->fetch();
-            if (!$col) {
-                $this->db->exec("ALTER TABLE users ADD COLUMN require_password_change TINYINT(1) DEFAULT 0 AFTER account_locked_until");
-                // refresh user record
+            // Ensure required auth support structures exist.
+            $this->ensureAuthSupportStructures();
+
+            // Account lockout check
+            if (!empty($user['account_locked_until']) && strtotime((string)$user['account_locked_until']) > time()) {
+                if ($this->isLocalRequest()) {
+                    // Local/dev safety: auto-clear lockouts to avoid dead-end during setup.
+                    $this->resetFailedAttempts((int)$user['id']);
+                    $stmt = $this->db->prepare($sql);
+                    $stmt->execute(['username' => $username, 'email' => $username]);
+                    $user = $stmt->fetch();
+                } else {
+                    $until = date('Y-m-d H:i:s', strtotime((string)$user['account_locked_until']));
+                    return ['success' => false, 'message' => 'Account locked due to failed login attempts. Try again after ' . $until . '.'];
+                }
+            }
+            if (!empty($user['account_locked_until']) && strtotime((string)$user['account_locked_until']) <= time()) {
+                $this->resetFailedAttempts((int)$user['id']);
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute(['username' => $username, 'email' => $username]);
                 $user = $stmt->fetch();
-            }
-            
-            // Account lockout check (disabled)
-            // Previously, if account_locked_until was in the future, login was blocked.
-            // This behavior has been disabled so users are not locked out.
-            if ($user['account_locked_until'] && strtotime($user['account_locked_until']) > time()) {
-                // Clear any stale lock/failed attempts and allow normal credential check
-                $this->resetFailedAttempts($user['id']);
             }
             
             // Verify password
@@ -161,44 +189,42 @@ class Auth {
                 return ['success' => false, 'message' => 'Account is not active'];
             }
             
-            // Reset failed attempts
-            $this->resetFailedAttempts($user['id']);
-            
-            // Update last login
-            $this->updateLastLogin($user['id']);
-            
-            // Get user profile based on role
-            $profile = $this->getUserProfile($user['id'], $user['role']);
-            
-            // Regenerate session ID for security (prevent session fixation)
-            session_regenerate_id(true);
-            
-            // Set module-specific session data (does NOT clear other modules' sessions)
-            // This allows admin, student, lecturer, finance to be logged in simultaneously
-            $modulePrefix = $this->module ?? $user['role'];
-            
-            // Clear only THIS module's session data
-            $this->clearModuleSession($modulePrefix);
-            
-            // Set module-specific session data
-            $_SESSION[$modulePrefix . '_user_id'] = $user['id'];
-            $_SESSION[$modulePrefix . '_username'] = $user['username'];
-            $_SESSION[$modulePrefix . '_email'] = $user['email'];
-            $_SESSION[$modulePrefix . '_role'] = $user['role'];
-            $_SESSION[$modulePrefix . '_profile'] = $profile;
-            $_SESSION[$modulePrefix . '_logged_in'] = true;
-            $_SESSION[$modulePrefix . '_login_time'] = time();
-            $_SESSION[$modulePrefix . '_session_token'] = bin2hex(random_bytes(32));
-
-            // Log successful login so admin can see it in Recent Activity / Login Sessions
             $moduleName = $this->module ?: $user['role'];
-            $deviceAlertMeta = $this->buildDeviceAlertMeta((int)$user['id'], $moduleName);
-            $description = 'User logged in as ' . $user['role'] . ' (' . $user['username'] . ')';
-            $this->logActivity($user['id'], 'login', $moduleName, $description);
-            $this->sendNewDeviceLoginAlert($user, $profile, $moduleName, $deviceAlertMeta);
 
-            // Return success with user's role
-            return ['success' => true, 'role' => $user['role']];
+            // Optional MFA gate before session is finalized.
+            if (MfaService::isMfaRequiredForRole((string)$user['role'])) {
+                $mfa = new MfaService($this->db);
+                $challenge = $mfa->issueChallenge((int)$user['id'], $moduleName, (string)($user['email'] ?? ''));
+                if (!$challenge['success']) {
+                    return ['success' => false, 'message' => $challenge['message'] ?? 'Unable to issue MFA challenge.'];
+                }
+                $this->setPendingLoginContext($moduleName, (int)$user['id'], 'mfa', (string)($challenge['message'] ?? ''));
+                return [
+                    'success' => false,
+                    'role' => $user['role'],
+                    'mfa_required' => true,
+                    'message' => $challenge['message'] ?? 'Verification code sent.'
+                ];
+            }
+
+            // Privacy consent gate before session is finalized.
+            $privacyDefault = (defined('PRIVACY_CONSENT_REQUIRED') && PRIVACY_CONSENT_REQUIRED) ? '1' : '0';
+            $privacyRaw = (string)(function_exists('getSetting') ? getSetting('privacy_consent_required', $privacyDefault) : $privacyDefault);
+            $privacyRequired = in_array(strtolower(trim($privacyRaw)), ['1', 'true', 'yes', 'on'], true);
+            if ($privacyRequired) {
+                $consent = new PrivacyConsentService($this->db);
+                if (!$consent->hasAcceptedCurrent((int)$user['id'])) {
+                    $this->setPendingLoginContext($moduleName, (int)$user['id'], 'consent');
+                    return [
+                        'success' => false,
+                        'role' => $user['role'],
+                        'consent_required' => true,
+                        'message' => 'Privacy consent is required before proceeding.'
+                    ];
+                }
+            }
+
+            return $this->finalizeAuthenticatedLogin($user);
         } catch(Exception $e) {
             error_log("Login error: " . $e->getMessage());
             // Show detailed error in development mode
@@ -454,6 +480,240 @@ class Auth {
         }
     }
 
+    /**
+     * Ensure required auth-related schema elements exist.
+     */
+    private function ensureAuthSupportStructures() {
+        try {
+            $col = $this->db->query("SHOW COLUMNS FROM users LIKE 'require_password_change'")->fetch();
+            if (!$col) {
+                $this->db->exec("ALTER TABLE users ADD COLUMN require_password_change TINYINT(1) DEFAULT 0 AFTER account_locked_until");
+            }
+        } catch (Exception $e) {
+            // Non-fatal bootstrap safeguard
+        }
+
+        try {
+            $mfa = new MfaService($this->db);
+            $mfa->ensureTable();
+        } catch (Exception $e) {
+            // Non-fatal
+        }
+
+        try {
+            $consent = new PrivacyConsentService($this->db);
+            $consent->ensureTable();
+        } catch (Exception $e) {
+            // Non-fatal
+        }
+    }
+
+    /**
+     * Finalize authenticated session after all pre-login gates pass.
+     */
+    private function finalizeAuthenticatedLogin(array $user) {
+        $moduleName = $this->module ?: $user['role'];
+        $profile = $this->getUserProfile($user['id'], $user['role']);
+
+        // Successful auth finalization: clear lock state and update login audit.
+        $this->resetFailedAttempts($user['id']);
+        $this->updateLastLogin($user['id']);
+
+        // Regenerate session ID for security (prevent session fixation)
+        session_regenerate_id(true);
+
+        // Clear only THIS module's session data
+        $this->clearModuleSession($moduleName);
+
+        // Set module-specific session data
+        $_SESSION[$moduleName . '_user_id'] = $user['id'];
+        $_SESSION[$moduleName . '_username'] = $user['username'];
+        $_SESSION[$moduleName . '_email'] = $user['email'];
+        $_SESSION[$moduleName . '_role'] = $user['role'];
+        $_SESSION[$moduleName . '_profile'] = $profile;
+        $_SESSION[$moduleName . '_logged_in'] = true;
+        $_SESSION[$moduleName . '_login_time'] = time();
+        $_SESSION[$moduleName . '_session_token'] = bin2hex(random_bytes(32));
+        $this->clearPendingLoginContext($moduleName);
+
+        // Log successful login so admin can see it in Recent Activity / Login Sessions
+        $deviceAlertMeta = $this->buildDeviceAlertMeta((int)$user['id'], $moduleName);
+        $description = 'User logged in as ' . $user['role'] . ' (' . $user['username'] . ')';
+        $this->logActivity($user['id'], 'login', $moduleName, $description);
+        $this->sendNewDeviceLoginAlert($user, $profile, $moduleName, $deviceAlertMeta);
+
+        return [
+            'success' => true,
+            'role' => $user['role'],
+            'require_password_change' => !empty($user['require_password_change'])
+        ];
+    }
+
+    private function setPendingLoginContext($module, $userId, $reason, $notice = '') {
+        $module = strtolower(trim((string)$module));
+        if ($module === '') {
+            return;
+        }
+        $ttlDefault = defined('MFA_CHALLENGE_TTL_SECONDS') ? (int)MFA_CHALLENGE_TTL_SECONDS : 300;
+        $ttl = (int)(function_exists('getSetting') ? getSetting('mfa_challenge_ttl_seconds', $ttlDefault) : $ttlDefault);
+        if ($ttl < 60) {
+            $ttl = 300;
+        }
+        $_SESSION[$module . '_pending_user_id'] = (int)$userId;
+        $_SESSION[$module . '_pending_reason'] = trim((string)$reason);
+        $_SESSION[$module . '_pending_expires_at'] = time() + $ttl;
+        $noticeValue = trim((string)$notice);
+        if ($noticeValue !== '') {
+            $_SESSION[$module . '_pending_notice'] = $noticeValue;
+        } else {
+            unset($_SESSION[$module . '_pending_notice']);
+        }
+    }
+
+    private function getPendingLoginContext($module = null) {
+        $moduleName = $module ? strtolower(trim((string)$module)) : strtolower(trim((string)$this->module));
+        if ($moduleName === '') {
+            return null;
+        }
+        $uid = (int)($_SESSION[$moduleName . '_pending_user_id'] ?? 0);
+        $reason = (string)($_SESSION[$moduleName . '_pending_reason'] ?? '');
+        $expiresAt = (int)($_SESSION[$moduleName . '_pending_expires_at'] ?? 0);
+        if ($uid <= 0 || $expiresAt <= 0 || time() > $expiresAt) {
+            $this->clearPendingLoginContext($moduleName);
+            return null;
+        }
+        return [
+            'module' => $moduleName,
+            'user_id' => $uid,
+            'reason' => $reason,
+            'expires_at' => $expiresAt
+        ];
+    }
+
+    private function clearPendingLoginContext($module = null) {
+        $moduleName = $module ? strtolower(trim((string)$module)) : strtolower(trim((string)$this->module));
+        if ($moduleName === '') {
+            return;
+        }
+        unset($_SESSION[$moduleName . '_pending_user_id']);
+        unset($_SESSION[$moduleName . '_pending_reason']);
+        unset($_SESSION[$moduleName . '_pending_expires_at']);
+        unset($_SESSION[$moduleName . '_pending_notice']);
+    }
+
+    public function consumePendingLoginNotice($module = null) {
+        $moduleName = $module ? strtolower(trim((string)$module)) : strtolower(trim((string)$this->module));
+        if ($moduleName === '') {
+            return '';
+        }
+        $key = $moduleName . '_pending_notice';
+        $msg = trim((string)($_SESSION[$key] ?? ''));
+        unset($_SESSION[$key]);
+        return $msg;
+    }
+
+    private function getUserById($userId) {
+        $stmt = $this->db->prepare("SELECT * FROM users WHERE id = :id LIMIT 1");
+        $stmt->execute(['id' => (int)$userId]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+
+    /**
+     * Verify MFA code for a pending login and complete sign-in.
+     */
+    public function verifyPendingMfa($code) {
+        try {
+            $ctx = $this->getPendingLoginContext();
+            if (!$ctx || $ctx['reason'] !== 'mfa') {
+                return ['success' => false, 'message' => 'No pending MFA verification found.'];
+            }
+
+            $user = $this->getUserById((int)$ctx['user_id']);
+            if (!$user || ($user['status'] ?? '') !== 'active') {
+                $this->clearPendingLoginContext($ctx['module']);
+                return ['success' => false, 'message' => 'User account is not active.'];
+            }
+
+            $mfa = new MfaService($this->db);
+            $verified = $mfa->verifyChallenge((int)$ctx['user_id'], (string)$ctx['module'], (string)$code);
+            if (!$verified['success']) {
+                return $verified;
+            }
+
+            $privacyDefault = (defined('PRIVACY_CONSENT_REQUIRED') && PRIVACY_CONSENT_REQUIRED) ? '1' : '0';
+            $privacyRaw = (string)(function_exists('getSetting') ? getSetting('privacy_consent_required', $privacyDefault) : $privacyDefault);
+            $privacyRequired = in_array(strtolower(trim($privacyRaw)), ['1', 'true', 'yes', 'on'], true);
+            if ($privacyRequired) {
+                $consent = new PrivacyConsentService($this->db);
+                if (!$consent->hasAcceptedCurrent((int)$ctx['user_id'])) {
+                    $this->setPendingLoginContext($ctx['module'], (int)$ctx['user_id'], 'consent');
+                    return [
+                        'success' => false,
+                        'role' => $user['role'],
+                        'consent_required' => true,
+                        'message' => 'Privacy consent is required before proceeding.'
+                    ];
+                }
+            }
+
+            return $this->finalizeAuthenticatedLogin($user);
+        } catch (Exception $e) {
+            return ['success' => false, 'message' => 'MFA verification failed.'];
+        }
+    }
+
+    /**
+     * Re-issue MFA challenge for the current pending login context.
+     */
+    public function resendPendingMfaChallenge() {
+        try {
+            $ctx = $this->getPendingLoginContext();
+            if (!$ctx || $ctx['reason'] !== 'mfa') {
+                return ['success' => false, 'message' => 'No pending MFA challenge found.'];
+            }
+            $user = $this->getUserById((int)$ctx['user_id']);
+            if (!$user || ($user['status'] ?? '') !== 'active') {
+                return ['success' => false, 'message' => 'User account is not active.'];
+            }
+            $mfa = new MfaService($this->db);
+            return $mfa->issueChallenge((int)$ctx['user_id'], (string)$ctx['module'], (string)($user['email'] ?? ''));
+        } catch (Exception $e) {
+            return ['success' => false, 'message' => 'Unable to resend verification code.'];
+        }
+    }
+
+    /**
+     * Record consent for a pending login and complete sign-in.
+     */
+    public function acceptPendingPrivacyConsent() {
+        try {
+            $ctx = $this->getPendingLoginContext();
+            if (!$ctx || $ctx['reason'] !== 'consent') {
+                return ['success' => false, 'message' => 'No pending privacy consent found.'];
+            }
+
+            $user = $this->getUserById((int)$ctx['user_id']);
+            if (!$user || ($user['status'] ?? '') !== 'active') {
+                $this->clearPendingLoginContext($ctx['module']);
+                return ['success' => false, 'message' => 'User account is not active.'];
+            }
+
+            $consent = new PrivacyConsentService($this->db);
+            $granted = $consent->grantCurrent(
+                (int)$ctx['user_id'],
+                $_SERVER['REMOTE_ADDR'] ?? null,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            );
+            if (!$granted) {
+                return ['success' => false, 'message' => 'Unable to record privacy consent.'];
+            }
+
+            return $this->finalizeAuthenticatedLogin($user);
+        } catch (Exception $e) {
+            return ['success' => false, 'message' => 'Unable to complete privacy consent.'];
+        }
+    }
+
     private function resolveRecipientName($user, $profile) {
         $firstName = trim((string)($profile['first_name'] ?? ''));
         $lastName = trim((string)($profile['last_name'] ?? ''));
@@ -607,14 +867,33 @@ class Auth {
      * Increment failed login attempts
      */
     private function incrementFailedAttempts($userId) {
+        $userId = (int)$userId;
+        if ($userId <= 0) {
+            return;
+        }
+
         $sql = "UPDATE users SET failed_login_attempts = failed_login_attempts + 1 WHERE id = :id";
         $stmt = $this->db->prepare($sql);
         $stmt->execute(['id' => $userId]);
-        
-        // Previously: check if failed attempts reached threshold and lock account.
-        // Lockout has been disabled to avoid blocking user access, so we no longer
-        // set account_locked_until here. Failed attempts are still tracked but
-        // will not prevent login.
+
+        $maxAttemptsDefault = defined('MAX_LOGIN_ATTEMPTS') ? max(1, (int)MAX_LOGIN_ATTEMPTS) : 5;
+        $lockMinutesDefault = defined('ACCOUNT_LOCKOUT_DURATION') ? max(1, (int)ACCOUNT_LOCKOUT_DURATION) : 30;
+        $maxAttempts = (int)(function_exists('getSetting') ? getSetting('max_login_attempts', $maxAttemptsDefault) : $maxAttemptsDefault);
+        $lockMinutes = (int)(function_exists('getSetting') ? getSetting('account_lockout_duration', $lockMinutesDefault) : $lockMinutesDefault);
+        if ($maxAttempts < 1) {
+            $maxAttempts = $maxAttemptsDefault;
+        }
+        if ($lockMinutes < 1) {
+            $lockMinutes = $lockMinutesDefault;
+        }
+        $check = $this->db->prepare("SELECT failed_login_attempts FROM users WHERE id = :id LIMIT 1");
+        $check->execute(['id' => $userId]);
+        $attempts = (int)$check->fetchColumn();
+        if ($attempts >= $maxAttempts && !$this->isLocalRequest()) {
+            $lockedUntil = date('Y-m-d H:i:s', time() + ($lockMinutes * 60));
+            $lock = $this->db->prepare("UPDATE users SET account_locked_until = :locked_until WHERE id = :id");
+            $lock->execute(['locked_until' => $lockedUntil, 'id' => $userId]);
+        }
     }
     
     /**
@@ -668,6 +947,31 @@ class Auth {
         $clean = preg_replace('/\s{2,}/', ' ', $clean);
         return trim((string)$clean);
     }
+
+    /**
+     * Prevent password reuse across recent password history entries.
+     */
+    private function isPasswordReused($userId, $candidatePassword) {
+        $limit = defined('PASSWORD_HISTORY_LIMIT') ? max(1, (int)PASSWORD_HISTORY_LIMIT) : 5;
+        try {
+            $stmt = $this->db->prepare("
+                SELECT password_hash
+                FROM password_history
+                WHERE user_id = :user_id
+                ORDER BY id DESC
+                LIMIT {$limit}
+            ");
+            $stmt->execute(['user_id' => (int)$userId]);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                if (!empty($row['password_hash']) && password_verify((string)$candidatePassword, (string)$row['password_hash'])) {
+                    return true;
+                }
+            }
+        } catch (Exception $e) {
+            return false;
+        }
+        return false;
+    }
     
     /**
      * Generate password reset token
@@ -706,6 +1010,11 @@ class Auth {
      */
     public function resetPassword($token, $newPassword) {
         try {
+            $policyErrors = [];
+            if (!Security::validatePasswordPolicy($newPassword, $policyErrors)) {
+                return ['success' => false, 'message' => implode(' ', $policyErrors)];
+            }
+
             $sql = "SELECT id FROM users WHERE password_reset_token = :token 
                     AND password_reset_expires > NOW()";
             $stmt = $this->db->prepare($sql);
@@ -714,6 +1023,10 @@ class Auth {
             
             if (!$user) {
                 return ['success' => false, 'message' => 'Invalid or expired token'];
+            }
+
+            if ($this->isPasswordReused((int)$user['id'], (string)$newPassword)) {
+                return ['success' => false, 'message' => 'Password was used recently. Choose a new one.'];
             }
             
             $passwordHash = password_hash($newPassword, PASSWORD_DEFAULT);

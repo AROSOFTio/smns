@@ -55,11 +55,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Validation
         $validator = new Validator($_POST);
+        $minPasswordLen = defined('PASSWORD_MIN_LENGTH') ? (int)PASSWORD_MIN_LENGTH : 8;
         $validator->required('username', 'Username is required')
                   ->required('email', 'Email is required')
                   ->email('email', 'Valid email is required')
                   ->required('password', 'Password is required')
-                  ->minLength('password', 8, 'Password must be at least 8 characters')
+                  ->minLength('password', $minPasswordLen, 'Password must be at least ' . $minPasswordLen . ' characters')
                   ->required('confirm_password', 'Password confirmation is required')
                   ->required('role', 'Role is required')
                   ->required('first_name', 'First name is required')
@@ -67,6 +68,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         if ($password !== $confirmPassword) {
             $validator->addError('confirm_password', 'Passwords do not match');
+        }
+        $policyErrors = [];
+        if (!Security::validatePasswordPolicy($password, $policyErrors)) {
+            foreach ($policyErrors as $policyError) {
+                $validator->addError('password', $policyError);
+            }
         }
         
         if (!in_array($role, ['admin', 'lecturer', 'student', 'finance'])) {
@@ -461,7 +468,7 @@ include __DIR__ . '/../../../includes/header.php';
                                                    id="password" 
                                                    name="password" 
                                                    required>
-                                            <small class="text-muted">Minimum 8 characters</small>
+                                            <small class="text-muted">Follow current password policy requirements</small>
                                         </div>
                                     </div>
                                     <div class="col-md-4">
