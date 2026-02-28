@@ -45,6 +45,7 @@ if (!empty($studentSemesterContext['id'])) {
 }
 
 $approvedFeesAmount = 0.0;
+$totalPaidAmount = 0.0;
 $outstandingBalance = 0.0;
 $balanceOnAccount = 0.0;
 if ($studentDbId > 0 && $currentSemester['id'] > 0) {
@@ -57,6 +58,7 @@ if ($studentDbId > 0 && $currentSemester['id'] > 0) {
         (int)($studentProfile['level_year'] ?? ($studentProfile['year_of_study'] ?? 1))
     );
     $approvedFeesAmount = (float)($financialSnapshot['approved_total_fees'] ?? 0);
+    $totalPaidAmount = (float)($financialSnapshot['total_paid'] ?? 0);
     $outstandingBalance = (float)($financialSnapshot['balance_due'] ?? 0);
     $balanceOnAccount = (float)($financialSnapshot['balance_on_account'] ?? $outstandingBalance);
 }
@@ -140,6 +142,7 @@ $formatCurrencyForDisplay = function ($amountUgx) use ($convertAmountForDisplay,
     $val = $convertAmountForDisplay($amountUgx);
     return Helper::formatCurrency($val, $studentDisplayCurrency, $isInternationalStudent ? 2 : 0);
 };
+$balanceOnAccountLabel = ((float)$totalPaidAmount > (float)$approvedFeesAmount) ? 'ACCOUNT CREDIT' : 'BALANCE ON ACCOUNT';
 
 $formatCurrencyByStudentInput = function ($amount) use ($studentDisplayCurrency, $isInternationalStudent) {
     return Helper::formatCurrency((float)$amount, $studentDisplayCurrency, $isInternationalStudent ? 2 : 0);
@@ -625,7 +628,14 @@ body { background: #f2f4f7; }
 }
 .student-profile-pic { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid #e5e7eb; }
 
-.chip-row { padding: 0.45rem 1.2rem 0.2rem; display: flex; align-items: center; gap: 0.35rem; white-space: nowrap; }
+.chip-row {
+    padding: 0.45rem 1.2rem 0.2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    row-gap: 0.4rem;
+}
 .chip {
     border-radius: 6px;
     padding: 4px 8px;
@@ -636,7 +646,14 @@ body { background: #f2f4f7; }
 }
 .chip.gray { background: #f1f5f9; color: #222; }
 .chip.blue { background: #1f7aa8; color: #fff; }
+.chip.green { background: #16a34a; color: #fff; }
 .chip.red { background: #fee2e2; color: #991b1b; }
+.chip.balance-chip {
+    background: #0ea5e9;
+    border: 1px solid #0284c7;
+    color: #ffffff;
+    font-weight: 800;
+}
 
 .prn-wrap { padding: 0.9rem 1.2rem 1.3rem; }
 .prn-card {
@@ -1412,6 +1429,11 @@ html[data-theme='dark'] .bank-copy-btn {
 html[data-theme='dark'] .bank-account-note {
     color: #94a3b8 !important;
 }
+html[data-theme='dark'] .chip.balance-chip {
+    background: #082f49 !important;
+    border-color: #0ea5e9 !important;
+    color: #bae6fd !important;
+}
 
 @media (max-width: 1200px) {
     .chip-row {
@@ -1528,8 +1550,9 @@ html[data-theme='dark'] .bank-account-note {
         <span class="chip gray">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span>
-        <span class="chip gray">APPROVED FEES AMOUNT: <?php echo $formatCurrencyForDisplay((float)$approvedFeesAmount); ?></span>
-        <span class="chip blue">BALANCE ON ACCOUNT: <?php echo $formatCurrencyForDisplay((float)$balanceOnAccount); ?></span>
+        <span id="approvedFeesChip" class="chip gray">APPROVED FEES AMOUNT: <?php echo $formatCurrencyForDisplay((float)$approvedFeesAmount); ?></span>
+        <span id="totalPaidChip" class="chip green">TOTAL PAID: <?php echo $formatCurrencyForDisplay((float)$totalPaidAmount); ?></span>
+        <span id="balanceOnAccountChip" class="chip blue balance-chip"><?php echo e($balanceOnAccountLabel); ?>: <?php echo $formatCurrencyForDisplay((float)$balanceOnAccount); ?></span>
     </div>
 
     <div class="prn-wrap">
@@ -1544,7 +1567,7 @@ html[data-theme='dark'] .bank-account-note {
                 <?php if ($isSandboxGatewayMode): ?>
                     SANDBOX MODE ACTIVE: provider API calls are enabled for test endpoints. Use sandbox credentials and a reachable webhook URL; no live collections should be used here.
                 <?php else: ?>
-                    MOCK MODE ACTIVE: mobile money prompts are simulated only. Set <code>PAYMENT_GATEWAY_MODE</code> to <code>sandbox</code> or <code>live</code> and configure provider credentials/webhook to process provider callbacks.
+                    MOCK MODE ACTIVE: mobile money prompts and callbacks are simulated for demo/testing, including automatic PRN posting to ledger. Set <code>PAYMENT_GATEWAY_MODE</code> to <code>sandbox</code> or <code>live</code> for real provider processing.
                 <?php endif; ?>
             </div>
         <?php endif; ?>
@@ -2029,6 +2052,14 @@ var mobilePayConfig = <?php echo json_encode([
     'status_url' => BASE_URL . '/api/payments/status.php',
     'csrf_token' => Security::generateCSRFToken()
 ], JSON_UNESCAPED_SLASHES); ?>;
+var financialUiConfig = <?php echo json_encode([
+    'display_currency' => $studentDisplayCurrency,
+    'is_international' => $isInternationalStudent ? 1 : 0,
+    'usd_ugx_rate' => $usdUgxRate > 0 ? $usdUgxRate : 3700
+], JSON_UNESCAPED_SLASHES); ?>;
+var approvedFeesChipEl = document.getElementById('approvedFeesChip');
+var totalPaidChipEl = document.getElementById('totalPaidChip');
+var balanceOnAccountChipEl = document.getElementById('balanceOnAccountChip');
 
 document.getElementById('menuBtn').addEventListener('click', function() {
     var sidebar = document.querySelector('.student-sidebar');
@@ -2256,6 +2287,40 @@ function formatStatusLine(data) {
     return parts.join(' | ');
 }
 
+function formatStudentMoneyFromUgx(valueUgx) {
+    var amountUgx = Number(valueUgx || 0);
+    if (!isFinite(amountUgx)) amountUgx = 0;
+    var isInternational = Number(financialUiConfig.is_international || 0) === 1;
+    var rate = Number(financialUiConfig.usd_ugx_rate || 3700);
+    if (!isFinite(rate) || rate <= 0) {
+        rate = 3700;
+    }
+    var displayAmount = isInternational ? (amountUgx / rate) : amountUgx;
+    var decimals = isInternational ? 2 : 0;
+    var formatter = new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+    });
+    return (financialUiConfig.display_currency || 'UGX') + ' ' + formatter.format(displayAmount);
+}
+
+function applyFinancialSummary(summary) {
+    if (!summary || typeof summary !== 'object') {
+        return;
+    }
+    if (approvedFeesChipEl && summary.approved_fees_ugx != null) {
+        approvedFeesChipEl.textContent = 'APPROVED FEES AMOUNT: ' + formatStudentMoneyFromUgx(summary.approved_fees_ugx);
+    }
+    if (totalPaidChipEl && summary.total_paid_ugx != null) {
+        totalPaidChipEl.textContent = 'TOTAL PAID: ' + formatStudentMoneyFromUgx(summary.total_paid_ugx);
+    }
+    if (balanceOnAccountChipEl && summary.balance_on_account_ugx != null) {
+        var creditUgx = Number(summary.account_credit_ugx || 0);
+        var balanceLabel = creditUgx > 0 ? 'ACCOUNT CREDIT' : 'BALANCE ON ACCOUNT';
+        balanceOnAccountChipEl.textContent = balanceLabel + ': ' + formatStudentMoneyFromUgx(summary.balance_on_account_ugx);
+    }
+}
+
 function checkCurrentPrnStatus(options) {
     options = options || {};
     var silent = options.silent === true;
@@ -2284,6 +2349,7 @@ function checkCurrentPrnStatus(options) {
         }
 
         var row = payload.data || {};
+        applyFinancialSummary(row.financial_summary || null);
         var txStatus = (row.transaction_status || '').toString().toLowerCase();
         var refStatus = (row.reference_status || '').toString().toLowerCase();
         var channel = (row.transaction_channel || '').toString().toLowerCase();

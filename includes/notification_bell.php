@@ -27,12 +27,14 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
 }
 ?>
 <div class="notification-wrapper">
-    <button class="notification-bell" id="notificationBell" title="Notifications">
+    <button class="notification-bell" id="notificationBell" title="Notifications" data-notification-managed="1">
         <i class="fas fa-bell"></i>
-        <?php if ($initialUnreadCount > 0): ?>
-            <span class="notification-badge"><?php echo (int)$initialUnreadCount; ?></span>
-        <?php endif; ?>
     </button>
+    <span
+        class="notification-indicator<?php echo $initialUnreadCount > 0 ? ' active' : ''; ?>"
+        id="notificationIndicator"
+        aria-hidden="true"
+    ></span>
     <?php
     // Show change-password quick dropdown for logged-in users in the active module.
     // Role detection must prefer current module context to avoid cross-module endpoint mixups.
@@ -51,6 +53,21 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
             $role = $activeRole;
         }
     }
+    if ($role === '') {
+        $requestUri = (string)($_SERVER['REQUEST_URI'] ?? '');
+        if (strpos($requestUri, '/views/finance/') !== false) {
+            $role = 'finance';
+        } elseif (strpos($requestUri, '/views/admin/') !== false) {
+            $role = 'admin';
+        } elseif (strpos($requestUri, '/views/student/') !== false) {
+            $role = 'student';
+        } elseif (strpos($requestUri, '/views/lecturer/') !== false) {
+            $role = 'lecturer';
+        }
+    }
+    $baseUrlPath = rtrim((string)parse_url(BASE_URL, PHP_URL_PATH), '/');
+    $notificationsApiPath = ($baseUrlPath !== '' ? $baseUrlPath : '') . '/api/notifications.php';
+    $notificationsStreamPath = ($baseUrlPath !== '' ? $baseUrlPath : '') . '/api/notifications_stream.php';
     if ($role !== ''):
         $csrf = Security::generateCSRFToken();
         if ($role === 'admin') {
@@ -260,16 +277,35 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
     
     <script>
     (function() {
-        const bell = document.getElementById('notificationBell');
-        const dropdown = document.getElementById('notificationDropdown');
-        const markAllBtn = document.getElementById('markAllRead');
-        const notificationModule = <?php echo json_encode($role !== '' ? $role : null); ?>;
+        function initNotificationBell() {
+            const bell = document.getElementById('notificationBell');
+            const dropdown = document.getElementById('notificationDropdown');
+            if (!bell || !dropdown) {
+                return false;
+            }
+            if (bell.getAttribute('data-notification-init') === '1') {
+                return true;
+            }
+            bell.setAttribute('data-notification-init', '1');
+
+            const markAllBtn = document.getElementById('markAllRead');
+            const indicator = document.getElementById('notificationIndicator');
+            let previousUnreadCount = <?php echo (int)$initialUnreadCount; ?>;
+            const notificationModule = <?php echo json_encode($role !== '' ? $role : null); ?>;
+            const resolvedNotificationModule = notificationModule || (function() {
+                const p = String(window.location.pathname || '');
+                if (p.indexOf('/views/finance/') !== -1) return 'finance';
+                if (p.indexOf('/views/admin/') !== -1) return 'admin';
+                if (p.indexOf('/views/student/') !== -1) return 'student';
+                if (p.indexOf('/views/lecturer/') !== -1) return 'lecturer';
+                return null;
+            })();
 
         function notificationApiUrl(action, extraParams) {
             const params = new URLSearchParams();
             params.set('action', action);
-            if (notificationModule) {
-                params.set('module', notificationModule);
+            if (resolvedNotificationModule) {
+                params.set('module', resolvedNotificationModule);
             }
             if (extraParams && typeof extraParams === 'object') {
                 Object.keys(extraParams).forEach(function(key) {
@@ -278,50 +314,145 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                     }
                 });
             }
-            return '<?php echo BASE_URL; ?>/api/notifications.php?' + params.toString();
+            return '<?php echo e($notificationsApiPath); ?>?' + params.toString();
         }
-        
-        if (!bell || !dropdown) return;
+
+        function notificationStreamUrl() {
+            const params = new URLSearchParams();
+            if (resolvedNotificationModule) {
+                params.set('module', resolvedNotificationModule);
+            }
+            params.set('_ts', String(Date.now()));
+            return '<?php echo e($notificationsStreamPath); ?>?' + params.toString();
+        }
         
         bell.addEventListener('click', function(e) {
             e.stopPropagation();
             dropdown.classList.toggle('show');
+            // Force-refresh whenever the bell is opened so the list is always current.
+            if (dropdown.classList.contains('show')) {
+                refreshNotifications(true);
+            }
         });
         
         document.addEventListener('click', function(e) {
-            if (!dropdown.contains(e.target) && e.target !== bell) {
+            if (!dropdown.contains(e.target) && !bell.contains(e.target)) {
                 dropdown.classList.remove('show');
             }
         });
         
+        function markAllRead() {
+            return fetch(notificationApiUrl('mark_all_read'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                cache: 'no-store'
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) {
+                    return false;
+                }
+                dropdown.querySelectorAll('.notification-item.unread').forEach(item => {
+                    item.classList.remove('unread');
+                });
+                const markAllLink = dropdown.querySelector('#markAllRead');
+                if (markAllLink) {
+                    markAllLink.style.display = 'none';
+                }
+                return true;
+            });
+        }
+
         if (markAllBtn) {
             markAllBtn.addEventListener('click', function(e) {
                 e.preventDefault();
-                
-                fetch(notificationApiUrl('mark_all_read'), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'same-origin'
-                })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        document.querySelectorAll('.notification-item.unread').forEach(item => {
-                            item.classList.remove('unread');
-                        });
-                        const badge = bell.querySelector('.notification-badge');
-                        if (badge) badge.remove();
-                        markAllBtn.style.display = 'none';
-                    }
-                });
+                markAllRead()
+                    .then(function(success) {
+                        if (success) {
+                            refreshNotifications(true);
+                        }
+                    })
+                    .catch(function(error) {
+                        console.log('Error marking all read:', error);
+                    });
             });
         }
         
         // Auto-refresh notifications
         let notificationRefreshInterval;
+        let notificationEventStream = null;
+        let refreshInFlight = false;
+        let refreshQueued = false;
+
+        function startPollingFallback() {
+            if (notificationRefreshInterval) {
+                return;
+            }
+            notificationRefreshInterval = setInterval(refreshNotifications, 30000);
+        }
+
+        function stopPollingFallback() {
+            if (!notificationRefreshInterval) {
+                return;
+            }
+            clearInterval(notificationRefreshInterval);
+            notificationRefreshInterval = null;
+        }
+
+        function initNotificationPushStream() {
+            if (typeof window.EventSource !== 'function') {
+                startPollingFallback();
+                return;
+            }
+
+            try {
+                notificationEventStream = new EventSource(notificationStreamUrl());
+            } catch (err) {
+                startPollingFallback();
+                return;
+            }
+
+            notificationEventStream.addEventListener('open', function() {
+                // Stream is alive, so we no longer need timer polling.
+                stopPollingFallback();
+            });
+
+            notificationEventStream.addEventListener('unread_count', function(evt) {
+                let payload = null;
+                try {
+                    payload = JSON.parse(String(evt.data || '{}'));
+                } catch (err) {
+                    payload = null;
+                }
+
+                if (!payload || typeof payload.count === 'undefined' || payload.count === null) {
+                    return;
+                }
+
+                const pushedCount = Number(payload.count || 0);
+                if (pushedCount !== previousUnreadCount || dropdown.classList.contains('show')) {
+                    refreshNotifications(true);
+                }
+            });
+
+            notificationEventStream.onerror = function() {
+                // If stream is fully closed, resume polling as a safety fallback.
+                if (notificationEventStream && notificationEventStream.readyState === 2) {
+                    startPollingFallback();
+                }
+            };
+        }
         
-        function refreshNotifications() {
-            fetch(notificationApiUrl('fetch', { limit: 10 }), { credentials: 'same-origin' })
+        function refreshNotifications(forceQueue) {
+            if (refreshInFlight) {
+                if (forceQueue) {
+                    refreshQueued = true;
+                }
+                return;
+            }
+            refreshInFlight = true;
+            fetch(notificationApiUrl('fetch', { limit: 10, _ts: Date.now() }), { credentials: 'same-origin', cache: 'no-store' })
                 .then(response => {
                     if (!response.ok) {
                         throw new Error('Network response was not ok');
@@ -335,7 +466,45 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                 })
                 .catch(error => {
                     console.log('Error refreshing notifications:', error);
+                })
+                .finally(() => {
+                    refreshInFlight = false;
+                    if (refreshQueued) {
+                        refreshQueued = false;
+                        refreshNotifications(false);
+                    }
                 });
+        }
+
+        function escapeHtml(value) {
+            return String(value === undefined || value === null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function getSafeNotificationLink(rawLink) {
+            const link = String(rawLink === undefined || rawLink === null ? '' : rawLink).trim();
+            if (!link || link === '#') {
+                return '#';
+            }
+            if (/^(javascript:|data:|vbscript:)/i.test(link)) {
+                return '#';
+            }
+            let parsed;
+            try {
+                parsed = new URL(link, window.location.href);
+            } catch (err) {
+                return '#';
+            }
+            // Never allow notification click-through to a logout endpoint.
+            if (/\/views\/(admin|student|lecturer|finance)\/logout\.php/i.test(parsed.pathname || '')) {
+                return '#';
+            }
+            // Keep navigation same-origin/session-safe by using relative URL.
+            return (parsed.pathname || '') + (parsed.search || '') + (parsed.hash || '');
         }
 
         function resolveActionLabel(actionCode) {
@@ -355,57 +524,79 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
         }
         
         function updateNotificationBell(count, notifications) {
-            const badge = bell.querySelector('.notification-badge');
-            
-            if (count > 0) {
-                if (!badge) {
-                    const newBadge = document.createElement('span');
-                    newBadge.className = 'notification-badge';
-                    newBadge.textContent = count;
-                    bell.appendChild(newBadge);
-                } else {
-                    badge.textContent = count;
+            if (!Array.isArray(notifications)) {
+                notifications = [];
+            }
+            const unreadCount = Number(count || 0);
+            if (indicator) {
+                indicator.classList.toggle('active', unreadCount > 0);
+                const hasNewUnread = unreadCount > previousUnreadCount;
+                if (hasNewUnread) {
+                    indicator.classList.add('pulse');
+                } else if (unreadCount <= 0) {
+                    indicator.classList.remove('pulse');
                 }
-                
+            }
+            if (bell) {
+                bell.setAttribute(
+                    'title',
+                    unreadCount > 0
+                        ? ('Notifications (' + unreadCount + ' new)')
+                        : 'Notifications'
+                );
+            }
+            previousUnreadCount = unreadCount;
+            
+            if (unreadCount > 0) {
                 // Update dropdown content
                 const list = dropdown.querySelector('.notification-list');
                 if (list && notifications.length > 0) {
                     let html = '';
                     notifications.forEach(notif => {
                         const iconMap = { 'info': 'info-circle', 'success': 'check-circle', 'warning': 'exclamation-triangle', 'error': 'times-circle' };
-                        const icon = iconMap[notif.type] || 'info-circle';
+                        const rawNotifType = String(notif.type || '').toLowerCase();
+                        const notifType = Object.prototype.hasOwnProperty.call(iconMap, rawNotifType) ? rawNotifType : 'info';
+                        const icon = iconMap[notifType] || 'info-circle';
+                        const notifId = parseInt(notif.id, 10) || 0;
+                        const isArchived = !!notif.is_archived;
+                        const safeTitle = escapeHtml(notif.title);
+                        const safeMessage = escapeHtml(notif.message);
+                        const safeTimeAgo = escapeHtml(notif.time_ago);
+                        const safeLink = getSafeNotificationLink(notif.link);
 
                         if (notif.action) {
                             const aLabel = resolveActionLabel(notif.action);
                             html += `
-                                <div class="notification-item unread d-flex" data-id="${notif.id}" data-action="${notif.action}">
-                                    <div class="notif-icon notif-${notif.type}">
+                                <div class="notification-item unread d-flex" data-id="${notifId}" data-action="${escapeHtml(notif.action)}">
+                                    <div class="notif-icon notif-${notifType}">
                                         <i class="fas fa-${icon}"></i>
                                     </div>
                                     <div class="notif-content">
-                                        <p class="notif-title">${notif.title.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
-                                        <p class="notif-text">${notif.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
-                                        <span class="notif-time">${notif.time_ago}</span>
+                                        <p class="notif-title">${safeTitle}</p>
+                                        <p class="notif-text">${safeMessage}</p>
+                                        <span class="notif-time">${safeTimeAgo}</span>
                                     </div>
                                     <div style="margin-left:8px;align-self:center;display:flex;flex-direction:column;gap:6px;">
-                                        <button class="btn btn-sm btn-outline-primary notif-action-btn" data-action="${notif.action}">${aLabel}</button>
-                                        <button class="btn btn-sm btn-outline-secondary notif-archive-btn" data-id="${notif.id}">Save</button>
+                                        <button class="btn btn-sm btn-outline-primary notif-action-btn" data-action="${escapeHtml(notif.action)}">${escapeHtml(aLabel)}</button>
+                                        <button class="btn btn-sm ${isArchived ? 'btn-success' : 'btn-outline-secondary'} notif-archive-btn" data-id="${notifId}" ${isArchived ? 'disabled' : ''}>${isArchived ? 'Saved' : 'Save'}</button>
                                     </div>
                                 </div>
                             `;
                         } else {
                             html += `
-                                <div class="notification-item unread d-flex" data-id="${notif.id}">
-                                    <div class="notif-icon notif-${notif.type}">
-                                        <i class="fas fa-${icon}"></i>
-                                    </div>
-                                    <div class="notif-content">
-                                        <p class="notif-title">${notif.title.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
-                                        <p class="notif-text">${notif.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
-                                        <span class="notif-time">${notif.time_ago}</span>
-                                    </div>
+                                <div class="notification-item unread d-flex" data-id="${notifId}">
+                                    <a href="${safeLink}" class="notif-link" style="flex:1;text-decoration:none;color:inherit;display:flex;">
+                                        <div class="notif-icon notif-${notifType}">
+                                            <i class="fas fa-${icon}"></i>
+                                        </div>
+                                        <div class="notif-content">
+                                            <p class="notif-title">${safeTitle}</p>
+                                            <p class="notif-text">${safeMessage}</p>
+                                            <span class="notif-time">${safeTimeAgo}</span>
+                                        </div>
+                                    </a>
                                     <div style="margin-left:8px;align-self:center;">
-                                        <button class="btn btn-sm btn-outline-secondary notif-archive-btn" data-id="${notif.id}">Save</button>
+                                        <button class="btn btn-sm ${isArchived ? 'btn-success' : 'btn-outline-secondary'} notif-archive-btn" data-id="${notifId}" ${isArchived ? 'disabled' : ''}>${isArchived ? 'Saved' : 'Save'}</button>
                                     </div>
                                 </div>
                             `;
@@ -426,30 +617,21 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                         // Re-attach event listener
                         newLink.addEventListener('click', function(e) {
                             e.preventDefault();
-                            fetch(notificationApiUrl('mark_all_read'), {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                credentials: 'same-origin'
-                            })
-                            .then(r => r.json())
-                            .then(data => {
-                                if (data.success) {
-                                    document.querySelectorAll('.notification-item.unread').forEach(item => {
-                                        item.classList.remove('unread');
-                                    });
-                                    const badge = bell.querySelector('.notification-badge');
-                                    if (badge) badge.remove();
-                                    newLink.style.display = 'none';
-                                }
-                            });
+                            markAllRead()
+                                .then(function(success) {
+                                    if (success) {
+                                        refreshNotifications(true);
+                                    }
+                                })
+                                .catch(function(error) {
+                                    console.log('Error marking all read:', error);
+                                });
                         });
                     } else {
                         markAllLink.style.display = 'inline';
                     }
                 }
             } else {
-                if (badge) badge.remove();
-                
                 // Update dropdown to show empty state
                 const list = dropdown.querySelector('.notification-list');
                 if (list) {
@@ -467,9 +649,9 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
             }
         }
         
-        // Auto-refresh every 30 seconds
-        notificationRefreshInterval = setInterval(refreshNotifications, 30000);
-        
+        // Prefer push updates; polling remains fallback-only.
+        initNotificationPushStream();
+         
         // Initial refresh shortly after page load to correct any stale badge count.
         setTimeout(refreshNotifications, 1500);
         
@@ -477,6 +659,10 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
         window.addEventListener('beforeunload', function() {
             if (notificationRefreshInterval) {
                 clearInterval(notificationRefreshInterval);
+            }
+            if (notificationEventStream) {
+                notificationEventStream.close();
+                notificationEventStream = null;
             }
         });
         
@@ -495,13 +681,6 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    const badge = bell.querySelector('.notification-badge');
-                    if (badge) {
-                        const count = parseInt(badge.textContent) - 1;
-                        if (count <= 0) badge.remove();
-                        else badge.textContent = count;
-                    }
-                    
                     // Mark the item as read in the dropdown
                     const item = dropdown.querySelector(`[data-id="${notifId}"]`);
                     if (item) {
@@ -519,6 +698,12 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                     return true;
                 }
                 return false;
+            })
+            .catch(function() {
+                return false;
+            })
+            .finally(function() {
+                refreshNotifications(true);
             });
         };
         
@@ -537,7 +722,7 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                     method: 'POST',
                     credentials: 'same-origin',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: 'op=' + encodeURIComponent(op) + '&module=' + encodeURIComponent(notificationModule || '')
+                    body: 'op=' + encodeURIComponent(op) + '&module=' + encodeURIComponent(resolvedNotificationModule || '')
                 })
                 .then(r => r.json())
                 .then(data => {
@@ -583,7 +768,7 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                     method: 'POST',
                     credentials: 'same-origin',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: 'id=' + encodeURIComponent(nid) + '&module=' + encodeURIComponent(notificationModule || '')
+                    body: 'id=' + encodeURIComponent(nid) + '&module=' + encodeURIComponent(resolvedNotificationModule || '')
                 })
                 .then(r => r.json())
                 .then(data => {
@@ -591,10 +776,7 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                         abtn.classList.remove('btn-outline-secondary');
                         abtn.classList.add('btn-success');
                         abtn.textContent = 'Saved';
-                        const parent = abtn.closest('.notification-item');
-                        if (parent && parent.getAttribute('data-id')) {
-                            markNotificationRead(parent.getAttribute('data-id'));
-                        }
+                        refreshNotifications(true);
                     } else {
                         abtn.disabled = false;
                         abtn.classList.remove('btn-outline-secondary');
@@ -617,9 +799,11 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                 const link = e.target.closest('a[href]');
                 const notifId = item.getAttribute('data-id');
                 if (notifId) {
-                    if (link && link.getAttribute('href') && link.getAttribute('href') !== '#') {
+                    const href = link ? String(link.getAttribute('href') || '').trim() : '';
+                    const unsafeOrLogoutLink = (!href || href === '#' || /^(javascript:|data:|vbscript:)/i.test(href) || /\/views\/(admin|student|lecturer|finance)\/logout\.php/i.test(href));
+                    if (link && !unsafeOrLogoutLink) {
                         e.preventDefault();
-                        const targetUrl = link.getAttribute('href');
+                        const targetUrl = href;
                         markNotificationRead(notifId)
                             .catch(function(){})
                             .finally(function() {
@@ -631,6 +815,16 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                 }
             }
         });
+            return true;
+        }
+
+        if (!initNotificationBell()) {
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initNotificationBell, { once: true });
+            } else {
+                window.setTimeout(initNotificationBell, 0);
+            }
+        }
     })();
     </script>
     <div class="notification-dropdown" id="notificationDropdown">
@@ -674,12 +868,38 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                             </div>
                             <div style="margin-left:8px;align-self:center;display:flex;flex-direction:column;gap:6px;">
                                 <button class="btn btn-sm btn-outline-primary notif-action-btn" data-action="<?php echo e($actionCode); ?>"><?php echo e($actionLabel); ?></button>
-                                <button class="btn btn-sm btn-outline-secondary notif-archive-btn" data-id="<?php echo $notif['id']; ?>">Save</button>
+                                <button class="btn btn-sm <?php echo !empty($notif['my_archive_id']) ? 'btn-success' : 'btn-outline-secondary'; ?> notif-archive-btn" data-id="<?php echo $notif['id']; ?>" <?php echo !empty($notif['my_archive_id']) ? 'disabled' : ''; ?>>
+                                    <?php echo !empty($notif['my_archive_id']) ? 'Saved' : 'Save'; ?>
+                                </button>
                             </div>
                         </div>
                     <?php else: ?>
+                        <?php
+                            $rawLink = trim((string)($notif['link'] ?? ''));
+                            $safeLink = '#';
+                            if (
+                                $rawLink !== '' &&
+                                stripos($rawLink, 'javascript:') !== 0 &&
+                                stripos($rawLink, 'data:') !== 0 &&
+                                stripos($rawLink, 'vbscript:') !== 0 &&
+                                !preg_match('#/views/(admin|student|lecturer|finance)/logout\.php#i', $rawLink)
+                            ) {
+                                $parsedLink = @parse_url($rawLink);
+                                if (is_array($parsedLink) && !empty($parsedLink['path'])) {
+                                    $safeLink = (string)$parsedLink['path'];
+                                    if (isset($parsedLink['query']) && $parsedLink['query'] !== '') {
+                                        $safeLink .= '?' . $parsedLink['query'];
+                                    }
+                                    if (isset($parsedLink['fragment']) && $parsedLink['fragment'] !== '') {
+                                        $safeLink .= '#' . $parsedLink['fragment'];
+                                    }
+                                } else {
+                                    $safeLink = $rawLink;
+                                }
+                            }
+                        ?>
                         <div class="notification-item unread d-flex" data-id="<?php echo $notif['id']; ?>">
-                            <a href="<?php echo e($notif['link'] ?? '#'); ?>" style="flex:1;text-decoration:none;color:inherit;display:flex;">
+                            <a href="<?php echo e($safeLink); ?>" class="notif-link" style="flex:1;text-decoration:none;color:inherit;display:flex;">
                                 <div class="notif-icon notif-<?php echo e($notif['type']); ?>">
                                     <?php
                                     $iconMap = [
@@ -699,7 +919,9 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
                                 </div>
                             </a>
                             <div style="margin-left:8px;align-self:center;">
-                                <button class="btn btn-sm btn-outline-secondary notif-archive-btn" data-id="<?php echo $notif['id']; ?>">Save</button>
+                                <button class="btn btn-sm <?php echo !empty($notif['my_archive_id']) ? 'btn-success' : 'btn-outline-secondary'; ?> notif-archive-btn" data-id="<?php echo $notif['id']; ?>" <?php echo !empty($notif['my_archive_id']) ? 'disabled' : ''; ?>>
+                                    <?php echo !empty($notif['my_archive_id']) ? 'Saved' : 'Save'; ?>
+                                </button>
                             </div>
                         </div>
                     <?php endif; ?>

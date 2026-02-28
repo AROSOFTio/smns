@@ -249,38 +249,77 @@ if ($report === 'staff') {
         $conn,
         "SELECT u.id,
                 COALESCE(NULLIF(TRIM(CONCAT(COALESCE(fs.first_name,''), ' ', COALESCE(fs.last_name,''))), ''), u.username) AS staff_name,
-                COUNT(p.id) AS payments_processed,
-                COALESCE(SUM(p.amount),0) AS amount_collected
+                COALESCE(fin_pay.payments_processed, 0) AS payments_processed,
+                COALESCE(fin_pay.amount_collected, 0) AS amount_collected
          FROM users u
-         LEFT JOIN finance_staff fs ON fs.user_id = u.id
-         LEFT JOIN payments p
-            ON p.received_by = u.id
-           AND DATE(p.payment_date) BETWEEN :from AND :to
-           $financeSemesterFilter
+         LEFT JOIN (
+             SELECT user_id, MAX(id) AS finance_staff_id
+             FROM finance_staff
+             GROUP BY user_id
+         ) fs_map ON fs_map.user_id = u.id
+         LEFT JOIN finance_staff fs ON fs.id = fs_map.finance_staff_id
+         LEFT JOIN (
+             SELECT COALESCE(fs_id.user_id, fs_uid.user_id) AS user_id,
+                    COUNT(p.id) AS payments_processed,
+                    COALESCE(SUM(p.amount), 0) AS amount_collected
+             FROM payments p
+             LEFT JOIN finance_staff fs_id
+                ON fs_id.id = p.received_by
+             LEFT JOIN finance_staff fs_uid
+                ON fs_uid.user_id = p.received_by
+               AND fs_id.id IS NULL
+             WHERE DATE(p.payment_date) BETWEEN :from AND :to
+               $financeSemesterFilter
+               AND COALESCE(fs_id.user_id, fs_uid.user_id) IS NOT NULL
+               AND EXISTS (
+                   SELECT 1
+                   FROM semester_registrations sr
+                   WHERE sr.student_id = p.student_id
+                     AND sr.semester_id = p.semester_id
+                     AND sr.status = 'approved'
+               )
+             GROUP BY COALESCE(fs_id.user_id, fs_uid.user_id)
+         ) fin_pay ON fin_pay.user_id = u.id
          WHERE u.role = 'finance' AND u.status = 'active'
-         GROUP BY u.id, staff_name
-         ORDER BY payments_processed DESC, amount_collected DESC",
+         ORDER BY payments_processed DESC, amount_collected DESC, staff_name ASC",
         $financeParams
     );
 
-    if (empty($financeRows)) {
-        $financeRows = safeRows(
-            $conn,
-            "SELECT u.id,
-                    u.username AS staff_name,
-                    COUNT(p.id) AS payments_processed,
-                    COALESCE(SUM(p.amount),0) AS amount_collected
-             FROM users u
-             LEFT JOIN payments p
-                ON p.received_by = u.id
-               AND DATE(p.payment_date) BETWEEN :from AND :to
-               $financeSemesterFilter
-             WHERE u.role = 'finance' AND u.status = 'active'
-             GROUP BY u.id, u.username
-             ORDER BY payments_processed DESC, amount_collected DESC",
-            $financeParams
-        );
+    $financeByName = [];
+    foreach ($financeRows as $financeRow) {
+        $operatorName = preg_replace('/\s+/', ' ', trim((string)($financeRow['staff_name'] ?? '')));
+        if ($operatorName === '') {
+            $operatorName = 'Finance #' . (int)($financeRow['id'] ?? 0);
+        }
+        $key = strtolower($operatorName);
+        $paymentsProcessed = (int)($financeRow['payments_processed'] ?? 0);
+        $amountCollected = (float)($financeRow['amount_collected'] ?? 0);
+
+        if (!isset($financeByName[$key])) {
+            $financeByName[$key] = [
+                'id' => (int)($financeRow['id'] ?? 0),
+                'staff_name' => $operatorName,
+                'payments_processed' => $paymentsProcessed,
+                'amount_collected' => $amountCollected,
+            ];
+            continue;
+        }
+
+        $financeByName[$key]['payments_processed'] += $paymentsProcessed;
+        $financeByName[$key]['amount_collected'] += $amountCollected;
     }
+    $financeRows = array_values($financeByName);
+    usort($financeRows, function ($a, $b) {
+        $paymentsCmp = ((int)($b['payments_processed'] ?? 0)) <=> ((int)($a['payments_processed'] ?? 0));
+        if ($paymentsCmp !== 0) {
+            return $paymentsCmp;
+        }
+        $amountCmp = ((float)($b['amount_collected'] ?? 0)) <=> ((float)($a['amount_collected'] ?? 0));
+        if ($amountCmp !== 0) {
+            return $amountCmp;
+        }
+        return strcmp((string)($a['staff_name'] ?? ''), (string)($b['staff_name'] ?? ''));
+    });
 
     $courseAssignmentRows = safeRows(
         $conn,

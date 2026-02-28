@@ -20,6 +20,13 @@ $studentDbId = (int)($studentProfile['id'] ?? 0);
 
 $db = new Database();
 $conn = $db->getConnection();
+$financeMessagingService = null;
+try {
+    $financeMessagingService = new FinanceMessagingService($conn);
+    $financeMessagingService->ensureSchema();
+} catch (Exception $e) {
+    $financeMessagingService = null;
+}
 
 $currentSemester = [
     'academic_year' => '-',
@@ -35,6 +42,7 @@ if (!empty($studentSemesterContext['id'])) {
 }
 
 $approvedFeesAmount = 0.0;
+$totalPaidAmount = 0.0;
 $outstandingBalance = 0.0;
 $balanceOnAccount = 0.0;
 if ($studentDbId > 0 && $currentSemester['id'] > 0) {
@@ -47,6 +55,7 @@ if ($studentDbId > 0 && $currentSemester['id'] > 0) {
         (int)($studentProfile['level_year'] ?? ($studentProfile['year_of_study'] ?? 1))
     );
     $approvedFeesAmount = (float)($financialSnapshot['approved_total_fees'] ?? 0);
+    $totalPaidAmount = (float)($financialSnapshot['total_paid'] ?? 0);
     $outstandingBalance = (float)($financialSnapshot['balance_due'] ?? 0);
     $balanceOnAccount = (float)($financialSnapshot['balance_on_account'] ?? $outstandingBalance);
 }
@@ -165,7 +174,13 @@ $validTxTabs = ['invoice_payments', 'fees_deposits', 'check_prn'];
 if (!in_array($txTab, $validTxTabs, true)) {
     $txTab = 'check_prn';
 }
+$studentFinanceMessages = [];
+$studentFinanceThreadPrn = '';
+$studentFinanceThreadTx = '';
+$studentFinanceContextLabel = 'General account support';
+$studentFinanceFormAction = 'payments.php?section=transactions&tx_tab=check_prn#student-finance-chat';
 $prnQuery = trim((string)($_GET['prn_ref'] ?? ''));
+$txRefQuery = strtoupper(trim((string)($_GET['tx_ref'] ?? '')));
 $prnStatusRow = null;
 $prnStatusData = null;
 $prnStatusMessage = '';
@@ -174,6 +189,58 @@ $validMigratedTabs = ['invoice_payments', 'fees_deposits'];
 if (!in_array($migratedTab, $validMigratedTabs, true)) {
     $migratedTab = 'invoice_payments';
 }
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = trim((string)($_POST['action'] ?? ''));
+    if ($action === 'send_finance_message') {
+        $redirectPrn = strtoupper(trim((string)($_POST['prn_reference'] ?? '')));
+        $redirectParams = [
+            'section' => 'transactions',
+            'tx_tab' => 'check_prn'
+        ];
+        if ($redirectPrn !== '') {
+            $redirectParams['prn_ref'] = $redirectPrn;
+        }
+        $redirectTx = strtoupper(trim((string)($_POST['transaction_ref'] ?? '')));
+        if ($redirectTx !== '') {
+            $redirectParams['tx_ref'] = $redirectTx;
+        }
+        $redirectUrl = 'payments.php?' . http_build_query($redirectParams) . '#student-finance-chat';
+
+        if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+            $session->setFlash('error', 'Invalid request token. Please retry.');
+            header('Location: ' . $redirectUrl);
+            exit;
+        }
+
+        $messageText = trim((string)($_POST['message_text'] ?? ''));
+        $threadPrn = strtoupper(trim((string)($_POST['prn_reference'] ?? '')));
+        $threadTx = strtoupper(trim((string)($_POST['transaction_ref'] ?? '')));
+
+        if (!$financeMessagingService) {
+            $session->setFlash('error', 'Messaging is not available right now. Please try again later.');
+        } else {
+            $sendResult = $financeMessagingService->sendStudentMessage(
+                $currentUserId,
+                $studentDbId,
+                $threadPrn,
+                $threadTx,
+                $messageText
+            );
+            if (!empty($sendResult['success'])) {
+                $session->setFlash('success', (string)($sendResult['message'] ?? 'Message sent to finance.'));
+            } else {
+                $session->setFlash('error', (string)($sendResult['message'] ?? 'Unable to send message right now.'));
+            }
+        }
+
+        header('Location: ' . $redirectUrl);
+        exit;
+    }
+}
+
+$flashSuccess = $session->getFlash('success');
+$flashError = $session->getFlash('error');
 $ledgerRows = [];
 $feesRows = [];
 $feesByYear = [];
@@ -382,6 +449,13 @@ if ($studentDbId > 0) {
                 $statusResult = $statusService->getStudentReferenceStatus($studentDbId, strtoupper($prnQuery));
                 if (!empty($statusResult['success']) && !empty($statusResult['data']) && is_array($statusResult['data'])) {
                     $prnStatusData = $statusResult['data'];
+                    $financialSummary = $prnStatusData['financial_summary'] ?? null;
+                    if (is_array($financialSummary)) {
+                        $approvedFeesAmount = (float)($financialSummary['approved_fees_ugx'] ?? $approvedFeesAmount);
+                        $totalPaidAmount = (float)($financialSummary['total_paid_ugx'] ?? $totalPaidAmount);
+                        $outstandingBalance = (float)($financialSummary['balance_due_ugx'] ?? $outstandingBalance);
+                        $balanceOnAccount = (float)($financialSummary['balance_on_account_ugx'] ?? $balanceOnAccount);
+                    }
                 } elseif (empty($prnStatusRow)) {
                     $prnStatusMessage = (string)($statusResult['message'] ?? 'No transaction found for the entered payment reference number.');
                 }
@@ -598,6 +672,65 @@ if ($studentDbId > 0) {
     }
 }
 
+if ($section === 'transactions' && $txTab === 'check_prn') {
+    if ($txRefQuery !== '') {
+        $studentFinanceThreadTx = $txRefQuery;
+    }
+    if ($prnQuery !== '') {
+        $studentFinanceThreadPrn = strtoupper($prnQuery);
+    }
+    if (is_array($prnStatusData)) {
+        $prnFromStatus = strtoupper(trim((string)($prnStatusData['reference_number'] ?? '')));
+        if ($studentFinanceThreadPrn === '' && $prnFromStatus !== '') {
+            $studentFinanceThreadPrn = $prnFromStatus;
+        }
+        $studentFinanceThreadTx = strtoupper(trim((string)($prnStatusData['transaction_ref'] ?? '')));
+    }
+    if ($studentFinanceThreadPrn === '' && is_array($prnStatusRow)) {
+        $rowPrn = strtoupper(trim((string)($prnStatusRow['reference_number'] ?? '')));
+        if ($rowPrn !== '') {
+            $studentFinanceThreadPrn = $rowPrn;
+        }
+    }
+
+    if ($studentFinanceThreadPrn !== '') {
+        $studentFinanceContextLabel = 'PRN ' . $studentFinanceThreadPrn;
+    } elseif ($studentFinanceThreadTx !== '') {
+        $studentFinanceContextLabel = 'TX ' . $studentFinanceThreadTx;
+    }
+
+$studentFinanceFormAction = 'payments.php?section=transactions&tx_tab=check_prn';
+if ($studentFinanceThreadPrn !== '') {
+    $studentFinanceFormAction .= '&prn_ref=' . rawurlencode($studentFinanceThreadPrn);
+}
+if ($studentFinanceThreadTx !== '') {
+    $studentFinanceFormAction .= '&tx_ref=' . rawurlencode($studentFinanceThreadTx);
+}
+$studentFinanceFormAction .= '#student-finance-chat';
+$studentMessagePollParams = [];
+if ($studentFinanceThreadPrn !== '') {
+    $studentMessagePollParams['prn_ref'] = $studentFinanceThreadPrn;
+}
+if ($studentFinanceThreadTx !== '') {
+    $studentMessagePollParams['tx_ref'] = $studentFinanceThreadTx;
+}
+$studentMessagePollUrl = BASE_URL . '/api/messages/student_thread.php';
+if (!empty($studentMessagePollParams)) {
+    $studentMessagePollUrl .= '?' . http_build_query($studentMessagePollParams);
+}
+
+if ($financeMessagingService && $studentDbId > 0) {
+    $studentFinanceMessages = $financeMessagingService->getStudentThreadMessages(
+        $studentDbId,
+            $studentFinanceThreadPrn,
+            $studentFinanceThreadTx,
+            80
+        );
+    }
+}
+
+$balanceOnAccountLabel = ((float)$totalPaidAmount > (float)$approvedFeesAmount) ? 'ACCOUNT CREDIT' : 'BALANCE ON ACCOUNT';
+
 $studentViewsPath = BASE_PATH . '/views/student/';
 $linkDashboard = 'dashboard.php';
 $linkResults = 'results.php';
@@ -721,7 +854,14 @@ body { background: #f2f4f7; }
 }
 .student-profile-pic { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid #e5e7eb; }
 
-.chip-row { padding: 0.45rem 1.2rem 0.2rem; display: flex; align-items: center; gap: 0.35rem; white-space: nowrap; }
+.chip-row {
+    padding: 0.45rem 1.2rem 0.2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    row-gap: 0.4rem;
+}
 .chip {
     border-radius: 6px;
     padding: 4px 8px;
@@ -732,7 +872,14 @@ body { background: #f2f4f7; }
 }
 .chip.gray { background: #f1f5f9; color: #222; }
 .chip.blue { background: #1f7aa8; color: #fff; }
+.chip.green { background: #16a34a; color: #fff; }
 .chip.red { background: #fee2e2; color: #991b1b; }
+.chip.balance-chip {
+    background: #0ea5e9;
+    border: 1px solid #0284c7;
+    color: #ffffff;
+    font-weight: 800;
+}
 
 .prn-wrap { padding: 0.9rem 1.2rem 1.3rem; }
 .prn-card {
@@ -965,6 +1112,78 @@ body { background: #f2f4f7; }
     font-size: 0.9rem;
     font-weight: 700;
     cursor: pointer;
+}
+.student-chat-card {
+    border: 1px solid #dbe3ee;
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: 10px;
+    margin-top: 12px;
+}
+.student-chat-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.student-chat-head strong {
+    font-size: 0.9rem;
+    color: #0f172a;
+}
+.student-chat-head small {
+    color: #475569;
+}
+.student-chat-thread {
+    max-height: 280px;
+    overflow-y: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fff;
+    padding: 8px;
+    margin-bottom: 10px;
+}
+.student-chat-msg {
+    margin-bottom: 8px;
+}
+.student-chat-msg:last-child {
+    margin-bottom: 0;
+}
+.student-chat-msg-meta {
+    font-size: 0.74rem;
+    color: #64748b;
+    margin-bottom: 2px;
+}
+.student-chat-bubble {
+    border-radius: 8px;
+    padding: 7px 9px;
+    font-size: 0.84rem;
+    line-height: 1.4;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #0f172a;
+}
+.student-chat-msg.mine .student-chat-bubble {
+    background: #dcfce7;
+    border-color: #86efac;
+}
+.student-chat-msg.finance .student-chat-bubble {
+    background: #e0f2fe;
+    border-color: #93c5fd;
+}
+.student-chat-form textarea {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    min-height: 78px;
+    padding: 8px 10px;
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+    resize: vertical;
+}
+.student-chat-form-actions {
+    display: flex;
+    justify-content: flex-end;
 }
 .ledger-card {
     border: 1px solid #e5e7eb;
@@ -1352,6 +1571,48 @@ html[data-theme='dark'] .tx-check-btn {
     border-color: #1f7aa8 !important;
     color: #fff !important;
 }
+html[data-theme='dark'] .chip.balance-chip {
+    background: #082f49 !important;
+    border-color: #0ea5e9 !important;
+    color: #bae6fd !important;
+}
+html[data-theme='dark'] .student-chat-card {
+    background: #0f172a;
+    border-color: #334155;
+}
+html[data-theme='dark'] .student-chat-head strong {
+    color: #e2e8f0;
+}
+html[data-theme='dark'] .student-chat-head small {
+    color: #94a3b8;
+}
+html[data-theme='dark'] .student-chat-thread {
+    background: #111827;
+    border-color: #334155;
+}
+html[data-theme='dark'] .student-chat-msg-meta {
+    color: #94a3b8;
+}
+html[data-theme='dark'] .student-chat-bubble {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+html[data-theme='dark'] .student-chat-msg.mine .student-chat-bubble {
+    background: #14532d;
+    border-color: #166534;
+    color: #dcfce7;
+}
+html[data-theme='dark'] .student-chat-msg.finance .student-chat-bubble {
+    background: #0c4a6e;
+    border-color: #075985;
+    color: #e0f2fe;
+}
+html[data-theme='dark'] .student-chat-form textarea {
+    background: #111827;
+    border-color: #334155;
+    color: #e2e8f0;
+}
 
 /* Dark-mode fixes for fees structure accordion */
 html[data-theme='dark'] .fees-year-card {
@@ -1545,7 +1806,8 @@ html[data-theme='dark'] .ledger-amount-negative {
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span>
         <span class="chip gray">APPROVED FEES AMOUNT: <?php echo $formatCurrencyForDisplay((float)$approvedFeesAmount); ?></span>
-        <span class="chip blue">BALANCE ON ACCOUNT: <?php echo $formatCurrencyForDisplay((float)$balanceOnAccount); ?></span>
+        <span class="chip green">TOTAL PAID: <?php echo $formatCurrencyForDisplay((float)$totalPaidAmount); ?></span>
+        <span class="chip blue balance-chip"><?php echo e($balanceOnAccountLabel); ?>: <?php echo $formatCurrencyForDisplay((float)$balanceOnAccount); ?></span>
     </div>
 
     <div class="prn-wrap">
@@ -1565,6 +1827,12 @@ html[data-theme='dark'] .ledger-amount-negative {
                 </div>
                 <button type="button" class="refs-reload-btn" onclick="window.location.reload();">RELOAD</button>
             </div>
+            <?php if (!empty($flashSuccess)): ?>
+                <div class="alert alert-success"><?php echo e($flashSuccess); ?></div>
+            <?php endif; ?>
+            <?php if (!empty($flashError)): ?>
+                <div class="alert alert-danger"><?php echo e($flashError); ?></div>
+            <?php endif; ?>
 
             <?php if ($section === 'bills'): ?>
                 <div class="summary-grid">
@@ -1741,6 +2009,46 @@ html[data-theme='dark'] .ledger-amount-negative {
                                     <div class="alert alert-warning mt-2 mb-0"><?php echo e($prnStatusMessage); ?></div>
                                 <?php endif; ?>
                             <?php endif; ?>
+                            <?php
+                                $studentChatLastId = 0;
+                                if (!empty($studentFinanceMessages)) {
+                                    $lastStudentChatMessage = end($studentFinanceMessages);
+                                    $studentChatLastId = (int)($lastStudentChatMessage['id'] ?? 0);
+                                }
+                            ?>
+                            <div class="student-chat-card" id="student-finance-chat" data-poll-url="<?php echo e($studentMessagePollUrl); ?>">
+                                <div class="student-chat-head">
+                                    <strong>MESSAGE FINANCE</strong>
+                                    <small>Thread: <?php echo e($studentFinanceContextLabel); ?></small>
+                                </div>
+                                <div class="alert alert-info mb-2" id="studentChatEmpty" style="<?php echo !empty($studentFinanceMessages) ? 'display:none;' : ''; ?>">No messages yet. Send a message to start this thread.</div>
+                                <div class="student-chat-thread" id="studentChatThread" data-last-id="<?php echo (int)$studentChatLastId; ?>" data-message-count="<?php echo (int)count($studentFinanceMessages); ?>" style="<?php echo empty($studentFinanceMessages) ? 'display:none;' : ''; ?>">
+                                    <?php foreach ($studentFinanceMessages as $messageRow): ?>
+                                        <?php
+                                            $senderRole = strtolower((string)($messageRow['sender_role'] ?? 'student'));
+                                            $isMine = $senderRole === 'student';
+                                        ?>
+                                        <div class="student-chat-msg <?php echo $isMine ? 'mine' : 'finance'; ?>">
+                                            <div class="student-chat-msg-meta">
+                                                <?php echo $isMine ? 'You' : 'Finance'; ?>
+                                                -
+                                                <?php echo !empty($messageRow['created_at']) ? e(date('d M Y, h:i A', strtotime((string)$messageRow['created_at']))) : '-'; ?>
+                                            </div>
+                                            <div class="student-chat-bubble"><?php echo nl2br(e((string)($messageRow['message_text'] ?? ''))); ?></div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                                <form method="POST" class="student-chat-form" action="<?php echo e($studentFinanceFormAction); ?>">
+                                    <?php echo csrfField(); ?>
+                                    <input type="hidden" name="action" value="send_finance_message">
+                                    <input type="hidden" name="prn_reference" value="<?php echo e($studentFinanceThreadPrn); ?>">
+                                    <input type="hidden" name="transaction_ref" value="<?php echo e($studentFinanceThreadTx); ?>">
+                                    <textarea name="message_text" maxlength="2000" placeholder="Write your message to finance..." required></textarea>
+                                    <div class="student-chat-form-actions">
+                                        <button type="submit" class="tx-check-btn"><i class="fas fa-paper-plane"></i> SEND MESSAGE</button>
+                                    </div>
+                                </form>
+                            </div>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -1980,6 +2288,97 @@ document.querySelectorAll('.fees-year-head').forEach(function(btn) {
         }
     });
 });
+
+(function initStudentFinanceChatPolling() {
+    var chatCard = document.getElementById('student-finance-chat');
+    if (!chatCard || typeof window.fetch !== 'function') return;
+
+    var pollUrl = chatCard.getAttribute('data-poll-url') || '';
+    var threadEl = document.getElementById('studentChatThread');
+    var emptyEl = document.getElementById('studentChatEmpty');
+    if (!pollUrl || !threadEl || !emptyEl) return;
+
+    var inFlight = false;
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function renderThread(messages, lastMessageId) {
+        var rows = Array.isArray(messages) ? messages : [];
+        threadEl.setAttribute('data-last-id', String(lastMessageId || 0));
+        threadEl.setAttribute('data-message-count', String(rows.length));
+
+        if (!rows.length) {
+            threadEl.innerHTML = '';
+            threadEl.style.display = 'none';
+            emptyEl.style.display = '';
+            return;
+        }
+
+        var html = '';
+        rows.forEach(function(msg) {
+            var role = String(msg && msg.sender_role ? msg.sender_role : 'student').toLowerCase();
+            var isMine = role === 'student';
+            var sender = isMine ? 'You' : 'Finance';
+            var label = msg && msg.created_at_label ? msg.created_at_label : '-';
+            var text = escapeHtml(msg && msg.message_text ? msg.message_text : '').replace(/\n/g, '<br>');
+            html += '<div class="student-chat-msg ' + (isMine ? 'mine' : 'finance') + '">';
+            html += '<div class="student-chat-msg-meta">' + sender + ' - ' + escapeHtml(label) + '</div>';
+            html += '<div class="student-chat-bubble">' + text + '</div>';
+            html += '</div>';
+        });
+        threadEl.innerHTML = html;
+        threadEl.style.display = '';
+        emptyEl.style.display = 'none';
+        threadEl.scrollTop = threadEl.scrollHeight;
+    }
+
+    function pollThread() {
+        if (inFlight) return;
+        inFlight = true;
+
+        fetch(pollUrl, {
+            method: 'GET',
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(function(response) { return response.json(); })
+        .then(function(payload) {
+            if (!payload || !payload.success) return;
+
+            var nextLastId = Number(payload.last_message_id || 0);
+            var nextCount = Number(payload.message_count || 0);
+            var currentLastId = Number(threadEl.getAttribute('data-last-id') || 0);
+            var currentCount = Number(threadEl.getAttribute('data-message-count') || 0);
+            if (nextLastId === currentLastId && nextCount === currentCount) {
+                return;
+            }
+
+            renderThread(payload.messages || [], nextLastId);
+            if (payload.thread && payload.thread.context_label) {
+                var ctxEl = chatCard.querySelector('.student-chat-head small');
+                if (ctxEl) {
+                    ctxEl.textContent = 'Thread: ' + String(payload.thread.context_label);
+                }
+            }
+        })
+        .catch(function() {})
+        .finally(function() {
+            inFlight = false;
+        });
+    }
+
+    window.setInterval(pollThread, 8000);
+})();
 </script>
 
 <?php include '../../includes/footer.php'; ?>

@@ -262,10 +262,9 @@
         }, true);
 
         window.addEventListener('pagehide', function(event) {
-            var remainingTabs = unregisterTab();
-            if (AUTO_LOGOUT_ENABLED && !internalNavigation && !event.persisted && remainingTabs === 0) {
-                postAutoLogout('browser_close');
-            }
+            // Keep tab map in sync, but do not auto-logout on pagehide.
+            // pagehide also fires on refresh/navigation in many browsers.
+            unregisterTab();
         });
 
         setInterval(function() {

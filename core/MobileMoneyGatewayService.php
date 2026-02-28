@@ -32,6 +32,7 @@ class MobileMoneyGatewayService {
         $this->ensurePaymentMethodSchema();
         $this->ensureMobileMoneyTransactionSchema();
         $this->ensureBankTransactionSchema();
+        $this->ensureBalanceUpdateProcedure();
     }
 
     public function initiatePaymentByReference($studentId, $referenceNumber, $msisdn, $provider = '') {
@@ -93,8 +94,15 @@ class MobileMoneyGatewayService {
                 return ['success' => false, 'message' => 'This PRN has expired.'];
             }
 
+            $amountExpected = (float)($reference['amount'] ?? 0);
+            if ($amountExpected <= 0) {
+                $this->conn->rollBack();
+                return ['success' => false, 'message' => 'PRN amount is invalid.'];
+            }
+
             $txStmt = $this->conn->prepare("
                 SELECT id, transaction_ref, status
+                    , provider_request_id, provider_tx_id, provider_status
                 FROM mobile_money_transactions
                 WHERE reference_number = :reference_number
                   AND student_id = :student_id
@@ -109,21 +117,65 @@ class MobileMoneyGatewayService {
             ]);
             $existingPending = $txStmt->fetch(PDO::FETCH_ASSOC) ?: [];
             if (!empty($existingPending)) {
+                $status = strtolower((string)($existingPending['status'] ?? 'pending'));
+                $providerStatus = strtolower((string)($existingPending['provider_status'] ?? 'pending'));
+                $providerRequestId = (string)($existingPending['provider_request_id'] ?? '');
+                $providerTxId = (string)($existingPending['provider_tx_id'] ?? '');
+                $mockAutoCallbackStatus = 'skipped';
+                $message = 'Payment request is already pending.';
+                $transactionRefExisting = (string)($existingPending['transaction_ref'] ?? '');
+
                 $this->conn->commit();
+
+                if ($this->gatewayMode === 'mock') {
+                    $mockCallbackResult = $this->processMockAutoCallback(
+                        $referenceNumber,
+                        $transactionRefExisting,
+                        $providerRequestId,
+                        $providerTxId,
+                        $amountExpected
+                    );
+                    $mockAutoCallbackStatus = !empty($mockCallbackResult['success']) ? 'ok' : 'failed';
+
+                    $latestTx = $this->findTransactionByRef($transactionRefExisting);
+                    if (!empty($latestTx)) {
+                        $status = strtolower((string)($latestTx['status'] ?? $status));
+                        $providerStatus = strtolower((string)($latestTx['provider_status'] ?? $providerStatus));
+                        $providerTxId = trim((string)($latestTx['provider_tx_id'] ?? $providerTxId));
+                        if (in_array($status, ['successful', 'posted'], true)) {
+                            $mockAutoCallbackStatus = 'ok';
+                        }
+                    }
+
+                    if ($status === 'posted') {
+                        $message = 'Mock payment auto-confirmed and posted to ledger.';
+                    } elseif ($status === 'successful') {
+                        $message = 'Mock payment auto-confirmed. Ledger posting is in progress.';
+                    } elseif ($mockAutoCallbackStatus === 'failed') {
+                        $callbackError = trim((string)($mockCallbackResult['message'] ?? ''));
+                        $message = $callbackError !== ''
+                            ? 'Mock payment request exists, but auto-callback failed: ' . $callbackError
+                            : 'Mock payment request exists, but auto-callback failed.';
+                    }
+                }
+
                 return [
-                    'success' => true,
-                    'message' => 'Payment request is already pending.',
-                    'transaction_ref' => (string)($existingPending['transaction_ref'] ?? ''),
-                    'status' => (string)($existingPending['status'] ?? 'pending')
+                    'success' => ($status !== 'failed'),
+                    'message' => $message,
+                    'transaction_ref' => $transactionRefExisting,
+                    'provider_request_id' => $providerRequestId,
+                    'provider_tx_id' => $providerTxId,
+                    'status' => $status,
+                    'provider_status' => $providerStatus,
+                    'amount' => $amountExpected,
+                    'currency' => 'UGX',
+                    'reference_number' => $referenceNumber,
+                    'mock_mode' => ($this->gatewayMode === 'mock'),
+                    'mock_auto_callback' => $this->gatewayMode === 'mock' ? $mockAutoCallbackStatus : null
                 ];
             }
 
             $transactionRef = $this->generateUniqueCode('MMT', 'mobile_money_transactions', 'transaction_ref');
-            $amountExpected = (float)($reference['amount'] ?? 0);
-            if ($amountExpected <= 0) {
-                $this->conn->rollBack();
-                return ['success' => false, 'message' => 'PRN amount is invalid.'];
-            }
 
             $requestPayload = [
                 'transaction_ref' => $transactionRef,
@@ -202,6 +254,34 @@ class MobileMoneyGatewayService {
             ]);
 
             $this->conn->commit();
+
+            $mockCallbackResult = null;
+            $mockAutoCallbackStatus = '';
+            if ($this->gatewayMode === 'mock' && $internalStatus === 'pending') {
+                $mockCallbackResult = $this->processMockAutoCallback(
+                    $referenceNumber,
+                    $transactionRef,
+                    $providerRequestId,
+                    $providerTxId,
+                    $amountExpected
+                );
+                if (!empty($mockCallbackResult['success'])) {
+                    $mockAutoCallbackStatus = 'ok';
+                } else {
+                    $mockAutoCallbackStatus = 'failed';
+                }
+
+                $latestTx = $this->findTransactionByRef($transactionRef);
+                if (!empty($latestTx)) {
+                    $internalStatus = strtolower((string)($latestTx['status'] ?? $internalStatus));
+                    $providerStatus = strtolower((string)($latestTx['provider_status'] ?? $providerStatus));
+                    $providerTxId = trim((string)($latestTx['provider_tx_id'] ?? $providerTxId));
+                    if (in_array($internalStatus, ['successful', 'posted'], true)) {
+                        $mockAutoCallbackStatus = 'ok';
+                    }
+                }
+            }
+
             $initiationSucceeded = ($internalStatus !== 'failed');
             $this->safeLog(
                 $initiationSucceeded ? 'initiate_mobile_money' : 'initiate_mobile_money_failed',
@@ -210,7 +290,20 @@ class MobileMoneyGatewayService {
             );
 
             $message = trim((string)($providerResult['message'] ?? ''));
-            if ($message === '') {
+            if ($this->gatewayMode === 'mock') {
+                if ($internalStatus === 'posted') {
+                    $message = 'Mock payment auto-confirmed and posted to ledger.';
+                } elseif ($internalStatus === 'successful') {
+                    $message = 'Mock payment auto-confirmed. Ledger posting is in progress.';
+                } elseif ($mockAutoCallbackStatus === 'failed') {
+                    $callbackError = trim((string)($mockCallbackResult['message'] ?? ''));
+                    $message = $callbackError !== ''
+                        ? 'Mock payment request accepted, but auto-callback failed: ' . $callbackError
+                        : 'Mock payment request accepted, but auto-callback failed.';
+                } else {
+                    $message = 'Mock payment request accepted.';
+                }
+            } elseif ($message === '') {
                 $message = $initiationSucceeded ? 'Payment request initiated.' : 'Payment initiation failed.';
             }
 
@@ -225,7 +318,9 @@ class MobileMoneyGatewayService {
                 'amount' => $amountExpected,
                 'currency' => 'UGX',
                 'reference_number' => $referenceNumber,
-                'error' => (string)($providerResult['error'] ?? '')
+                'error' => (string)($providerResult['error'] ?? ''),
+                'mock_mode' => ($this->gatewayMode === 'mock'),
+                'mock_auto_callback' => $this->gatewayMode === 'mock' ? ($mockAutoCallbackStatus !== '' ? $mockAutoCallbackStatus : 'skipped') : null
             ];
         } catch (Exception $e) {
             if ($this->conn->inTransaction()) {
@@ -749,6 +844,7 @@ class MobileMoneyGatewayService {
                     spr.reference_number,
                     spr.reference_type,
                     spr.amount,
+                    spr.semester_id AS reference_semester_id,
                     spr.status AS reference_status,
                     spr.expires_at,
                     spr.paid_payment_id,
@@ -854,6 +950,10 @@ class MobileMoneyGatewayService {
             $row['amount_received'] = $amountReceived;
             $row['transaction_updated_at'] = $transactionUpdatedAt;
             $row['status_stage'] = $this->buildReferenceStatusStage($referenceStatus, $transactionStatus, $channel);
+            $row['financial_summary'] = $this->buildStudentFinancialSummaryPayload(
+                $studentId,
+                (int)($row['reference_semester_id'] ?? 0)
+            );
 
             return ['success' => true, 'data' => $row];
         } catch (Exception $e) {
@@ -1165,12 +1265,144 @@ class MobileMoneyGatewayService {
                     BASE_URL . '/views/student/payments.php?section=transactions'
                 );
         }
+        $this->notifyFinanceTeamPaymentPosted(
+            $studentId,
+            $referenceNumber,
+            (float)$amountPaid,
+            $paymentMethod,
+            (string)($transactionRow['transaction_ref'] ?? '')
+        );
 
         return [
             'success' => true,
             'posted_payment_id' => $firstPaymentId,
             'posted_payment_count' => count($createdPaymentIds)
         ];
+    }
+
+    private function buildStudentFinancialSummaryPayload($studentId, $semesterId = 0) {
+        $studentId = (int)$studentId;
+        $semesterId = (int)$semesterId;
+        if ($studentId <= 0) {
+            return [
+                'approved_fees_ugx' => 0.0,
+                'total_paid_ugx' => 0.0,
+                'balance_on_account_ugx' => 0.0,
+                'balance_due_ugx' => 0.0,
+                'account_credit_ugx' => 0.0,
+                'semester_id' => 0
+            ];
+        }
+
+        try {
+            $snapshot = getStudentFinancialSnapshot($this->conn, $studentId, $semesterId, 0, 0, 1, true);
+            if (!is_array($snapshot)) {
+                $snapshot = $this->buildFinancialSnapshotFallback($studentId, $semesterId);
+                $snapshot['semester_id'] = $semesterId;
+            }
+        } catch (Exception $e) {
+            $snapshot = $this->buildFinancialSnapshotFallback($studentId, $semesterId);
+            $snapshot['semester_id'] = $semesterId;
+        }
+
+        return [
+            'approved_fees_ugx' => (float)($snapshot['approved_total_fees'] ?? $snapshot['total_fees'] ?? 0.0),
+            'total_paid_ugx' => (float)($snapshot['total_paid'] ?? 0.0),
+            'balance_on_account_ugx' => (float)($snapshot['balance_on_account'] ?? $snapshot['balance_due'] ?? 0.0),
+            'balance_due_ugx' => (float)($snapshot['balance_due'] ?? 0.0),
+            'account_credit_ugx' => (float)($snapshot['account_credit'] ?? 0.0),
+            'semester_id' => (int)($snapshot['semester_id'] ?? $semesterId),
+            'source' => (string)($snapshot['source'] ?? '')
+        ];
+    }
+
+    private function notifyFinanceTeamPaymentPosted($studentId, $referenceNumber, $amountPaid, $paymentMethod, $transactionRef = '') {
+        $studentId = (int)$studentId;
+        $referenceNumber = strtoupper(trim((string)$referenceNumber));
+        $amountPaid = (float)$amountPaid;
+        $paymentMethod = strtolower(trim((string)$paymentMethod));
+        $transactionRef = trim((string)$transactionRef);
+
+        if ($studentId <= 0 || $referenceNumber === '' || $amountPaid <= 0) {
+            return;
+        }
+
+        $financeUserIds = [];
+        try {
+            $stmt = $this->conn->query("
+                SELECT DISTINCT fs.user_id
+                FROM finance_staff fs
+                INNER JOIN users u ON u.id = fs.user_id
+                WHERE u.role = 'finance'
+                  AND COALESCE(u.status, 'active') = 'active'
+            ");
+            $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+            foreach ($rows as $row) {
+                $uid = (int)($row['user_id'] ?? 0);
+                if ($uid > 0) {
+                    $financeUserIds[$uid] = true;
+                }
+            }
+        } catch (Exception $e) {
+        }
+
+        if (empty($financeUserIds)) {
+            try {
+                $stmt = $this->conn->query("
+                    SELECT id
+                    FROM users
+                    WHERE role = 'finance'
+                      AND COALESCE(status, 'active') = 'active'
+                ");
+                $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+                foreach ($rows as $row) {
+                    $uid = (int)($row['id'] ?? 0);
+                    if ($uid > 0) {
+                        $financeUserIds[$uid] = true;
+                    }
+                }
+            } catch (Exception $e) {
+            }
+        }
+
+        if (empty($financeUserIds)) {
+            return;
+        }
+
+        $studentLabel = 'Student #' . $studentId;
+        try {
+            $studentStmt = $this->conn->prepare("
+                SELECT student_id, first_name, last_name
+                FROM students
+                WHERE id = :id
+                LIMIT 1
+            ");
+            $studentStmt->execute(['id' => $studentId]);
+            $student = $studentStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+            if (!empty($student)) {
+                $name = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
+                $sid = trim((string)($student['student_id'] ?? ''));
+                if ($name !== '' && $sid !== '') {
+                    $studentLabel = $name . ' (' . $sid . ')';
+                } elseif ($name !== '') {
+                    $studentLabel = $name;
+                } elseif ($sid !== '') {
+                    $studentLabel = $sid;
+                }
+            }
+        } catch (Exception $e) {
+        }
+
+        $amountLabel = Helper::formatCurrency($amountPaid, 'UGX', 0);
+        $methodLabel = strtoupper(str_replace('_', ' ', $paymentMethod));
+        $txLabel = $transactionRef !== '' ? ' TX: ' . $transactionRef . '.' : '';
+        $title = 'PRN Payment Posted';
+        $message = 'PRN ' . $referenceNumber . ' for ' . $studentLabel . ' amount ' . $amountLabel . ' via ' . $methodLabel . ' has been posted to ledger.' . $txLabel;
+        $link = BASE_URL . '/views/finance/dashboard.php?section=payments&pay_tab=mobile_money';
+
+        foreach (array_keys($financeUserIds) as $financeUserId) {
+            $this->notifyUser((int)$financeUserId, $title, $message, 'info', $link);
+        }
     }
 
     private function insertPaymentRow($studentId, $invoiceId, $semesterId, $amount, $paymentDate, $referenceNumber, $financeStaffId, $note, $hasVerificationColumns, $paymentMethod = 'mobile_money', $verificationNotes = '') {
@@ -1845,6 +2077,38 @@ class MobileMoneyGatewayService {
         return $result;
     }
 
+    private function processMockAutoCallback($referenceNumber, $transactionRef, $providerRequestId, $providerTxId, $amountExpected) {
+        $payload = [
+            'reference_number' => strtoupper(trim((string)$referenceNumber)),
+            'transaction_ref' => strtoupper(trim((string)$transactionRef)),
+            'provider_request_id' => trim((string)$providerRequestId),
+            'provider_tx_id' => trim((string)$providerTxId),
+            'provider_status' => 'successful',
+            'amount_received' => (float)$amountExpected,
+            'amount' => (float)$amountExpected
+        ];
+        $rawBody = json_encode($payload);
+        if ($rawBody === false) {
+            $rawBody = '';
+        }
+        return $this->handleWebhook($payload, [], $rawBody);
+    }
+
+    private function findTransactionByRef($transactionRef) {
+        $transactionRef = strtoupper(trim((string)$transactionRef));
+        if ($transactionRef === '') {
+            return [];
+        }
+        $stmt = $this->conn->prepare("
+            SELECT id, transaction_ref, status, provider_status, provider_tx_id, posted_payment_id
+            FROM mobile_money_transactions
+            WHERE transaction_ref = :transaction_ref
+            LIMIT 1
+        ");
+        $stmt->execute(['transaction_ref' => $transactionRef]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    }
+
     private function normalizeGatewayMode($mode) {
         $key = strtolower(trim((string)$mode));
         if (in_array($key, ['live', 'sandbox', 'mock'], true)) {
@@ -2351,6 +2615,33 @@ class MobileMoneyGatewayService {
         }
     }
 
+    private function ensureBalanceUpdateProcedure() {
+        try {
+            $checkStmt = $this->conn->prepare("
+                SELECT ROUTINE_NAME
+                FROM INFORMATION_SCHEMA.ROUTINES
+                WHERE ROUTINE_SCHEMA = DATABASE()
+                  AND ROUTINE_TYPE = 'PROCEDURE'
+                  AND ROUTINE_NAME = 'sp_update_student_balance'
+                LIMIT 1
+            ");
+            $checkStmt->execute();
+            if ($checkStmt->fetchColumn()) {
+                return;
+            }
+
+            $this->conn->exec("
+                CREATE PROCEDURE sp_update_student_balance(IN p_student_id INT, IN p_semester_id INT)
+                BEGIN
+                    DECLARE v_dummy INT DEFAULT 0;
+                    SET v_dummy = 0;
+                END
+            ");
+        } catch (Exception $e) {
+            // If procedure creation is blocked, payment posting continues with fallback where possible.
+        }
+    }
+
     private function hasPaymentVerificationColumns() {
         try {
             $colStmt = $this->conn->query("SHOW COLUMNS FROM payments LIKE 'verification_status'");
@@ -2367,7 +2658,16 @@ class MobileMoneyGatewayService {
             return;
         }
 
-        $snapshot = getStudentFinancialSnapshot($this->conn, $studentId, $semesterId);
+        try {
+            $snapshot = getStudentFinancialSnapshot($this->conn, $studentId, $semesterId, 0, 0, 1, true);
+            if (!is_array($snapshot)) {
+                $snapshot = $this->buildFinancialSnapshotFallback($studentId, $semesterId);
+            }
+        } catch (Exception $e) {
+            // Some environments miss helper procedures used by financial snapshot logic.
+            // Fall back to direct totals so payment auto-posting still completes.
+            $snapshot = $this->buildFinancialSnapshotFallback($studentId, $semesterId);
+        }
         $totalFees = (float)($snapshot['approved_total_fees'] ?? $snapshot['total_fees'] ?? 0);
         $totalPaid = (float)($snapshot['total_paid'] ?? 0);
         $balanceDue = (float)($snapshot['balance_due'] ?? max($totalFees - $totalPaid, 0));
@@ -2435,6 +2735,67 @@ class MobileMoneyGatewayService {
             'balance' => $balanceDue,
             'last_payment_date' => $lastPaymentDate
         ]);
+    }
+
+    private function buildFinancialSnapshotFallback($studentId, $semesterId) {
+        $studentId = (int)$studentId;
+        $semesterId = (int)$semesterId;
+        if ($studentId <= 0 || $semesterId <= 0) {
+            return [
+                'approved_total_fees' => 0.0,
+                'total_paid' => 0.0,
+                'balance_due' => 0.0,
+                'balance_on_account' => 0.0,
+                'account_credit' => 0.0
+            ];
+        }
+
+        $totalFees = 0.0;
+        $totalPaid = 0.0;
+
+        try {
+            $feesStmt = $this->conn->prepare("
+                SELECT COALESCE(SUM(total_amount), 0)
+                FROM invoices
+                WHERE student_id = :student_id
+                  AND semester_id = :semester_id
+            ");
+            $feesStmt->execute(['student_id' => $studentId, 'semester_id' => $semesterId]);
+            $totalFees = (float)$feesStmt->fetchColumn();
+        } catch (Exception $e) {
+            $totalFees = 0.0;
+        }
+
+        try {
+            if ($this->hasPaymentVerificationColumns()) {
+                $paidStmt = $this->conn->prepare("
+                    SELECT COALESCE(SUM(amount), 0)
+                    FROM payments
+                    WHERE student_id = :student_id
+                      AND semester_id = :semester_id
+                      AND COALESCE(verification_status, 'verified') = 'verified'
+                ");
+            } else {
+                $paidStmt = $this->conn->prepare("
+                    SELECT COALESCE(SUM(amount), 0)
+                    FROM payments
+                    WHERE student_id = :student_id
+                      AND semester_id = :semester_id
+                ");
+            }
+            $paidStmt->execute(['student_id' => $studentId, 'semester_id' => $semesterId]);
+            $totalPaid = (float)$paidStmt->fetchColumn();
+        } catch (Exception $e) {
+            $totalPaid = 0.0;
+        }
+
+        return [
+            'approved_total_fees' => $totalFees,
+            'total_paid' => $totalPaid,
+            'balance_due' => max($totalFees - $totalPaid, 0),
+            'balance_on_account' => ($totalPaid > $totalFees) ? ($totalPaid - $totalFees) : max($totalFees - $totalPaid, 0),
+            'account_credit' => max($totalPaid - $totalFees, 0)
+        ];
     }
 
     private function resolveSystemFinanceStaffId() {

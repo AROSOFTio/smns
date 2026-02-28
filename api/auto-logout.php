@@ -111,7 +111,19 @@ if ($reason === 'browser_close') {
 $auth = new Auth($module);
 $loggedInKey = $module . '_logged_in';
 $roleKey = $module . '_role';
+$tokenKey = $module . '_session_token';
 $isLoggedIn = !empty($_SESSION[$loggedInKey]) && (($_SESSION[$roleKey] ?? '') === $module);
+$sessionToken = (string)($_SESSION[$tokenKey] ?? '');
+
+// Ignore stale/mismatched tokens so old tabs or cross-host pages cannot log out active sessions.
+if ($sessionToken === '' || !hash_equals($sessionToken, $token)) {
+    echo json_encode([
+        'success' => true,
+        'logged_out' => false,
+        'ignored' => true
+    ]);
+    exit;
+}
 
 if ($isLoggedIn) {
     $auth->logout();

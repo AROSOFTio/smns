@@ -362,6 +362,76 @@ function resolvePhpExecBinary($preferWindowless = true) {
 }
 
 /**
+ * For finance users, compute unread student-message coverage not yet represented
+ * by regular unread notifications (prevents bell undercount).
+ */
+function getFinanceMessageNotificationBridge(PDO $conn, $userId) {
+    $userId = (int)$userId;
+    if ($userId <= 0) {
+        return ['gap' => 0, 'unread_total' => 0, 'latest_at' => null];
+    }
+
+    try {
+        $roleStmt = $conn->prepare("SELECT role FROM users WHERE id = :uid LIMIT 1");
+        $roleStmt->execute(['uid' => $userId]);
+        $role = strtolower(trim((string)$roleStmt->fetchColumn()));
+        if ($role !== 'finance') {
+            return ['gap' => 0, 'unread_total' => 0, 'latest_at' => null];
+        }
+
+        $tableStmt = $conn->query("SHOW TABLES LIKE 'finance_messages'");
+        if (!($tableStmt && $tableStmt->fetch(PDO::FETCH_NUM))) {
+            return ['gap' => 0, 'unread_total' => 0, 'latest_at' => null];
+        }
+
+        $fmStmt = $conn->query("
+            SELECT
+                COUNT(*) AS unread_total,
+                MAX(created_at) AS latest_at
+            FROM finance_messages
+            WHERE sender_role = 'student'
+              AND is_read = 0
+        ");
+        $fmRow = $fmStmt ? ($fmStmt->fetch(PDO::FETCH_ASSOC) ?: []) : [];
+        $unreadTotal = (int)($fmRow['unread_total'] ?? 0);
+        $latestAt = $fmRow['latest_at'] ?? null;
+        if ($unreadTotal <= 0) {
+            return ['gap' => 0, 'unread_total' => 0, 'latest_at' => $latestAt];
+        }
+
+        // If per-message notifications were already created, avoid double-counting.
+        $existing = 0;
+        try {
+            $existingStmt = $conn->prepare("
+                SELECT COUNT(*)
+                FROM notifications
+                WHERE user_id = :uid
+                  AND COALESCE(read_status, '') <> 'read'
+                  AND (
+                        title = 'New Student Message'
+                        OR link LIKE :messages_link
+                  )
+            ");
+            $existingStmt->execute([
+                'uid' => $userId,
+                'messages_link' => '%/views/finance/dashboard.php?section=messages%'
+            ]);
+            $existing = (int)$existingStmt->fetchColumn();
+        } catch (Exception $e) {
+            $existing = 0;
+        }
+
+        return [
+            'gap' => max(0, $unreadTotal - $existing),
+            'unread_total' => $unreadTotal,
+            'latest_at' => $latestAt
+        ];
+    } catch (Exception $e) {
+        return ['gap' => 0, 'unread_total' => 0, 'latest_at' => null];
+    }
+}
+
+/**
  * Fetch unread notifications for a given user (handles personal + broadcast + per-user read state)
  */
 function fetchUnreadNotificationsForUser($userId, $limit = 50) {
@@ -389,15 +459,15 @@ function fetchUnreadNotificationsForUser($userId, $limit = 50) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
     // Fetch notifications visible to this user: personal (user_id = $userId) or broadcasts (user_id IS NULL or 0)
-    // Exclude notifications that have been archived by this user
+    // Exclude archived notifications so saved items leave the unread bell queue.
     // Apply limit AFTER filtering for unread to ensure we get accurate count
-    $sql = "SELECT n.*, nr.read_at AS my_read_at
+    $sql = "SELECT DISTINCT n.*, nr.read_at AS my_read_at, IF(na.id IS NULL, 0, 1) AS my_archive_id
             FROM notifications n
             LEFT JOIN notifications_read nr ON nr.notification_id = n.id AND nr.user_id = :uid_read
             LEFT JOIN notification_archive na ON na.notification_id = n.id AND na.user_id = :uid_archive
             WHERE ((n.user_id = :uid) OR (n.user_id IS NULL) OR (n.user_id = 0))
             AND na.id IS NULL
-            ORDER BY n.created_at DESC";
+            ORDER BY n.created_at DESC, n.id DESC";
 
     $stmt = $conn->prepare($sql);
     $stmt->bindValue(':uid', (int)$userId, PDO::PARAM_INT);
@@ -424,12 +494,35 @@ function fetchUnreadNotificationsForUser($userId, $limit = 50) {
         }
     }
 
+    // Finance bell should also reflect unread student->finance chat items.
+    $bridge = getFinanceMessageNotificationBridge($conn, (int)$userId);
+    if (!empty($bridge['gap']) && (int)$bridge['gap'] > 0) {
+        $bridgeCount = (int)$bridge['unread_total'];
+        $bridgeMessage = 'You have ' . number_format($bridgeCount) . ' unread student message' . ($bridgeCount === 1 ? '' : 's') . ' in Finance Messages.';
+        $bridgeRow = [
+            'id' => 0,
+            'user_id' => (int)$userId,
+            'title' => 'Student Messages Pending',
+            'message' => $bridgeMessage,
+            'type' => 'info',
+            'read_status' => 'unread',
+            'link' => BASE_URL . '/views/finance/dashboard.php?section=messages#finance-messages-section',
+            'created_at' => !empty($bridge['latest_at']) ? (string)$bridge['latest_at'] : date('Y-m-d H:i:s'),
+            'my_read_at' => null,
+            // Mark as already "saved" to disable archive button for this synthetic row.
+            'my_archive_id' => 1
+        ];
+        array_unshift($unread, $bridgeRow);
+        if (count($unread) > $limit) {
+            $unread = array_slice($unread, 0, $limit);
+        }
+    }
+
     return $unread;
 }
 
 /**
  * Get exact unread notification count for a user.
- * Uses NOT EXISTS filters to avoid inflated counts from duplicate join rows.
  */
 function getUnreadNotificationCountForUser($userId) {
     $userId = (int)$userId;
@@ -476,8 +569,9 @@ function getUnreadNotificationCountForUser($userId) {
             'uid_personal' => $userId,
             'uid_read' => $userId
         ]);
-
-        return (int)$stmt->fetchColumn();
+        $baseCount = (int)$stmt->fetchColumn();
+        $bridge = getFinanceMessageNotificationBridge($conn, $userId);
+        return $baseCount + (int)($bridge['gap'] ?? 0);
     } catch (Exception $e) {
         return 0;
     }
@@ -799,7 +893,7 @@ function getStudentCurrentSemesterContext($conn, $studentId) {
  * 1) Approved/published fee structure (program + academic year + level + semester)
  * 2) student_balances fallback when approved fee lines are unavailable
  */
-function getStudentFinancialSnapshot($conn, $studentId, $semesterId = 0, $programId = 0, $academicYearId = 0, $fallbackLevelYear = 1) {
+function getStudentFinancialSnapshot($conn, $studentId, $semesterId = 0, $programId = 0, $academicYearId = 0, $fallbackLevelYear = 1, $forceRefresh = false) {
     static $memo = [];
 
     $studentId = (int)$studentId;
@@ -809,7 +903,8 @@ function getStudentFinancialSnapshot($conn, $studentId, $semesterId = 0, $progra
     $fallbackLevelYear = max(1, (int)$fallbackLevelYear);
 
     $memoKey = implode(':', [$studentId, $semesterId, $programId, $academicYearId, $fallbackLevelYear]);
-    if (isset($memo[$memoKey])) {
+    $forceRefresh = (bool)$forceRefresh;
+    if (!$forceRefresh && isset($memo[$memoKey])) {
         return $memo[$memoKey];
     }
 
@@ -824,6 +919,7 @@ function getStudentFinancialSnapshot($conn, $studentId, $semesterId = 0, $progra
         'total_paid' => 0.0,
         'balance_due' => 0.0,
         'balance_on_account' => 0.0,
+        'account_credit' => 0.0,
         'source' => 'none',
         'fee_version_id' => 0
     ];
@@ -1048,18 +1144,23 @@ function getStudentFinancialSnapshot($conn, $studentId, $semesterId = 0, $progra
     }
 
     $snapshot['fee_version_id'] = $feeVersionId;
-    $snapshot['approved_total_fees'] = $approvedFeesTotal > 0 ? $approvedFeesTotal : $totalFees;
+    $resolvedFees = $approvedFeesTotal > 0 ? $approvedFeesTotal : $totalFees;
+    $accountCredit = max($totalPaid - $resolvedFees, 0.0);
+    $snapshot['approved_total_fees'] = $resolvedFees;
     $snapshot['total_fees'] = $totalFees;
     $snapshot['total_paid'] = $totalPaid;
     $snapshot['balance_due'] = $balanceDue;
-    $snapshot['balance_on_account'] = $balanceDue;
+    // Keep legacy key while exposing true overpayment credit.
+    $snapshot['balance_on_account'] = $accountCredit > 0 ? $accountCredit : $balanceDue;
+    $snapshot['account_credit'] = $accountCredit;
     $snapshot['source'] = $source;
 
     return $memo[$memoKey] = $snapshot;
 }
 
 /**
- * Build monitor rows for all active students in a semester.
+ * Build monitor rows for students enrolled (approved semester registration)
+ * in the selected semester.
  * Amounts are returned in UGX base, with row-level display currency metadata.
  */
 function getActiveStudentBalanceMonitor(PDO $conn, int $semesterId): array {
@@ -1067,7 +1168,10 @@ function getActiveStudentBalanceMonitor(PDO $conn, int $semesterId): array {
         'rows' => [],
         'student_count' => 0,
         'students_with_balance' => 0,
-        'outstanding_total_ugx' => 0.0
+        'outstanding_total_ugx' => 0.0,
+        'expected_total_fees_ugx' => 0.0,
+        'collected_toward_fees_ugx' => 0.0,
+        'overpayment_total_ugx' => 0.0
     ];
 
     if ($semesterId <= 0) {
@@ -1075,20 +1179,25 @@ function getActiveStudentBalanceMonitor(PDO $conn, int $semesterId): array {
     }
 
     try {
-        $stmt = $conn->query("
+        $stmt = $conn->prepare("
             SELECT
-                s.id,
+                DISTINCT s.id,
                 s.student_id,
                 s.first_name,
                 s.last_name,
                 s.program_id,
-                COALESCE(s.level_year, s.year_of_study, 1) AS level_year,
+                COALESCE(sr.year_of_study, s.level_year, s.year_of_study, 1) AS level_year,
                 s.country,
                 s.nationality
             FROM students s
+            INNER JOIN semester_registrations sr
+                ON sr.student_id = s.id
+               AND sr.semester_id = :semester_id
+               AND sr.status = 'approved'
             WHERE s.status = 'active'
             ORDER BY s.last_name ASC, s.first_name ASC
         ");
+        $stmt->execute(['semester_id' => $semesterId]);
         $students = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
     } catch (Exception $e) {
         return $result;
@@ -1117,6 +1226,11 @@ function getActiveStudentBalanceMonitor(PDO $conn, int $semesterId): array {
         if ($balanceDue < 0) {
             $balanceDue = 0.0;
         }
+        $collectedTowardFees = min($totalPaid, $totalFees);
+        if ($collectedTowardFees < 0) {
+            $collectedTowardFees = 0.0;
+        }
+        $overpayment = max($totalPaid - $totalFees, 0.0);
 
         $displayCurrency = getStudentDisplayCurrencyCode(
             (string)($student['country'] ?? ''),
@@ -1137,6 +1251,9 @@ function getActiveStudentBalanceMonitor(PDO $conn, int $semesterId): array {
         ];
 
         $result['outstanding_total_ugx'] += $balanceDue;
+        $result['expected_total_fees_ugx'] += $totalFees;
+        $result['collected_toward_fees_ugx'] += $collectedTowardFees;
+        $result['overpayment_total_ugx'] += $overpayment;
         if ($balanceDue > 0) {
             $result['students_with_balance']++;
         }

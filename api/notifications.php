@@ -102,6 +102,7 @@ switch ($action) {
                 'message' => $notif['message'],
                 'link' => (!empty($notif['link']) && strpos($notif['link'], 'action:') === 0) ? null : $notif['link'],
                 'action' => $action,
+                'is_archived' => !empty($notif['my_archive_id']),
                 'created_at' => $notif['created_at'],
                 'time_ago' => Helper::timeAgo($notif['created_at'])
             ];
@@ -463,17 +464,15 @@ switch ($action) {
                         ]);
                     }
 
-                    // 4. Mark as read (to remove from unread count)
-                    // For broadcast notifications, insert into notifications_read
-                    $stmt = $conn->prepare("INSERT IGNORE INTO notifications_read (notification_id, user_id, read_at) VALUES (:nid, :uid, NOW())");
-                    $stmt->execute(['nid' => $notificationId, 'uid' => $userId]);
-                    
-                    // For personal notifications, also update the read_status column
-                    if (!$isBroadcast && (int)$notification['user_id'] === (int)$userId) {
+                    // 4. Mark as read to clear unread counter after save.
+                    if ($isBroadcast) {
+                        $stmt = $conn->prepare("INSERT IGNORE INTO notifications_read (notification_id, user_id, read_at) VALUES (:nid, :uid, NOW())");
+                        $stmt->execute(['nid' => $notificationId, 'uid' => $userId]);
+                    } elseif ((int)$notification['user_id'] === (int)$userId) {
                         $stmt = $conn->prepare("UPDATE notifications SET read_status = 'read', read_at = NOW() WHERE id = :id");
                         $stmt->execute(['id' => $notificationId]);
                     }
-                    
+
                     $conn->commit();
                     echo json_encode(['success' => true]);
                 } else {

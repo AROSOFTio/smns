@@ -69,6 +69,12 @@ $isDashboardHome = $currentPage === 'dashboard.php' && $currentSection === '';
                 </a>
             </li>
 
+            <li>
+                <a href="<?php echo BASE_URL; ?>/views/finance/dashboard.php?section=saved-notifications#finance-saved-notifications-section" class="<?php echo $currentSection === 'saved-notifications' ? 'active' : ''; ?>" title="Saved Notifications">
+                    <i class="fas fa-bell"></i> <span>Saved Notifications</span>
+                </a>
+            </li>
+
             <li class="menu-section">Account</li>
 
             <li>

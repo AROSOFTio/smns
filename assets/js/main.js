@@ -78,7 +78,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const notifBell = document.getElementById('notificationBell');
     const notifDropdown = document.getElementById('notificationDropdown');
 
-    if (notifBell && notifDropdown) {
+    const notifManagedByInclude = !!(notifBell && notifBell.getAttribute('data-notification-managed') === '1');
+
+    if (notifBell && notifDropdown && !notifManagedByInclude) {
         notifBell.addEventListener('click', function(e) {
             e.stopPropagation();
             // Close user dropdown if open

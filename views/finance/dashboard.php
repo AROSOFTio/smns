@@ -21,6 +21,13 @@ $db = new Database();
 $conn = $db->getConnection();
 $paymentGatewayService = new MobileMoneyGatewayService($conn);
 $paymentGatewayService->ensureSchema();
+$financeMessagingService = null;
+try {
+    $financeMessagingService = new FinanceMessagingService($conn);
+    $financeMessagingService->ensureSchema();
+} catch (Exception $e) {
+    $financeMessagingService = null;
+}
 
 if (!function_exists('financeGenerateCode')) {
     function financeGenerateCode($prefix) {
@@ -197,6 +204,9 @@ if ($financeStaffId <= 0 && $currentUserId > 0) {
 }
 
 $dashboardUrl = BASE_URL . '/views/finance/dashboard.php';
+$messageStudentId = (int)($_GET['msg_student_id'] ?? 0);
+$messagePrn = strtoupper(trim((string)($_GET['msg_prn'] ?? '')));
+$messageTx = strtoupper(trim((string)($_GET['msg_tx'] ?? '')));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -206,6 +216,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $action = trim((string)($_POST['action'] ?? ''));
+
+    if ($action === 'finance_reply_student_message') {
+        $replyStudentId = (int)($_POST['student_id'] ?? 0);
+        $replyPrn = strtoupper(trim((string)($_POST['prn_reference'] ?? '')));
+        $replyTx = strtoupper(trim((string)($_POST['transaction_ref'] ?? '')));
+        $replyMessage = trim((string)($_POST['message_text'] ?? ''));
+
+        $replyParams = [
+            'section' => 'messages',
+            'msg_student_id' => $replyStudentId
+        ];
+        if ($replyPrn !== '') {
+            $replyParams['msg_prn'] = $replyPrn;
+        }
+        if ($replyTx !== '') {
+            $replyParams['msg_tx'] = $replyTx;
+        }
+        $replyRedirect = $dashboardUrl . '?' . http_build_query($replyParams) . '#finance-messages-section';
+
+        if ($currentUserId <= 0) {
+            $session->setFlash('error', 'Finance user session is missing.');
+            header('Location: ' . $replyRedirect);
+            exit;
+        }
+        if (!$financeMessagingService) {
+            $session->setFlash('error', 'Messaging service is not available right now.');
+            header('Location: ' . $replyRedirect);
+            exit;
+        }
+
+        $replyResult = $financeMessagingService->sendFinanceReply(
+            $currentUserId,
+            $replyStudentId,
+            $replyPrn,
+            $replyTx,
+            $replyMessage
+        );
+        if (!empty($replyResult['success'])) {
+            $session->setFlash('success', (string)($replyResult['message'] ?? 'Reply sent to student.'));
+        } else {
+            $session->setFlash('error', (string)($replyResult['message'] ?? 'Unable to send reply right now.'));
+        }
+
+        header('Location: ' . $replyRedirect);
+        exit;
+    }
 
     if ($action === 'verify_bank_transaction') {
         $bankTransactionId = (int)($_POST['bank_transaction_id'] ?? 0);
@@ -508,6 +564,9 @@ $paymentsToday = 0.0;
 $totalInvoices = 0;
 $studentsWithBalance = 0;
 $studentBalances = [];
+$collectionExpectedFees = 0.0;
+$collectionTowardsFees = 0.0;
+$collectionOverpayment = 0.0;
 $usdUgxRate = (float)Helper::getUsdUgxRate();
 if ($usdUgxRate <= 0) {
     $usdUgxRate = 3700.0;
@@ -592,6 +651,9 @@ if ($currentSemesterId > 0) {
     $studentBalances = (array)($balanceMonitor['rows'] ?? []);
     $outstandingBalance = (float)($balanceMonitor['outstanding_total_ugx'] ?? 0.0);
     $studentsWithBalance = (int)($balanceMonitor['students_with_balance'] ?? 0);
+    $collectionExpectedFees = (float)($balanceMonitor['expected_total_fees_ugx'] ?? 0.0);
+    $collectionTowardsFees = (float)($balanceMonitor['collected_toward_fees_ugx'] ?? 0.0);
+    $collectionOverpayment = (float)($balanceMonitor['overpayment_total_ugx'] ?? 0.0);
 }
 
 $openInvoices = [];
@@ -663,7 +725,119 @@ try {
     $bankVerificationRows = [];
 }
 
+$financeMessageThreads = [];
+$financeMessageRows = [];
+$financeMessageUnreadCount = 0;
+$selectedMessageSummary = null;
+$selectedMessageStudentName = '';
+$selectedMessageStudentRegNo = '';
+
+if ($financeMessagingService) {
+    $financeMessageThreads = $financeMessagingService->getFinanceThreadSummaries(120);
+    foreach ($financeMessageThreads as $threadSummary) {
+        $financeMessageUnreadCount += (int)($threadSummary['unread_for_finance'] ?? 0);
+    }
+
+    if ($messageStudentId <= 0 && !empty($financeMessageThreads)) {
+        $selectedMessageSummary = $financeMessageThreads[0];
+        $messageStudentId = (int)($selectedMessageSummary['student_id'] ?? 0);
+        $messagePrn = strtoupper(trim((string)($selectedMessageSummary['prn_reference'] ?? '')));
+        $messageTx = strtoupper(trim((string)($selectedMessageSummary['transaction_ref'] ?? '')));
+    } elseif ($messageStudentId > 0 && ($messagePrn === '' && $messageTx === '')) {
+        foreach ($financeMessageThreads as $threadSummary) {
+            if ((int)($threadSummary['student_id'] ?? 0) === $messageStudentId) {
+                $selectedMessageSummary = $threadSummary;
+                $messagePrn = strtoupper(trim((string)($threadSummary['prn_reference'] ?? '')));
+                $messageTx = strtoupper(trim((string)($threadSummary['transaction_ref'] ?? '')));
+                break;
+            }
+        }
+    }
+
+    if ($selectedMessageSummary === null && $messageStudentId > 0) {
+        foreach ($financeMessageThreads as $threadSummary) {
+            $threadStudentId = (int)($threadSummary['student_id'] ?? 0);
+            $threadPrn = strtoupper(trim((string)($threadSummary['prn_reference'] ?? '')));
+            $threadTx = strtoupper(trim((string)($threadSummary['transaction_ref'] ?? '')));
+            if ($threadStudentId !== $messageStudentId) {
+                continue;
+            }
+            $prnMatch = ($messagePrn !== '' && $threadPrn === $messagePrn);
+            $txMatch = ($messageTx !== '' && $threadTx === $messageTx);
+            if ($prnMatch || $txMatch) {
+                $selectedMessageSummary = $threadSummary;
+                break;
+            }
+        }
+    }
+
+    if ($messageStudentId > 0) {
+        $financeMessageRows = $financeMessagingService->getFinanceThreadMessages(
+            $messageStudentId,
+            $messagePrn,
+            $messageTx,
+            120
+        );
+    }
+}
+
+if (is_array($selectedMessageSummary)) {
+    $selectedMessageStudentName = trim((string)($selectedMessageSummary['first_name'] ?? '') . ' ' . (string)($selectedMessageSummary['last_name'] ?? ''));
+    $selectedMessageStudentRegNo = trim((string)($selectedMessageSummary['registration_number'] ?? ''));
+} elseif ($messageStudentId > 0) {
+    try {
+        $msgStudentStmt = $conn->prepare("SELECT student_id, first_name, last_name FROM students WHERE id = :id LIMIT 1");
+        $msgStudentStmt->execute(['id' => $messageStudentId]);
+        $msgStudentRow = $msgStudentStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $selectedMessageStudentName = trim((string)($msgStudentRow['first_name'] ?? '') . ' ' . (string)($msgStudentRow['last_name'] ?? ''));
+        $selectedMessageStudentRegNo = trim((string)($msgStudentRow['student_id'] ?? ''));
+    } catch (Exception $e) {
+    }
+}
+$financeMessagePollParams = [];
+if ($messageStudentId > 0) {
+    $financeMessagePollParams['msg_student_id'] = (int)$messageStudentId;
+}
+if ($messagePrn !== '') {
+    $financeMessagePollParams['msg_prn'] = $messagePrn;
+}
+if ($messageTx !== '') {
+    $financeMessagePollParams['msg_tx'] = $messageTx;
+}
+$financeMessagePollUrl = BASE_URL . '/api/messages/finance_thread.php';
+if (!empty($financeMessagePollParams)) {
+    $financeMessagePollUrl .= '?' . http_build_query($financeMessagePollParams);
+}
+
 $unreadNotifications = fetchUnreadNotificationsForUser($currentUserId, 10);
+$financeSavedNotifications = [];
+$financeSavedNotificationCount = 0;
+if ($currentUserId > 0) {
+    try {
+        $savedNotifStmt = $conn->prepare("
+            SELECT
+                na.id AS archive_id,
+                na.notification_id,
+                na.title,
+                na.message,
+                na.link,
+                na.archived_at,
+                COALESCE(NULLIF(n.type, ''), 'info') AS type,
+                n.created_at AS original_created_at
+            FROM notification_archive na
+            LEFT JOIN notifications n ON n.id = na.notification_id
+            WHERE na.user_id = :user_id
+            ORDER BY na.archived_at DESC, na.id DESC
+            LIMIT 500
+        ");
+        $savedNotifStmt->execute(['user_id' => $currentUserId]);
+        $financeSavedNotifications = $savedNotifStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $financeSavedNotificationCount = count($financeSavedNotifications);
+    } catch (Exception $e) {
+        $financeSavedNotifications = [];
+        $financeSavedNotificationCount = 0;
+    }
+}
 $flashSuccess = $session->getFlash('success');
 $flashError = $session->getFlash('error');
 
@@ -784,7 +958,14 @@ include '../../includes/header.php';
             </div>
         </div>
 
-        <?php $collectionRate = ($totalCollections + $outstandingBalance) > 0 ? (($totalCollections / ($totalCollections + $outstandingBalance)) * 100) : 0; ?>
+        <?php
+            // Use fee-target progress for active students to avoid overpayment inflating the bar.
+            $collectionRateRaw = $collectionExpectedFees > 0
+                ? (($collectionTowardsFees / $collectionExpectedFees) * 100)
+                : 0;
+            $collectionRate = max(0.0, min(100.0, (float)$collectionRateRaw));
+            $collectionRateBarWidth = number_format($collectionRate, 1, '.', '');
+        ?>
         <div class="card mb-3">
             <div class="card-body py-2">
                 <div class="d-flex justify-content-between align-items-center mb-1">
@@ -792,8 +973,16 @@ include '../../includes/header.php';
                     <small class="text-muted"><?php echo number_format($collectionRate, 1); ?>%</small>
                 </div>
                 <div class="progress" style="height: 8px;">
-                    <div class="progress-bar bg-success" role="progressbar" style="width: <?php echo (float)$collectionRate; ?>%"></div>
+                    <div class="progress-bar bg-success collection-rate-bar" role="progressbar" style="width: <?php echo e($collectionRateBarWidth); ?>%;"></div>
                 </div>
+                <small class="text-muted d-block mt-1" style="font-size:11px;">
+                    Target: <?php echo e(Helper::formatCurrency($collectionExpectedFees, 'UGX', 0)); ?>
+                    |
+                    Collected toward target: <?php echo e(Helper::formatCurrency($collectionTowardsFees, 'UGX', 0)); ?>
+                    <?php if ($collectionOverpayment > 0): ?>
+                        | Overpayment: <?php echo e(Helper::formatCurrency($collectionOverpayment, 'UGX', 0)); ?>
+                    <?php endif; ?>
+                </small>
             </div>
         </div>
 
@@ -813,7 +1002,7 @@ include '../../includes/header.php';
                 <a href="<?php echo e($dashboardUrl); ?>?section=balances#balances-section" class="action-card">
                     <div class="action-icon"><i class="fas fa-balance-scale"></i></div>
                     <h4>Student Balances</h4>
-                    <p>Review all active students, including no-payment records.</p>
+                    <p>Review registered students, including no-payment records.</p>
                 </a>
                 <a href="<?php echo e($dashboardUrl); ?>?section=reports#reports-section" class="action-card">
                     <div class="action-icon"><i class="fas fa-chart-bar"></i></div>
@@ -824,6 +1013,16 @@ include '../../includes/header.php';
                     <div class="action-icon"><i class="fas fa-university"></i></div>
                     <h4>Bank Verification</h4>
                     <p>Verify submitted bank transfers and auto-post to ledger.</p>
+                </a>
+                <a href="<?php echo e($dashboardUrl); ?>?section=messages#finance-messages-section" class="action-card">
+                    <div class="action-icon"><i class="fas fa-comments-dollar"></i></div>
+                    <h4>Student Messages</h4>
+                    <p>Reply to PRN-linked student chats<?php echo $financeMessageUnreadCount > 0 ? ' (' . (int)$financeMessageUnreadCount . ' unread)' : ''; ?>.</p>
+                </a>
+                <a href="<?php echo e($dashboardUrl); ?>?section=saved-notifications#finance-saved-notifications-section" class="action-card">
+                    <div class="action-icon"><i class="fas fa-archive"></i></div>
+                    <h4>Saved Notifications</h4>
+                    <p>Stored alerts for follow-up<?php echo $financeSavedNotificationCount > 0 ? ' (' . number_format((int)$financeSavedNotificationCount) . ')' : ''; ?>.</p>
                 </a>
             </div>
         </div>
@@ -1136,6 +1335,240 @@ include '../../includes/header.php';
             </div>
         </div>
 
+        <?php
+            $financeChatLastId = 0;
+            if (!empty($financeMessageRows)) {
+                $lastFinanceChatMessage = end($financeMessageRows);
+                $financeChatLastId = (int)($lastFinanceChatMessage['id'] ?? 0);
+            }
+        ?>
+        <div class="card" id="finance-messages-section" data-poll-url="<?php echo e($financeMessagePollUrl); ?>">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Student-Finance Messages</span>
+                <small id="financeMsgUnreadBadge" class="text-muted">Unread: <?php echo number_format((int)$financeMessageUnreadCount); ?></small>
+            </div>
+            <div class="card-body">
+                <?php if (!$financeMessagingService): ?>
+                    <p class="text-center mb-0">Messaging service is currently unavailable.</p>
+                <?php elseif (empty($financeMessageThreads)): ?>
+                    <p class="text-center mb-0">No student messages yet.</p>
+                <?php else: ?>
+                    <div class="row">
+                        <div class="col-lg-4 mb-3 mb-lg-0">
+                            <div class="list-group finance-msg-thread-list" id="financeMsgThreadList">
+                                <?php foreach ($financeMessageThreads as $threadSummary): ?>
+                                    <?php
+                                        $threadStudentId = (int)($threadSummary['student_id'] ?? 0);
+                                        $threadPrn = strtoupper(trim((string)($threadSummary['prn_reference'] ?? '')));
+                                        $threadTx = strtoupper(trim((string)($threadSummary['transaction_ref'] ?? '')));
+                                        $threadUnread = (int)($threadSummary['unread_for_finance'] ?? 0);
+                                        $threadLinkParams = [
+                                            'section' => 'messages',
+                                            'msg_student_id' => $threadStudentId
+                                        ];
+                                        if ($threadPrn !== '') {
+                                            $threadLinkParams['msg_prn'] = $threadPrn;
+                                        }
+                                        if ($threadTx !== '') {
+                                            $threadLinkParams['msg_tx'] = $threadTx;
+                                        }
+                                        $threadLink = $dashboardUrl . '?' . http_build_query($threadLinkParams) . '#finance-messages-section';
+                                        $isActiveThread = $threadStudentId === (int)$messageStudentId;
+                                        if ($isActiveThread && $messagePrn !== '') {
+                                            $isActiveThread = ($threadPrn === $messagePrn);
+                                        } elseif ($isActiveThread && $messageTx !== '') {
+                                            $isActiveThread = ($threadTx === $messageTx);
+                                        }
+                                        $threadStudentName = trim((string)($threadSummary['first_name'] ?? '') . ' ' . (string)($threadSummary['last_name'] ?? ''));
+                                        $threadStudentRegNo = trim((string)($threadSummary['registration_number'] ?? ''));
+                                        $threadContext = $threadPrn !== '' ? ('PRN ' . $threadPrn) : ($threadTx !== '' ? ('TX ' . $threadTx) : ('Student #' . $threadStudentId));
+                                        $threadLastMessage = trim((string)($threadSummary['last_message'] ?? ''));
+                                        $threadPreview = $threadLastMessage;
+                                        if (strlen($threadPreview) > 90) {
+                                            $threadPreview = substr($threadPreview, 0, 87) . '...';
+                                        }
+                                    ?>
+                                    <a href="<?php echo e($threadLink); ?>" class="list-group-item list-group-item-action <?php echo $isActiveThread ? 'active' : ''; ?>">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <strong><?php echo e($threadStudentName !== '' ? $threadStudentName : ('Student #' . $threadStudentId)); ?></strong>
+                                            <?php if ($threadUnread > 0): ?>
+                                                <span class="badge badge-danger"><?php echo (int)$threadUnread; ?></span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <?php if ($threadStudentRegNo !== ''): ?>
+                                            <small><?php echo e($threadStudentRegNo); ?></small><br>
+                                        <?php endif; ?>
+                                        <small><?php echo e($threadContext); ?></small><br>
+                                        <small class="text-muted">
+                                            <?php echo e($threadPreview !== '' ? $threadPreview : 'No message body'); ?>
+                                        </small>
+                                    </a>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <div class="col-lg-8">
+                            <?php if ((int)$messageStudentId <= 0): ?>
+                                <p class="mb-0">Select a thread to view and reply.</p>
+                            <?php else: ?>
+                                <?php
+                                    $selectedContext = $messagePrn !== '' ? ('PRN ' . $messagePrn) : ($messageTx !== '' ? ('TX ' . $messageTx) : ('Student #' . (int)$messageStudentId));
+                                    $financeReplyParams = [
+                                        'section' => 'messages',
+                                        'msg_student_id' => (int)$messageStudentId
+                                    ];
+                                    if ($messagePrn !== '') {
+                                        $financeReplyParams['msg_prn'] = $messagePrn;
+                                    }
+                                    if ($messageTx !== '') {
+                                        $financeReplyParams['msg_tx'] = $messageTx;
+                                    }
+                                    $financeReplyAction = $dashboardUrl . '?' . http_build_query($financeReplyParams) . '#finance-messages-section';
+                                ?>
+                                <div class="finance-msg-context" id="financeMsgContext">
+                                    <strong id="financeMsgStudentName"><?php echo e($selectedMessageStudentName !== '' ? $selectedMessageStudentName : ('Student #' . (int)$messageStudentId)); ?></strong>
+                                    <span class="text-muted" id="financeMsgStudentRegWrap" style="<?php echo $selectedMessageStudentRegNo !== '' ? '' : 'display:none;'; ?>">
+                                        (<span id="financeMsgStudentReg"><?php echo e($selectedMessageStudentRegNo); ?></span>)
+                                    </span>
+                                    <br>
+                                    <small class="text-muted" id="financeMsgContextLabel">Thread: <?php echo e($selectedContext); ?></small>
+                                </div>
+
+                                <div class="alert alert-info" id="financeMsgEmptyAlert" style="<?php echo !empty($financeMessageRows) ? 'display:none;' : ''; ?>">No messages in this thread yet.</div>
+                                <div class="finance-msg-thread" id="financeMsgThread" data-last-id="<?php echo (int)$financeChatLastId; ?>" data-message-count="<?php echo (int)count($financeMessageRows); ?>" style="<?php echo empty($financeMessageRows) ? 'display:none;' : ''; ?>">
+                                    <?php foreach ($financeMessageRows as $msgRow): ?>
+                                        <?php
+                                            $msgRole = strtolower((string)($msgRow['sender_role'] ?? 'student'));
+                                            $msgIsFinance = $msgRole === 'finance';
+                                        ?>
+                                        <div class="finance-msg-item <?php echo $msgIsFinance ? 'finance' : 'student'; ?>">
+                                            <div class="finance-msg-meta">
+                                                <?php echo $msgIsFinance ? 'Finance' : 'Student'; ?>
+                                                -
+                                                <?php echo !empty($msgRow['created_at']) ? e(date('d M Y, h:i A', strtotime((string)$msgRow['created_at']))) : '-'; ?>
+                                            </div>
+                                            <div class="finance-msg-bubble"><?php echo nl2br(e((string)($msgRow['message_text'] ?? ''))); ?></div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+
+                                <form method="POST" action="<?php echo e($financeReplyAction); ?>" class="finance-msg-reply-form" id="financeMsgReplyForm">
+                                    <?php echo csrfField(); ?>
+                                    <input type="hidden" name="action" value="finance_reply_student_message">
+                                    <input type="hidden" name="student_id" value="<?php echo (int)$messageStudentId; ?>">
+                                    <input type="hidden" name="prn_reference" value="<?php echo e($messagePrn); ?>">
+                                    <input type="hidden" name="transaction_ref" value="<?php echo e($messageTx); ?>">
+                                    <textarea class="form-control mb-2" name="message_text" rows="3" maxlength="2000" placeholder="Write a reply to the student..." required></textarea>
+                                    <div class="text-right">
+                                        <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-paper-plane"></i> Send Reply</button>
+                                    </div>
+                                </form>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="card" id="finance-saved-notifications-section">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Saved Notifications (Finance Archive)</span>
+                <small class="text-muted">Stored: <?php echo number_format((int)$financeSavedNotificationCount); ?></small>
+            </div>
+            <div class="card-body">
+                <?php if (!empty($financeSavedNotifications)): ?>
+                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2" style="gap:8px;">
+                        <div class="d-flex align-items-center" style="gap:8px;">
+                            <input
+                                type="text"
+                                id="financeSavedNotifSearch"
+                                class="form-control form-control-sm"
+                                placeholder="Search title, message, type..."
+                                style="min-width:240px; max-width:320px;"
+                            >
+                            <select id="financeSavedNotifPageSize" class="form-control form-control-sm" style="width:auto;">
+                                <option value="10" selected>10 / page</option>
+                                <option value="25">25 / page</option>
+                                <option value="50">50 / page</option>
+                                <option value="100">100 / page</option>
+                            </select>
+                        </div>
+                        <small id="financeSavedNotifCountInfo" class="text-muted"></small>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm" id="financeSavedNotifTable">
+                            <thead>
+                                <tr>
+                                    <th>Saved At</th>
+                                    <th>Type</th>
+                                    <th>Title</th>
+                                    <th>Message</th>
+                                    <th>Original Time</th>
+                                    <th>Link</th>
+                                </tr>
+                            </thead>
+                            <tbody id="financeSavedNotifTableBody">
+                                <?php foreach ($financeSavedNotifications as $savedNotif): ?>
+                                    <?php
+                                        $savedType = strtolower(trim((string)($savedNotif['type'] ?? 'info')));
+                                        if (!in_array($savedType, ['info', 'success', 'warning', 'error'], true)) {
+                                            $savedType = 'info';
+                                        }
+                                        $badgeClass = $savedType === 'success'
+                                            ? 'success'
+                                            : ($savedType === 'warning' ? 'warning' : ($savedType === 'error' ? 'danger' : 'info'));
+                                        $linkRaw = trim((string)($savedNotif['link'] ?? ''));
+                                        $linkSafe = '#';
+                                        if (
+                                            $linkRaw !== '' &&
+                                            stripos($linkRaw, 'javascript:') !== 0 &&
+                                            stripos($linkRaw, 'data:') !== 0 &&
+                                            stripos($linkRaw, 'vbscript:') !== 0 &&
+                                            !preg_match('#/views/(admin|student|lecturer|finance)/logout\.php#i', $linkRaw)
+                                        ) {
+                                            $parsedOpenLink = @parse_url($linkRaw);
+                                            if (is_array($parsedOpenLink) && !empty($parsedOpenLink['path'])) {
+                                                $linkSafe = (string)$parsedOpenLink['path'];
+                                                if (isset($parsedOpenLink['query']) && $parsedOpenLink['query'] !== '') {
+                                                    $linkSafe .= '?' . $parsedOpenLink['query'];
+                                                }
+                                                if (isset($parsedOpenLink['fragment']) && $parsedOpenLink['fragment'] !== '') {
+                                                    $linkSafe .= '#' . $parsedOpenLink['fragment'];
+                                                }
+                                            } else {
+                                                $linkSafe = $linkRaw;
+                                            }
+                                        }
+                                    ?>
+                                    <tr>
+                                        <td><?php echo !empty($savedNotif['archived_at']) ? e(date('d M Y, h:i A', strtotime((string)$savedNotif['archived_at']))) : '-'; ?></td>
+                                        <td><span class="badge badge-<?php echo e($badgeClass); ?>"><?php echo e(strtoupper($savedType)); ?></span></td>
+                                        <td><?php echo e((string)($savedNotif['title'] ?? '-')); ?></td>
+                                        <td><?php echo e((string)($savedNotif['message'] ?? '-')); ?></td>
+                                        <td><?php echo !empty($savedNotif['original_created_at']) ? e(date('d M Y, h:i A', strtotime((string)$savedNotif['original_created_at']))) : '-'; ?></td>
+                                        <td>
+                                            <?php if ($linkSafe !== '#'): ?>
+                                                <a class="btn btn-sm btn-outline-primary" href="<?php echo e($linkSafe); ?>">Open</a>
+                                            <?php else: ?>
+                                                <span class="text-muted">-</span>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="d-flex justify-content-end align-items-center mt-2" style="gap:8px;">
+                        <button type="button" id="financeSavedNotifPrev" class="btn btn-sm btn-outline-secondary">Previous</button>
+                        <small id="financeSavedNotifPageInfo" class="text-muted">Page 1 of 1</small>
+                        <button type="button" id="financeSavedNotifNext" class="btn btn-sm btn-outline-secondary">Next</button>
+                    </div>
+                <?php else: ?>
+                    <p class="mb-2">No saved notifications yet.</p>
+                    <small class="text-muted">Use the <strong>Save</strong> button in the notification bell dropdown to store alerts here.</small>
+                <?php endif; ?>
+            </div>
+        </div>
+
         <div class="card" id="invoices-section">
             <div class="card-header">Recent Invoices</div>
             <div class="card-body">
@@ -1177,7 +1610,7 @@ include '../../includes/header.php';
         </div>
 
         <div class="card" id="balances-section">
-            <div class="card-header">Student Balances (All Active Students)</div>
+            <div class="card-header">Student Balances (Registered Students - Current Semester)</div>
             <div class="card-body">
                 <?php if (!empty($studentBalances)): ?>
                     <div class="mb-2" style="font-size:12px; color:#334155;">
@@ -1318,9 +1751,14 @@ include '../../includes/header.php';
     min-width: 0;
     min-height: 88px;
     padding: 10px 12px;
-    display: flex;
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
+    grid-template-areas:
+        "icon title"
+        "desc desc";
+    column-gap: 10px;
+    row-gap: 4px;
     align-items: center;
-    gap: 10px;
 }
 
 .finance-dashboard .action-grid .action-card .action-icon {
@@ -1329,17 +1767,22 @@ include '../../includes/header.php';
     flex: 0 0 36px;
     margin: 0;
     border-radius: 9px;
+    grid-area: icon;
 }
 
 .finance-dashboard .action-grid .action-card h4 {
     margin: 0;
     font-size: 14px;
+    grid-area: title;
+    line-height: 1.2;
 }
 
 .finance-dashboard .action-grid .action-card p {
-    margin: 2px 0 0;
+    margin: 0;
     font-size: 11px;
     line-height: 1.3;
+    grid-area: desc;
+    overflow-wrap: anywhere;
 }
 
 .finance-dashboard .table-responsive {
@@ -1354,6 +1797,199 @@ include '../../includes/header.php';
     overflow-wrap: anywhere;
     word-break: break-word;
     vertical-align: middle;
+}
+
+.finance-dashboard .collection-rate-bar {
+    transition: none !important;
+}
+
+.finance-msg-thread-list {
+    max-height: 520px;
+    overflow-y: auto;
+}
+
+.finance-msg-context {
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+}
+
+.finance-msg-thread {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fff;
+    max-height: 380px;
+    overflow-y: auto;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+.finance-msg-item {
+    margin-bottom: 9px;
+}
+
+.finance-msg-item:last-child {
+    margin-bottom: 0;
+}
+
+.finance-msg-meta {
+    font-size: 11px;
+    color: #64748b;
+    margin-bottom: 2px;
+}
+
+.finance-msg-bubble {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 7px 9px;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.finance-msg-item.student .finance-msg-bubble {
+    background: #f8fafc;
+}
+
+.finance-msg-item.finance .finance-msg-bubble {
+    background: #e0f2fe;
+    border-color: #93c5fd;
+}
+
+html[data-theme='dark'] #finance-messages-section {
+    background: #0f172a;
+    border-color: #334155;
+}
+
+html[data-theme='dark'] #finance-messages-section .card-header {
+    background: #111827;
+    border-bottom-color: #334155;
+    color: #e2e8f0;
+}
+
+html[data-theme='dark'] #finance-messages-section .card-body {
+    background: #0f172a;
+}
+
+html[data-theme='dark'] #finance-messages-section .text-muted {
+    color: #94a3b8 !important;
+}
+
+html[data-theme='dark'] #finance-messages-section .list-group-item {
+    background: #111827;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
+html[data-theme='dark'] #finance-messages-section .list-group-item:hover {
+    background: #1e293b;
+}
+
+html[data-theme='dark'] #finance-messages-section .list-group-item.active {
+    background: #1d4ed8;
+    border-color: #2563eb;
+    color: #ffffff;
+}
+
+html[data-theme='dark'] #finance-messages-section .list-group-item.active small,
+html[data-theme='dark'] #finance-messages-section .list-group-item.active .text-muted {
+    color: #dbeafe !important;
+}
+
+html[data-theme='dark'] .finance-msg-context {
+    background: #111827;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
+html[data-theme='dark'] .finance-msg-thread {
+    background: #0b1220;
+    border-color: #334155;
+}
+
+html[data-theme='dark'] .finance-msg-meta {
+    color: #94a3b8;
+}
+
+html[data-theme='dark'] .finance-msg-bubble {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
+html[data-theme='dark'] .finance-msg-item.student .finance-msg-bubble {
+    background: #172554;
+    border-color: #1d4ed8;
+    color: #dbeafe;
+}
+
+html[data-theme='dark'] .finance-msg-item.finance .finance-msg-bubble {
+    background: #0c4a6e;
+    border-color: #075985;
+    color: #e0f2fe;
+}
+
+html[data-theme='dark'] .finance-msg-reply-form textarea.form-control {
+    background: #111827;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
+html[data-theme='dark'] .finance-msg-reply-form textarea.form-control::placeholder {
+    color: #94a3b8;
+}
+
+html[data-theme='dark'] #finance-saved-notifications-section {
+    background: #0f172a;
+    border-color: #334155;
+}
+
+html[data-theme='dark'] #finance-saved-notifications-section .card-header {
+    background: #111827;
+    border-bottom-color: #334155;
+    color: #e2e8f0;
+}
+
+html[data-theme='dark'] #finance-saved-notifications-section .card-body {
+    background: #0f172a;
+    color: #e2e8f0;
+}
+
+html[data-theme='dark'] #finance-saved-notifications-section .table th,
+html[data-theme='dark'] #finance-saved-notifications-section .table td {
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
+html[data-theme='dark'] #finance-saved-notifications-section .table-hover tbody tr:hover {
+    background: #1e293b;
+}
+
+html[data-theme='dark'] #finance-saved-notifications-section .form-control {
+    background: #111827;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
+html[data-theme='dark'] #finance-saved-notifications-section .form-control::placeholder {
+    color: #94a3b8;
+}
+
+html[data-theme='dark'] #finance-saved-notifications-section .btn-outline-primary {
+    color: #93c5fd;
+    border-color: #3b82f6;
+}
+
+html[data-theme='dark'] #finance-saved-notifications-section .btn-outline-primary:hover,
+html[data-theme='dark'] #finance-saved-notifications-section .btn-outline-primary:focus {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+    color: #ffffff;
+}
+
+html[data-theme='dark'] #finance-saved-notifications-section .text-muted {
+    color: #94a3b8 !important;
 }
 
 @media (max-width: 1200px) {
@@ -1381,7 +2017,8 @@ include '../../includes/header.php';
     .finance-dashboard .action-grid .action-card {
         min-height: 76px;
         padding: 8px 10px;
-        gap: 8px;
+        column-gap: 8px;
+        row-gap: 4px;
     }
 }
 </style>
@@ -1462,7 +2099,7 @@ document.addEventListener('DOMContentLoaded', function() {
             var from = totalRows === 0 ? 0 : (startIdx + 1);
             var to = totalRows === 0 ? 0 : Math.min(endIdx, totalRows);
             countInfo.textContent = totalRows === 0
-                ? 'No matching students'
+                ? 'No matching records'
                 : ('Showing ' + from + '-' + to + ' of ' + totalRows);
 
             pageInfo.textContent = totalRows === 0
@@ -1518,6 +2155,202 @@ document.addEventListener('DOMContentLoaded', function() {
         pageInfoId: 'financeBankPageInfo',
         countInfoId: 'financeBankCountInfo'
     });
+
+    initTableSearchPagination({
+        tbodyId: 'financeSavedNotifTableBody',
+        searchId: 'financeSavedNotifSearch',
+        pageSizeId: 'financeSavedNotifPageSize',
+        prevId: 'financeSavedNotifPrev',
+        nextId: 'financeSavedNotifNext',
+        pageInfoId: 'financeSavedNotifPageInfo',
+        countInfoId: 'financeSavedNotifCountInfo'
+    });
+
+    function initFinanceMessagePolling() {
+        var sectionEl = document.getElementById('finance-messages-section');
+        var listEl = document.getElementById('financeMsgThreadList');
+        if (!sectionEl || !listEl || typeof window.fetch !== 'function') return;
+
+        var pollUrl = sectionEl.getAttribute('data-poll-url') || '';
+        if (!pollUrl) return;
+
+        var unreadBadge = document.getElementById('financeMsgUnreadBadge');
+        var threadEl = document.getElementById('financeMsgThread');
+        var emptyEl = document.getElementById('financeMsgEmptyAlert');
+        var contextNameEl = document.getElementById('financeMsgStudentName');
+        var contextRegWrapEl = document.getElementById('financeMsgStudentRegWrap');
+        var contextRegEl = document.getElementById('financeMsgStudentReg');
+        var contextLabelEl = document.getElementById('financeMsgContextLabel');
+        var replyForm = document.getElementById('financeMsgReplyForm');
+        var inFlight = false;
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function selectedContext() {
+            var out = {
+                studentId: 0,
+                prn: '',
+                tx: ''
+            };
+            if (!replyForm) return out;
+            var studentInput = replyForm.querySelector('input[name="student_id"]');
+            var prnInput = replyForm.querySelector('input[name="prn_reference"]');
+            var txInput = replyForm.querySelector('input[name="transaction_ref"]');
+            out.studentId = studentInput ? parseInt(studentInput.value || '0', 10) || 0 : 0;
+            out.prn = prnInput ? String(prnInput.value || '').toUpperCase() : '';
+            out.tx = txInput ? String(txInput.value || '').toUpperCase() : '';
+            return out;
+        }
+
+        function isActiveThread(thread, selected) {
+            if (!thread || !selected) return false;
+            var studentMatch = Number(thread.student_id || 0) === Number(selected.studentId || 0);
+            if (!studentMatch) return false;
+            var threadPrn = String(thread.prn_reference || '').toUpperCase();
+            var threadTx = String(thread.transaction_ref || '').toUpperCase();
+            if (selected.prn) return threadPrn === selected.prn;
+            if (selected.tx) return threadTx === selected.tx;
+            return true;
+        }
+
+        function renderThreads(threads) {
+            var selected = selectedContext();
+            var rows = Array.isArray(threads) ? threads : [];
+            if (!rows.length) {
+                listEl.innerHTML = '<div class="list-group-item">No student messages yet.</div>';
+                return;
+            }
+
+            var html = '';
+            rows.forEach(function(thread) {
+                var active = isActiveThread(thread, selected);
+                var unread = Number(thread.unread_for_finance || 0);
+                var regNo = thread.registration_number ? String(thread.registration_number) : '';
+                html += '<a href="' + escapeHtml(thread.thread_url || '#') + '" class="list-group-item list-group-item-action ' + (active ? 'active' : '') + '">';
+                html += '<div class="d-flex justify-content-between align-items-start">';
+                html += '<strong>' + escapeHtml(thread.student_name || ('Student #' + String(thread.student_id || ''))) + '</strong>';
+                if (unread > 0) {
+                    html += '<span class="badge badge-danger">' + String(unread) + '</span>';
+                }
+                html += '</div>';
+                if (regNo) {
+                    html += '<small>' + escapeHtml(regNo) + '</small><br>';
+                }
+                html += '<small>' + escapeHtml(thread.context_label || '') + '</small><br>';
+                html += '<small class="text-muted">' + escapeHtml(thread.last_message_preview || 'No message body') + '</small>';
+                html += '</a>';
+            });
+            listEl.innerHTML = html;
+        }
+
+        function renderMessages(messages, lastMessageId) {
+            if (!threadEl || !emptyEl) return;
+
+            var rows = Array.isArray(messages) ? messages : [];
+            threadEl.setAttribute('data-last-id', String(lastMessageId || 0));
+            threadEl.setAttribute('data-message-count', String(rows.length));
+
+            if (!rows.length) {
+                threadEl.innerHTML = '';
+                threadEl.style.display = 'none';
+                emptyEl.style.display = '';
+                return;
+            }
+
+            var html = '';
+            rows.forEach(function(msg) {
+                var role = String(msg && msg.sender_role ? msg.sender_role : 'student').toLowerCase();
+                var isFinance = role === 'finance';
+                var sender = isFinance ? 'Finance' : 'Student';
+                var label = msg && msg.created_at_label ? msg.created_at_label : '-';
+                var text = escapeHtml(msg && msg.message_text ? msg.message_text : '').replace(/\n/g, '<br>');
+                html += '<div class="finance-msg-item ' + (isFinance ? 'finance' : 'student') + '">';
+                html += '<div class="finance-msg-meta">' + sender + ' - ' + escapeHtml(label) + '</div>';
+                html += '<div class="finance-msg-bubble">' + text + '</div>';
+                html += '</div>';
+            });
+            threadEl.innerHTML = html;
+            threadEl.style.display = '';
+            emptyEl.style.display = 'none';
+            threadEl.scrollTop = threadEl.scrollHeight;
+        }
+
+        function applySelectedContext(selected) {
+            if (!selected || !replyForm) return;
+
+            var studentId = Number(selected.student_id || 0);
+            var prn = String(selected.prn_reference || '').toUpperCase();
+            var tx = String(selected.transaction_ref || '').toUpperCase();
+
+            var studentInput = replyForm.querySelector('input[name="student_id"]');
+            var prnInput = replyForm.querySelector('input[name="prn_reference"]');
+            var txInput = replyForm.querySelector('input[name="transaction_ref"]');
+            if (studentInput && studentId > 0) studentInput.value = String(studentId);
+            if (prnInput) prnInput.value = prn;
+            if (txInput) txInput.value = tx;
+
+            if (contextNameEl && selected.student_name) {
+                contextNameEl.textContent = String(selected.student_name);
+            }
+            if (contextRegWrapEl && contextRegEl) {
+                var regNo = String(selected.registration_number || '');
+                contextRegEl.textContent = regNo;
+                contextRegWrapEl.style.display = regNo !== '' ? '' : 'none';
+            }
+            if (contextLabelEl && selected.context_label) {
+                contextLabelEl.textContent = 'Thread: ' + String(selected.context_label);
+            }
+        }
+
+        function poll() {
+            if (inFlight) return;
+            inFlight = true;
+
+            fetch(pollUrl, {
+                method: 'GET',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(payload) {
+                if (!payload || !payload.success) return;
+
+                if (unreadBadge) {
+                    unreadBadge.textContent = 'Unread: ' + String(Number(payload.unread_total || 0));
+                }
+                renderThreads(payload.threads || []);
+                applySelectedContext(payload.selected || null);
+
+                if (threadEl) {
+                    var nextLastId = Number(payload.last_message_id || 0);
+                    var nextCount = Number(payload.message_count || 0);
+                    var currentLastId = Number(threadEl.getAttribute('data-last-id') || 0);
+                    var currentCount = Number(threadEl.getAttribute('data-message-count') || 0);
+                    if (nextLastId !== currentLastId || nextCount !== currentCount) {
+                        renderMessages(payload.messages || [], nextLastId);
+                    }
+                }
+            })
+            .catch(function() {})
+            .finally(function() {
+                inFlight = false;
+            });
+        }
+
+        window.setInterval(poll, 8000);
+    }
+
+    initFinanceMessagePolling();
 });
 </script>
 
