@@ -82,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                             $actionResult = ['status' => 'fail', 'message' => 'Backup failed (mysqldump unavailable and PHP dump write failed)'];
                             $backupCreated = false;
                         }
-                    } catch (Exception $e) {
+                    } catch (Throwable $e) {
                         $actionResult = ['status' => 'fail', 'message' => 'Backup error: ' . $e->getMessage()];
                         $backupCreated = false;
                     }
@@ -114,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                         $title = 'Manual backup created';
                         $msg = 'Manual backup created: ' . basename($filePath);
                         while ($a = $admins->fetch(PDO::FETCH_ASSOC)) {
-                            try { $noteStmt->execute(['uid' => $a['id'], 'title' => $title, 'msg' => $msg, 'type' => 'success', 'link' => $link]); } catch (Exception $e) { }
+                            try { $noteStmt->execute(['uid' => $a['id'], 'title' => $title, 'msg' => $msg, 'type' => 'success', 'link' => $link]); } catch (Throwable $e) { }
                         }
                     } else {
                         // Log failure and notify
@@ -133,31 +133,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                         $title = 'Manual backup failed';
                         $msg = 'Manual backup failed on ' . date('Y-m-d H:i:s') . '. Click to retry.';
                         while ($a = $admins->fetch(PDO::FETCH_ASSOC)) {
-                            try { $noteStmt->execute(['uid' => $a['id'], 'title' => $title, 'msg' => $msg, 'type' => 'error', 'link' => $link]); } catch (Exception $e) { }
+                            try { $noteStmt->execute(['uid' => $a['id'], 'title' => $title, 'msg' => $msg, 'type' => 'error', 'link' => $link]); } catch (Throwable $e) { }
                         }
                     }
-                } catch (Exception $e) {
+                } catch (Throwable $e) {
                     // non-fatal
                 }
 
                 break;
-                break;
 
             case 'run_scheduled_backup':
-                // If cron-worker script exists, prefer executing it; otherwise run inline
                 $cronScript = BASE_PATH . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'backup_cron.php';
                 $ran = false;
-                if (is_file($cronScript) && is_executable($cronScript)) {
+                if (is_file($cronScript)) {
                     $phpExec = escapeshellarg(resolvePhpExecBinary(true));
-                    @exec($phpExec . ' ' . escapeshellarg($cronScript), $out, $retCode);
-                    if ($retCode === 0) { $actionResult = ['status' => 'success', 'message' => 'Scheduled backup script executed']; $ran = true; }
+                    $out = [];
+                    $retCode = 1;
+                    @exec($phpExec . ' ' . escapeshellarg($cronScript) . ' 2>&1', $out, $retCode);
+                    $tail = trim(implode(' | ', array_slice((array)$out, -3)));
+                    if ($retCode === 0) {
+                        $actionResult = ['status' => 'success', 'message' => 'Scheduled backup script executed.' . ($tail !== '' ? ' ' . $tail : '')];
+                        $ran = true;
+                    }
                 }
                 if (!$ran) {
-                    // fallback to manual backup behavior
-                    $_POST['action'] = 'backup_db';
-                    // reuse existing code path by reloading the page (simple approach)
-                    header('Location: ' . $_SERVER['REQUEST_URI']);
-                    exit;
+                    $actionResult = ['status' => 'warning', 'message' => 'Scheduled backup script could not be executed from this environment. Use Backup Database to run an immediate backup.'];
                 }
                 break;
 
@@ -228,8 +228,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                     $noteStmt = $c2->prepare("INSERT INTO notifications (user_id, title, message, type, link, created_at) VALUES (:uid, :title, :msg, :type, :link, NOW())");
                     $title = 'Backups purged';
                     $msg = 'Purged ' . $deleted . ' old backup files';
-                    while ($a = $admins->fetch(PDO::FETCH_ASSOC)) { try { $noteStmt->execute(['uid' => $a['id'], 'title'=>$title, 'msg'=>$msg, 'type'=>'info', 'link'=>BASE_URL . '/views/admin/system/health.php']); } catch (Exception $e) {} }
-                } catch (Exception $e) {}
+                    while ($a = $admins->fetch(PDO::FETCH_ASSOC)) { try { $noteStmt->execute(['uid' => $a['id'], 'title'=>$title, 'msg'=>$msg, 'type'=>'info', 'link'=>BASE_URL . '/views/admin/system/health.php']); } catch (Throwable $e) {} }
+                } catch (Throwable $e) {}
                 break;
 
             case 'purge_logs':
@@ -259,10 +259,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                         $noteStmt = $c2->prepare("INSERT INTO notifications (user_id, title, message, type, link, created_at) VALUES (:uid, :title, :msg, :type, :link, NOW())");
                         $title = 'Activity logs purged';
                         $msg = 'Purged ' . $deleted . ' activity log entries';
-                        while ($a = $admins->fetch(PDO::FETCH_ASSOC)) { try { $noteStmt->execute(['uid' => $a['id'], 'title'=>$title, 'msg'=>$msg, 'type'=>'info', 'link'=>BASE_URL . '/views/admin/system/health.php']); } catch (Exception $e) {} }
-                    } catch (Exception $e) {}
+                        while ($a = $admins->fetch(PDO::FETCH_ASSOC)) { try { $noteStmt->execute(['uid' => $a['id'], 'title'=>$title, 'msg'=>$msg, 'type'=>'info', 'link'=>BASE_URL . '/views/admin/system/health.php']); } catch (Throwable $e) {} }
+                    } catch (Throwable $e) {}
 
-                } catch (Exception $e) {
+                } catch (Throwable $e) {
                     $actionResult = ['status' => 'fail', 'message' => 'Log purge failed: ' . $e->getMessage()];
                 }
                 break;
@@ -294,8 +294,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                     $noteStmt = $c2->prepare("INSERT INTO notifications (user_id, title, message, type, link, created_at) VALUES (:uid, :title, :msg, :type, :link, NOW())");
                     $title = 'Cache cleared';
                     $msg = 'Cleared ' . $removed . ' cache files';
-                    while ($a = $admins->fetch(PDO::FETCH_ASSOC)) { try { $noteStmt->execute(['uid' => $a['id'], 'title'=>$title, 'msg'=>$msg, 'type'=>'info', 'link'=>BASE_URL . '/views/admin/system/health.php']); } catch (Exception $e) {} }
-                } catch (Exception $e) {}
+                    while ($a = $admins->fetch(PDO::FETCH_ASSOC)) { try { $noteStmt->execute(['uid' => $a['id'], 'title'=>$title, 'msg'=>$msg, 'type'=>'info', 'link'=>BASE_URL . '/views/admin/system/health.php']); } catch (Throwable $e) {} }
+                } catch (Throwable $e) {}
 
                 break;
 
@@ -407,7 +407,11 @@ function sendSystemHealthAlertIfNeeded($checks, $currentUser) {
         foreach ($issues as $issue) {
             $signatureData[] = [$issue['check'], $issue['status'], $issue['message']];
         }
-        $issueHash = hash('sha256', json_encode($signatureData));
+        $signatureJson = json_encode($signatureData, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        if (!is_string($signatureJson)) {
+            $signatureJson = (string)json_encode(['fallback' => time()], JSON_UNESCAPED_UNICODE);
+        }
+        $issueHash = hash('sha256', $signatureJson);
 
         // Anti-spam cooldown for unchanged issue set.
         $cooldownMinutes = 30;
@@ -480,7 +484,7 @@ function sendSystemHealthAlertIfNeeded($checks, $currentUser) {
             'recipient_count' => count($emails),
             'reported_by_user_id' => (int)($currentUser['id'] ?? 0),
         ]);
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         error_log('System health alert dispatch error: ' . $e->getMessage());
     }
 }
@@ -493,7 +497,7 @@ try {
     $conn = $db->getConnection();
     $stmt = $conn->query("SELECT 1");
     $checks['database'] = ['status' => 'pass', 'message' => 'Database connection successful'];
-} catch (Exception $e) {
+} catch (Throwable $e) {
     $checks['database'] = ['status' => 'fail', 'message' => 'Database connection failed: ' . $e->getMessage()];
 }
 
@@ -501,7 +505,7 @@ try {
 try {
     $testAuth = new Auth();
     $checks['auth'] = ['status' => 'pass', 'message' => 'Authentication system loaded'];
-} catch (Exception $e) {
+} catch (Throwable $e) {
     $checks['auth'] = ['status' => 'fail', 'message' => 'Auth system error: ' . $e->getMessage()];
 }
 
@@ -509,7 +513,7 @@ try {
 try {
     $testSession = new Session();
     $checks['session'] = ['status' => 'pass', 'message' => 'Session management working'];
-} catch (Exception $e) {
+} catch (Throwable $e) {
     $checks['session'] = ['status' => 'fail', 'message' => 'Session error: ' . $e->getMessage()];
 }
 
@@ -526,7 +530,7 @@ try {
     } else {
         $checks['security'] = ['status' => 'fail', 'message' => 'Security class missing CSRF methods'];
     }
-} catch (Exception $e) {
+} catch (Throwable $e) {
     $checks['security'] = ['status' => 'fail', 'message' => 'Security system error: ' . $e->getMessage()];
 }
 
@@ -538,7 +542,7 @@ try {
     } else {
         $checks['helper'] = ['status' => 'warning', 'message' => 'Helper loaded but current semester could not be determined'];
     }
-} catch (Exception $e) {
+} catch (Throwable $e) {
     $checks['helper'] = ['status' => 'fail', 'message' => 'Helper error: ' . $e->getMessage()];
 } 
 
@@ -564,7 +568,7 @@ try {
         } else {
             $checks['logger'] = ['status' => 'warning', 'message' => 'Logger loaded but no user ID available for write test'];
         }
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         $checks['logger'] = ['status' => 'fail', 'message' => 'Logger error: ' . $e->getMessage()];
     }
 $coreClasses = ['Database', 'Auth', 'Session', 'Security', 'Helper', 'Logger', 'Validator'];
@@ -652,7 +656,7 @@ try {
     } else {
         $checks['smtp'] = ['status' => 'warning', 'message' => 'SMTP settings not configured in config.php'];
     }
-} catch (Exception $e) {
+} catch (Throwable $e) {
     $checks['smtp'] = ['status' => 'fail', 'message' => 'SMTP check error: ' . $e->getMessage()];
 } 
 
@@ -711,7 +715,7 @@ try {
             $checks[$checkKey] = ['status' => 'fail', 'message' => $cfg['label'] . ' module missing tables: ' . implode(', ', $missingTables)];
         }
     }
-} catch (Exception $e) {
+} catch (Throwable $e) {
     $checks['admin_data'] = ['status' => 'fail', 'message' => 'Module data check failed: ' . $e->getMessage()];
     $checks['student_data'] = ['status' => 'fail', 'message' => 'Module data check failed: ' . $e->getMessage()];
     $checks['lecturer_data'] = ['status' => 'fail', 'message' => 'Module data check failed: ' . $e->getMessage()];
@@ -786,7 +790,7 @@ try {
             ];
         }
     }
-} catch (Exception $e) {
+} catch (Throwable $e) {
     $checks['uptime_slo'] = ['status' => 'fail', 'message' => 'Uptime SLO check failed: ' . $e->getMessage()];
 }
 
@@ -849,12 +853,19 @@ try {
             ];
         }
     }
-} catch (Exception $e) {
+} catch (Throwable $e) {
     $checks['restore_drill'] = ['status' => 'fail', 'message' => 'Restore drill check failed: ' . $e->getMessage()];
 }
 
-// Send throttled email alert to admins when warnings/failures exist.
-sendSystemHealthAlertIfNeeded($checks, $currentUser ?? []);
+// Avoid synchronous email dispatch on page render; it can cause 500s under SMTP timeout/failure.
+try {
+    $sendAlertsOnLoad = (int)getSetting('system_health_email_alerts_on_page_load', 0) === 1;
+    if ($sendAlertsOnLoad) {
+        sendSystemHealthAlertIfNeeded($checks, $currentUser ?? []);
+    }
+} catch (Throwable $e) {
+    error_log('System health alert gate error: ' . $e->getMessage());
+}
 
 $pageTitle = 'System Health Check - ' . APP_NAME;
 $additionalCSS = ['admin.css'];
@@ -867,7 +878,7 @@ include '../../../includes/header.php';
     <div class="topbar">
         <div class="topbar-left">
             <h4>
-                <a href="../dashboard.php" class="btn btn-link">← Back to Dashboard</a>
+                <a href="../dashboard.php" class="btn btn-link">&larr; Back to Dashboard</a>
                 System Health Check
             </h4>
         </div>
@@ -1228,3 +1239,5 @@ html[data-theme='dark'] .health-score p {
 </style>
 
 <?php include '../../../includes/footer.php'; ?>
+
+

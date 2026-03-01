@@ -81,10 +81,6 @@ $stmt = $conn->prepare("
 $stmt->execute();
 $assignedCourses = $stmt->fetchAll();
 
-// Pending lecturer approvals
-$stmt = $conn->query("SELECT COUNT(*) as count FROM lecturers WHERE status = 'pending'");
-$pendingLecturerApprovals = $stmt->fetch()['count'];
-
 // Recent activities
 $logger = new Logger();
 $recentActivities = $logger->getRecentActivities(10);
@@ -375,6 +371,18 @@ include '../../includes/header.php';
         <!-- Enhanced Stats Cards -->
         <div class="stats-grid">
             <div class="stat-card">
+                <div class="stat-icon outstanding-icon"><i class="fas fa-balance-scale"></i></div>
+                <div class="stat-details">
+                    <h3><?php echo e(Helper::formatCurrency($adminOutstandingBalanceUgx, 'UGX', 0)); ?></h3>
+                    <p>Total Outstanding Balance</p>
+                    <div class="stat-change <?php echo $adminStudentsWithBalance > 0 ? 'warning' : 'positive'; ?>">
+                        <i class="fas fa-<?php echo $adminStudentsWithBalance > 0 ? 'exclamation-triangle' : 'check-circle'; ?>"></i>
+                        <?php echo number_format((int)$adminStudentsWithBalance); ?> student(s) with balance
+                    </div>
+                </div>
+            </div>
+
+            <div class="stat-card">
                 <div class="stat-icon students-icon"><i class="fas fa-user-graduate"></i></div>
                 <div class="stat-details">
                     <h3><?php echo number_format($totalStudents); ?></h3>
@@ -425,17 +433,6 @@ include '../../includes/header.php';
                 </div>
             </div>
 
-            <div class="stat-card">
-                <div class="stat-icon approval-icon"><i class="fas fa-user-check"></i></div>
-                <div class="stat-details">
-                    <h3><?php echo number_format($pendingLecturerApprovals); ?></h3>
-                    <p>Lecturer Approvals</p>
-                    <div class="stat-change <?php echo $pendingLecturerApprovals > 0 ? 'warning' : 'positive'; ?>">
-                        <i class="fas fa-<?php echo $pendingLecturerApprovals > 0 ? 'exclamation-triangle' : 'check-circle'; ?>"></i>
-                        <?php echo $pendingLecturerApprovals > 0 ? 'Pending' : 'All Clear'; ?>
-                    </div>
-                </div>
-            </div>
         </div>
 
         <!-- Quick Actions Section -->
@@ -1144,7 +1141,11 @@ document.addEventListener('DOMContentLoaded', function () {
     color: #0ea5e9;
 }
 
-/* Keep all 6 dashboard stats on one line on desktop without horizontal scroll */
+.outstanding-icon {
+    color: #d97706;
+}
+
+/* Keep dashboard stats on one line on desktop without horizontal scroll */
 .stats-grid {
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
