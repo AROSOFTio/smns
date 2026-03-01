@@ -119,6 +119,7 @@ if ($mfaCodeLength > 8) {
             color: #9ca3af;
         }
     </style>
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css">
 </head>
 <body>
 <?php
@@ -222,5 +223,6 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 </script>
+<script src="<?php echo BASE_URL; ?>/assets/js/fold-global.js"></script>
 </body>
 </html>

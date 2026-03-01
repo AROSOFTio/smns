@@ -167,22 +167,8 @@
 
     // Loading states for navigation
     function initLoadingStates() {
-        const navLinks = document.querySelectorAll('.nav-link:not([href^="#"])');
-        
-        navLinks.forEach(link => {
-            link.addEventListener('click', function() {
-                // Add loading state
-                const originalHTML = this.innerHTML;
-                this.innerHTML = this.innerHTML.replace(/^.*?(<span.*?>)/, '$1<i style="margin-right: 8px;">...</i>');
-                this.style.opacity = '0.7';
-                
-                // Remove loading state after navigation
-                setTimeout(() => {
-                    this.innerHTML = originalHTML;
-                    this.style.opacity = '';
-                }, 500);
-            });
-        });
+        // Disabled: this visual "loading" effect made navigation look stuck
+        // and caused confusing cursor/loading feedback for users.
     }
 
     // Notification handling

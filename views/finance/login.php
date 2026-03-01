@@ -148,6 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <style>
         body { background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%); }
     </style>
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css">
 </head>
 
 <body style="background: url('../../assets/img/seminary.jpeg') no-repeat center center fixed; background-size: cover;">
@@ -252,5 +253,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <script src="../../assets/js/login-theme.js?v=<?php echo urlencode((string)APP_VERSION); ?>"></script>
         </div>
     </div>
+<script src="<?php echo BASE_URL; ?>/assets/js/fold-global.js"></script>
 </body>
 </html>

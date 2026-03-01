@@ -273,6 +273,16 @@ if ($currentSemesterId > 0) {
     $adminStudentsWithBalance = (int)($adminBalanceMonitor['students_with_balance'] ?? 0);
     $adminStudentCount = (int)($adminBalanceMonitor['student_count'] ?? 0);
 }
+$adminOutstandingBalanceFull = (string)Helper::formatCurrency($adminOutstandingBalanceUgx, 'UGX', 0);
+$absOutstanding = abs((float)$adminOutstandingBalanceUgx);
+$adminOutstandingBalanceCompact = $adminOutstandingBalanceFull;
+if ($absOutstanding >= 1000000000) {
+    $adminOutstandingBalanceCompact = 'UGX ' . number_format($adminOutstandingBalanceUgx / 1000000000, 2) . 'B';
+} elseif ($absOutstanding >= 1000000) {
+    $adminOutstandingBalanceCompact = 'UGX ' . number_format($adminOutstandingBalanceUgx / 1000000, 2) . 'M';
+} elseif ($absOutstanding >= 1000) {
+    $adminOutstandingBalanceCompact = 'UGX ' . number_format($adminOutstandingBalanceUgx / 1000, 1) . 'K';
+}
 
 // Notifications (per-user + broadcast aware)
 $currentUser = isset($currentUser) ? $currentUser : $auth->getCurrentUser();
@@ -313,8 +323,8 @@ include '../../includes/header.php';
 <div class="main-content" id="mainContent">
     <div class="topbar">
         <div class="topbar-left">
-            <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar">
-                <i class="fas fa-bars"></i>
+            <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar" style="width:24px;height:24px;padding:0;font-size:11px;">
+                <i class="fas fa-bars" style="font-size:11px;line-height:1;"></i>
             </button>
             <h4>Dashboard</h4>
         </div>
@@ -373,11 +383,13 @@ include '../../includes/header.php';
             <div class="stat-card">
                 <div class="stat-icon outstanding-icon"><i class="fas fa-balance-scale"></i></div>
                 <div class="stat-details">
-                    <h3><?php echo e(Helper::formatCurrency($adminOutstandingBalanceUgx, 'UGX', 0)); ?></h3>
+                    <h3 class="outstanding-value" title="<?php echo e($adminOutstandingBalanceFull); ?>"><?php echo e($adminOutstandingBalanceCompact); ?></h3>
                     <p>Total Outstanding Balance</p>
                     <div class="stat-change <?php echo $adminStudentsWithBalance > 0 ? 'warning' : 'positive'; ?>">
                         <i class="fas fa-<?php echo $adminStudentsWithBalance > 0 ? 'exclamation-triangle' : 'check-circle'; ?>"></i>
-                        <?php echo number_format((int)$adminStudentsWithBalance); ?> student(s) with balance
+                        <span class="ticker-wrap" aria-label="Outstanding balance summary">
+                            <span class="ticker-text"><?php echo number_format((int)$adminStudentsWithBalance); ?> student(s) with balance</span>
+                        </span>
                     </div>
                 </div>
             </div>
@@ -1185,16 +1197,29 @@ document.addEventListener('DOMContentLoaded', function () {
 }
 
 .stats-grid .stat-details h3 {
-    font-size: 22px;
+    font-size: clamp(14px, 1.1vw, 22px);
     line-height: 1.05;
     margin: 0;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.stats-grid .stat-details h3.outstanding-value {
+    font-size: clamp(12px, 0.95vw, 18px);
 }
 
 .stats-grid .stat-details p {
     font-size: 11px;
     line-height: 1.2;
     margin: 0;
+    font-weight: 700;
+    color: #000;
+}
+
+html[data-theme='dark'] .stats-grid .stat-details p {
+    color: #fff;
 }
 
 .stats-grid .stat-change {
@@ -1209,6 +1234,38 @@ document.addEventListener('DOMContentLoaded', function () {
     align-items: center;
     gap: 4px;
     max-width: 100%;
+}
+
+.stats-grid .ticker-wrap {
+    position: relative;
+    display: inline-block;
+    overflow: hidden;
+    max-width: 100%;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.stats-grid .ticker-text {
+    display: inline-block;
+    padding-left: 100%;
+    animation: statTickerLoop 12s linear infinite;
+    will-change: transform;
+}
+
+.stats-grid .ticker-wrap:hover .ticker-text {
+    animation-play-state: paused;
+}
+
+@keyframes statTickerLoop {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .stats-grid .ticker-text {
+        animation: none;
+        padding-left: 0;
+    }
 }
 
 .stats-grid .system-users-breakdown {
@@ -2133,7 +2190,9 @@ html[data-theme='dark'] .quick-actions-section .action-card p {
 </style>
 
 <script>
-// Rotate Recent Courses: show 2 cards every 30 seconds, loop endlessly
+// Rotate Recent Courses:
+// - Expanded sidebar: show 2 cards
+// - Collapsed sidebar: show 3 cards
 (function() {
     var grid = document.querySelector('.assigned-courses-grid[data-rotate-courses="1"]');
     if (!grid) return;
@@ -2141,16 +2200,12 @@ html[data-theme='dark'] .quick-actions-section .action-card p {
     var cards = Array.prototype.slice.call(grid.querySelectorAll('.assignment-card'));
     if (!cards.length) return;
 
-    var pageSize = parseInt(grid.getAttribute('data-rotate-size') || '2', 10);
-    if (!pageSize || pageSize < 1) pageSize = 2;
-
     var intervalMs = parseInt(grid.getAttribute('data-rotate-interval-ms') || '30000', 10);
     if (!intervalMs || intervalMs < 1000) intervalMs = 30000;
 
     var pages = [];
-    for (var i = 0; i < cards.length; i += pageSize) {
-        pages.push(cards.slice(i, i + pageSize));
-    }
+    var currentPage = 0;
+    var rotationTimer = null;
 
     function showPage(pageIndex) {
         for (var x = 0; x < cards.length; x++) {
@@ -2163,17 +2218,57 @@ html[data-theme='dark'] .quick-actions-section .action-card p {
         }
     }
 
-    var currentPage = 0;
-    showPage(currentPage);
-
-    if (pages.length <= 1) {
-        return;
+    function isSidebarCollapsed() {
+        var sidebar = document.getElementById('sidebar') || document.querySelector('.sidebar');
+        var mainContent = document.getElementById('mainContent') || document.querySelector('.main-content');
+        return !!((sidebar && sidebar.classList.contains('collapsed')) || (mainContent && mainContent.classList.contains('expanded')));
     }
 
-    var rotationTimer = setInterval(function() {
-        currentPage = (currentPage + 1) % pages.length;
+    function buildPages() {
+        var pageSize = isSidebarCollapsed() ? 3 : 2;
+        pages = [];
+        for (var i = 0; i < cards.length; i += pageSize) {
+            pages.push(cards.slice(i, i + pageSize));
+        }
+        if (currentPage >= pages.length) {
+            currentPage = 0;
+        }
+    }
+
+    function restartRotation() {
+        if (rotationTimer) {
+            clearInterval(rotationTimer);
+            rotationTimer = null;
+        }
+        if (pages.length <= 1) {
+            return;
+        }
+        rotationTimer = setInterval(function() {
+            currentPage = (currentPage + 1) % pages.length;
+            showPage(currentPage);
+        }, intervalMs);
+    }
+
+    function refreshCourseRotationLayout() {
+        buildPages();
         showPage(currentPage);
-    }, intervalMs);
+        restartRotation();
+    }
+
+    refreshCourseRotationLayout();
+
+    var resizeTimer = null;
+    window.addEventListener('resize', function() {
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(refreshCourseRotationLayout, 140);
+    });
+
+    var sidebarToggle = document.getElementById('sidebarToggle');
+    if (sidebarToggle) {
+        sidebarToggle.addEventListener('click', function() {
+            setTimeout(refreshCourseRotationLayout, 120);
+        });
+    }
 
     window.addEventListener('beforeunload', function() {
         if (rotationTimer) clearInterval(rotationTimer);

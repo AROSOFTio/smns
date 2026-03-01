@@ -1,0 +1,57 @@
+.foldable-content {
+    position: relative;
+    transition: max-height 0.2s ease;
+}
+
+.foldable-content.is-collapsed {
+    max-height: 340px;
+    overflow: hidden;
+}
+
+.foldable-content.is-collapsed::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 44px;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(248, 249, 250, 0), rgba(248, 249, 250, 1));
+}
+
+html[data-theme='dark'] .foldable-content.is-collapsed::after {
+    background: linear-gradient(to bottom, rgba(17, 24, 39, 0), rgba(17, 24, 39, 1));
+}
+
+.fold-toggle-btn {
+    margin-top: 8px;
+    margin-bottom: 4px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #1e3a8a;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.fold-toggle-btn:hover {
+    background: #f1f5f9;
+}
+
+html[data-theme='dark'] .fold-toggle-btn {
+    border-color: #334155;
+    background: #0f172a;
+    color: #bfdbfe;
+}
+
+html[data-theme='dark'] .fold-toggle-btn:hover {
+    background: #1e293b;
+}
+
+@media (max-width: 576px) {
+    .foldable-content.is-collapsed {
+        max-height: 260px;
+    }
+}

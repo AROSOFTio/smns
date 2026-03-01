@@ -102,6 +102,7 @@ if ($providedStudentId !== '') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Transcript Verification - <?php echo e((string)getSetting('institution_name', INSTITUTION_NAME)); ?></title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css">
 </head>
 <body style="background:#f3f4f6;">
 <div class="container py-5">
@@ -146,5 +147,6 @@ if ($providedStudentId !== '') {
         </div>
     </div>
 </div>
+<script src="<?php echo BASE_URL; ?>/assets/js/fold-global.js"></script>
 </body>
 </html>

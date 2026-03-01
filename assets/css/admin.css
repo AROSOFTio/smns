@@ -1,8 +1,21 @@
 /* Enhanced Admin Dashboard Styles */
 .main-content {
-    margin-left: 250px;
-    padding: 20px;
+    margin-left: var(--sidebar-width, 230px);
+    width: calc(100vw - var(--sidebar-width, 230px));
+    max-width: calc(100vw - var(--sidebar-width, 230px));
+    padding: 0;
     background: #f8f9fa;
+}
+
+.sidebar.collapsed + .main-content,
+.main-content.expanded {
+    margin-left: var(--sidebar-collapsed-width, 70px);
+    width: calc(100vw - var(--sidebar-collapsed-width, 70px));
+    max-width: calc(100vw - var(--sidebar-collapsed-width, 70px));
+}
+
+.main-content > .content-area {
+    padding: 14px 16px 16px;
 }
 
 /* Enhanced Stats Grid */

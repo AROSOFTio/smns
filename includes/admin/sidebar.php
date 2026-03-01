@@ -20,7 +20,7 @@ if (!isset($currentUser) || !is_array($currentUser)) {
 
 <style>
     .sidebar {
-        width: 260px;
+        width: var(--sidebar-width, 230px);
         height: 100vh;
         height: 100dvh;
         max-height: 100dvh;
@@ -31,9 +31,9 @@ if (!isset($currentUser) || !is_array($currentUser)) {
         overflow: hidden;
         display: flex;
         flex-direction: column;
-        box-shadow: 2px 0 10px rgba(0, 0, 0, 0.08);
+        box-shadow: none;
         z-index: 1000;
-        border-right: 1px solid #e5e7eb;
+        border-right: 0;
     }
     .sidebar-header {
         padding: 20px 15px 15px;

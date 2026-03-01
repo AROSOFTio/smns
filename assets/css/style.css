@@ -11,7 +11,8 @@
     --info-color: #17a2b8;
     --light-color: #f8f9fa;
     --dark-color: #343a40;
-    --sidebar-width: 250px;
+    --sidebar-width: 230px;
+    --sidebar-collapsed-width: 70px;
 }
 
 * {
@@ -56,8 +57,8 @@ body {
     overflow: hidden;
     z-index: 1000;
     transition: all 0.3s ease;
-    box-shadow: 1px 0 8px rgba(0, 0, 0, 0.08);
-    border-right: 1px solid #e0e0e0;
+    box-shadow: none;
+    border-right: 0;
     display: flex;
     flex-direction: column;
 }
@@ -83,7 +84,7 @@ body {
 
 /* Sidebar Collapsed State */
 .sidebar.collapsed {
-    width: 70px;
+    width: var(--sidebar-collapsed-width);
 }
 
 .sidebar.collapsed .sidebar-header h3,
@@ -140,19 +141,27 @@ body {
 }
 
 /* Main content adjusts when sidebar is collapsed */
+.sidebar.collapsed + .main-content,
 .main-content.expanded {
-    margin-left: 70px;
-    max-width: calc(100vw - 70px);
+    margin-left: var(--sidebar-collapsed-width) !important;
+    width: calc(100vw - var(--sidebar-collapsed-width)) !important;
+    max-width: calc(100vw - var(--sidebar-collapsed-width)) !important;
 }
 
 /* Sidebar Toggle Button in Header */
-.sidebar-toggle {
+.sidebar-toggle,
+#menuBtn {
     background: transparent;
     border: none;
     color: #495057;
-    font-size: 20px;
+    font-size: 11px !important;
     cursor: pointer;
-    padding: 8px 12px;
+    width: 24px !important;
+    height: 24px !important;
+    min-width: 24px !important;
+    min-height: 24px !important;
+    padding: 0 !important;
+    line-height: 1;
     border-radius: 8px;
     transition: all 0.2s ease;
     display: flex;
@@ -160,14 +169,22 @@ body {
     justify-content: center;
 }
 
-.sidebar-toggle:hover {
+.sidebar-toggle:hover,
+#menuBtn:hover {
     background: #f8f9fa;
     color: #1a1a2e;
 }
 
-.sidebar-toggle:focus {
+.sidebar-toggle:focus,
+#menuBtn:focus {
     outline: none;
     box-shadow: 0 0 0 3px rgba(26, 26, 46, 0.1);
+}
+
+.sidebar-toggle i,
+#menuBtn i {
+    font-size: 11px !important;
+    line-height: 1;
 }
 
 /* Role-specific sidebar themes - all use unified white-grey */
@@ -385,14 +402,16 @@ body {
 .main-content {
     flex: 1;
     margin-left: var(--sidebar-width);
+    width: calc(100vw - var(--sidebar-width));
     min-height: 100vh;
     max-width: calc(100vw - var(--sidebar-width));
     overflow-x: hidden;
+    transition: margin-left 0.3s ease, width 0.3s ease, max-width 0.3s ease;
 }
 
 .topbar {
     background: white;
-    padding: 15px 30px;
+    padding: 12px 14px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     display: flex;
     justify-content: space-between;
@@ -1899,6 +1918,59 @@ img, video, iframe, svg {
     color: #28a745;
 }
 
+/* Global fold/collapse for long content blocks */
+.foldable-content {
+    position: relative;
+    transition: max-height 0.2s ease;
+}
+
+.foldable-content.is-collapsed {
+    max-height: 340px;
+    overflow: hidden;
+}
+
+.foldable-content.is-collapsed::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 44px;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(248, 249, 250, 0), rgba(248, 249, 250, 1));
+}
+
+html[data-theme='dark'] .foldable-content.is-collapsed::after {
+    background: linear-gradient(to bottom, rgba(17, 24, 39, 0), rgba(17, 24, 39, 1));
+}
+
+.fold-toggle-btn {
+    margin-top: 8px;
+    margin-bottom: 4px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #1e3a8a;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.fold-toggle-btn:hover {
+    background: #f1f5f9;
+}
+
+html[data-theme='dark'] .fold-toggle-btn {
+    border-color: #334155;
+    background: #0f172a;
+    color: #bfdbfe;
+}
+
+html[data-theme='dark'] .fold-toggle-btn:hover {
+    background: #1e293b;
+}
+
 /* Responsive Dashboard */
 @media (max-width: 992px) {
     .stats-grid {
@@ -1911,6 +1983,10 @@ img, video, iframe, svg {
 }
 
 @media (max-width: 576px) {
+    .foldable-content.is-collapsed {
+        max-height: 260px;
+    }
+
     .stats-grid {
         grid-template-columns: 1fr;
     }
