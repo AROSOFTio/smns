@@ -34,19 +34,19 @@ $semesters = $sstmt->fetchAll();
 $academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_years ORDER BY start_date DESC")->fetchAll();
 
 // Default semester & academic year context.
-// If user did not explicitly request a semester, use active Academic Calendar semester.
-$currentSemester = getStudentCurrentSemesterContext($conn, (int)($studentProfile['id'] ?? 0));
-$activeCalendarSemester = Helper::getCurrentSemester();
+// Mixed cohorts: default each student to their own enrollment target context.
+// No-history fallback still resolves to Semester 1 of active academic year.
+$currentSemester = getStudentEnrollmentTargetContext($conn, (int)($studentProfile['id'] ?? 0));
 $hasExplicitSemesterContext = isset($_GET['semester_id']) || isset($_GET['academic_year_id']) || isset($_GET['semester_number']);
 
 $defaultSemesterId = 0;
 $defaultAcademicYearId = 0;
 $defaultSemesterNumber = 1;
 
-if (!$hasExplicitSemesterContext && !empty($activeCalendarSemester['id'])) {
-    $defaultSemesterId = (int)($activeCalendarSemester['id'] ?? 0);
-    $defaultAcademicYearId = (int)($activeCalendarSemester['academic_year_id'] ?? 0);
-    $defaultSemesterNumber = (int)($activeCalendarSemester['semester_number'] ?? 1);
+if (!$hasExplicitSemesterContext && !empty($currentSemester['id'])) {
+    $defaultSemesterId = (int)($currentSemester['id'] ?? 0);
+    $defaultAcademicYearId = (int)($currentSemester['academic_year_id'] ?? 0);
+    $defaultSemesterNumber = (int)($currentSemester['semester_number'] ?? 1);
 } else {
     $defaultSemesterId = (int)($currentSemester['id'] ?? 0);
     $defaultAcademicYearId = (int)($currentSemester['academic_year_id'] ?? 0);
@@ -141,6 +141,7 @@ $getSemesterRegistrationWindow = function (int $targetSemesterId) use ($conn) {
         'semester_id' => $targetSemesterId,
         'configured' => false,
         'open' => false,
+        'is_semester_active' => false,
         'registration_start_date' => null,
         'registration_end_date' => null,
         'semester_label' => 'selected semester'
@@ -152,7 +153,7 @@ $getSemesterRegistrationWindow = function (int $targetSemesterId) use ($conn) {
 
     try {
         $stmt = $conn->prepare("
-            SELECT s.registration_start_date, s.registration_end_date, s.semester_name, ay.year_name
+            SELECT s.registration_start_date, s.registration_end_date, s.semester_name, s.status, ay.year_name
             FROM semesters s
             LEFT JOIN academic_years ay ON ay.id = s.academic_year_id
             WHERE s.id = :id
@@ -168,10 +169,15 @@ $getSemesterRegistrationWindow = function (int $targetSemesterId) use ($conn) {
         $end = !empty($row['registration_end_date']) ? (string)$row['registration_end_date'] : null;
         $data['registration_start_date'] = $start;
         $data['registration_end_date'] = $end;
+        $data['is_semester_active'] = strtolower((string)($row['status'] ?? 'inactive')) === 'active';
         $data['configured'] = ($start !== null && $end !== null);
         $data['semester_label'] = trim((string)($row['year_name'] ?? '') . ' - ' . (string)($row['semester_name'] ?? ''));
 
-        if ($data['configured']) {
+        // Policy: if admin marked semester active, allow self-enrollment even when date window has elapsed.
+        if ($data['is_semester_active']) {
+            $data['configured'] = true;
+            $data['open'] = true;
+        } elseif ($data['configured']) {
             $today = date('Y-m-d');
             $data['open'] = ($today >= $start && $today <= $end);
         }
@@ -204,18 +210,26 @@ if (!isset($_GET['year_of_study']) && !empty($studentProfile['entry_year']) && $
     }
 }
 
-function getRepeatSemesterDecision(PDO $conn, int $studentId, int $targetAcademicYearId = 0, int $targetSemesterNumber = 0) {
+function getLatestStudentGpaSummary(PDO $conn, int $studentId): ?array
+{
     if ($studentId <= 0) {
         return null;
     }
     try {
         $stmt = $conn->prepare("
-            SELECT sg.semester_id, sg.semester_gpa, s.academic_year_id, s.semester_number, s.semester_name, ay.year_name
+            SELECT
+                sg.semester_id,
+                sg.semester_gpa,
+                sg.cumulative_gpa,
+                s.academic_year_id,
+                s.semester_number,
+                s.semester_name,
+                ay.year_name
             FROM student_gpas sg
             INNER JOIN semesters s ON s.id = sg.semester_id
             INNER JOIN academic_years ay ON ay.id = s.academic_year_id
             WHERE sg.student_id = :student_id
-            ORDER BY sg.calculated_at DESC, sg.id DESC
+            ORDER BY s.end_date DESC, s.start_date DESC, sg.id DESC
             LIMIT 1
         ");
         $stmt->execute(['student_id' => $studentId]);
@@ -224,8 +238,41 @@ function getRepeatSemesterDecision(PDO $conn, int $studentId, int $targetAcademi
             return null;
         }
 
-        $gpa = (float)($row['semester_gpa'] ?? 0);
-        if ($gpa >= 2.0) {
+        $sgpa = (isset($row['semester_gpa']) && $row['semester_gpa'] !== '' && is_numeric($row['semester_gpa']))
+            ? (float)$row['semester_gpa']
+            : null;
+        $cgpa = (isset($row['cumulative_gpa']) && $row['cumulative_gpa'] !== '' && is_numeric($row['cumulative_gpa']))
+            ? (float)$row['cumulative_gpa']
+            : null;
+
+        $promotionMetric = $cgpa !== null ? $cgpa : $sgpa;
+        $promotionMetricLabel = $cgpa !== null ? 'CGPA' : 'SGPA';
+
+        $row['semester_gpa_value'] = $sgpa;
+        $row['cumulative_gpa_value'] = $cgpa;
+        $row['promotion_metric'] = $promotionMetric;
+        $row['promotion_metric_label'] = $promotionMetricLabel;
+
+        return $row;
+    } catch (Exception $e) {
+        return null;
+    }
+}
+
+function getRepeatSemesterDecision(PDO $conn, int $studentId, int $targetAcademicYearId = 0, int $targetSemesterNumber = 0) {
+    if ($studentId <= 0) {
+        return null;
+    }
+    try {
+        $row = getLatestStudentGpaSummary($conn, $studentId);
+        if (!$row) {
+            return null;
+        }
+
+        $promotionMetric = isset($row['promotion_metric']) && $row['promotion_metric'] !== null
+            ? (float)$row['promotion_metric']
+            : null;
+        if ($promotionMetric === null || $promotionMetric >= 2.0) {
             return null;
         }
 
@@ -326,12 +373,91 @@ function getRepeatSemesterDecision(PDO $conn, int $studentId, int $targetAcademi
             'semester_number' => $repeatSemesterNumber,
             'semester_name' => $repeatSemesterName,
             'year_name' => $repeatYearName,
-            'semester_gpa' => $gpa,
+            'promotion_metric' => $promotionMetric,
+            'promotion_metric_label' => (string)($row['promotion_metric_label'] ?? 'GPA'),
+            'semester_gpa' => $row['semester_gpa_value'] !== null ? (float)$row['semester_gpa_value'] : null,
+            'cumulative_gpa' => $row['cumulative_gpa_value'] !== null ? (float)$row['cumulative_gpa_value'] : null,
             'year_of_study' => $repeatYear > 0 ? $repeatYear : null,
         ];
     } catch (Exception $e) {
         return null;
     }
+}
+
+function getOutstandingRetakeSummary(PDO $conn, int $studentId): array
+{
+    $summary = [
+        'count' => 0,
+        'courses' => [],
+    ];
+    if ($studentId <= 0) {
+        return $summary;
+    }
+
+    try {
+        $countStmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM results r
+            INNER JOIN semesters s ON s.id = r.semester_id
+            WHERE r.student_id = :student_id
+              AND r.status = 'published'
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM results r2
+                    INNER JOIN semesters s2 ON s2.id = r2.semester_id
+                    WHERE r2.student_id = r.student_id
+                      AND r2.course_id = r.course_id
+                      AND r2.status = 'published'
+                      AND (
+                            s2.end_date > s.end_date
+                            OR (s2.end_date = s.end_date AND s2.start_date > s.start_date)
+                            OR (s2.end_date = s.end_date AND s2.start_date = s.start_date AND r2.id > r.id)
+                      )
+              )
+              AND (
+                    (r.grade_points IS NOT NULL AND r.grade_points < 2.0)
+                    OR UPPER(COALESCE(r.grade, '')) IN ('E', 'F')
+              )
+        ");
+        $countStmt->execute(['student_id' => $studentId]);
+        $summary['count'] = (int)$countStmt->fetchColumn();
+
+        if ($summary['count'] > 0) {
+            $courseStmt = $conn->prepare("
+                SELECT c.course_code
+                FROM results r
+                INNER JOIN semesters s ON s.id = r.semester_id
+                INNER JOIN courses c ON c.id = r.course_id
+                WHERE r.student_id = :student_id
+                  AND r.status = 'published'
+                  AND NOT EXISTS (
+                        SELECT 1
+                        FROM results r2
+                        INNER JOIN semesters s2 ON s2.id = r2.semester_id
+                        WHERE r2.student_id = r.student_id
+                          AND r2.course_id = r.course_id
+                          AND r2.status = 'published'
+                          AND (
+                                s2.end_date > s.end_date
+                                OR (s2.end_date = s.end_date AND s2.start_date > s.start_date)
+                                OR (s2.end_date = s.end_date AND s2.start_date = s.start_date AND r2.id > r.id)
+                          )
+                  )
+                  AND (
+                        (r.grade_points IS NOT NULL AND r.grade_points < 2.0)
+                        OR UPPER(COALESCE(r.grade, '')) IN ('E', 'F')
+                  )
+                ORDER BY c.course_code ASC
+                LIMIT 5
+            ");
+            $courseStmt->execute(['student_id' => $studentId]);
+            $summary['courses'] = array_values(array_filter(array_map('trim', $courseStmt->fetchAll(PDO::FETCH_COLUMN))));
+        }
+    } catch (Exception $e) {
+        // Keep quiet; reminder is non-fatal.
+    }
+
+    return $summary;
 }
 
 $forcedRepeatDecision = getRepeatSemesterDecision(
@@ -358,11 +484,32 @@ if ($forcedRepeatDecision) {
         }
     }
 
+    $metricLabel = (string)($forcedRepeatDecision['promotion_metric_label'] ?? 'GPA');
+    $metricValue = isset($forcedRepeatDecision['promotion_metric']) ? (float)$forcedRepeatDecision['promotion_metric'] : 0.0;
     $repeatEnforcedNotice =
-        'Promotion requires SGPA 2.00. You are locked to repeat ' .
+        'Promotion requires GPA 2.00 or above. You are locked to repeat ' .
         (($forcedRepeatDecision['year_name'] ?? '') ?: 'the previous academic year') . ' - ' .
         (($forcedRepeatDecision['semester_name'] ?? '') ?: 'the previous semester') . '. ' .
-        'Your last SGPA is ' . number_format((float)($forcedRepeatDecision['semester_gpa'] ?? 0), 2) . '.';
+        'Your latest ' . $metricLabel . ' is ' . number_format($metricValue, 2) . '.';
+}
+
+$latestGpaSummary = getLatestStudentGpaSummary($conn, (int)$studentProfile['id']);
+$promotionMetricNow = (is_array($latestGpaSummary) && isset($latestGpaSummary['promotion_metric']) && $latestGpaSummary['promotion_metric'] !== null)
+    ? (float)$latestGpaSummary['promotion_metric']
+    : null;
+$retakeSummary = getOutstandingRetakeSummary($conn, (int)$studentProfile['id']);
+$retakeReminderNotice = '';
+if (!$isRepeatLocked && $promotionMetricNow !== null && $promotionMetricNow >= 2.0 && (int)($retakeSummary['count'] ?? 0) > 0) {
+    $retakeCount = (int)$retakeSummary['count'];
+    $retakeList = !empty($retakeSummary['courses']) ? implode(', ', $retakeSummary['courses']) : '';
+    $retakeReminderNotice = 'You are eligible to continue (GPA >= 2.00), but you still have '
+        . $retakeCount . ' retake paper' . ($retakeCount === 1 ? '' : 's') . '.';
+    if ($retakeList !== '') {
+        $retakeReminderNotice .= ' Pending retakes: ' . $retakeList . ($retakeCount > count($retakeSummary['courses']) ? ' ...' : '') . '.';
+    }
+}
+if (!isset($_GET['has_retakes']) && (int)($retakeSummary['count'] ?? 0) > 0) {
+    $selectedHasRetakes = 'yes';
 }
 
 // Recompute window against final resolved semester context (important after repeat-lock override).
@@ -406,11 +553,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'enro
         if (!empty($repeatDecision['year_of_study'])) {
             $yearOfStudy = (int)$repeatDecision['year_of_study'];
         }
+        $metricLabel = (string)($repeatDecision['promotion_metric_label'] ?? 'GPA');
+        $metricValue = isset($repeatDecision['promotion_metric']) ? (float)$repeatDecision['promotion_metric'] : 0.0;
         $session->setFlash(
             'warning',
-            'Promotion requires SGPA 2.00. Repeat semester enforced for ' .
+            'Promotion requires GPA 2.00 or above. Repeat semester enforced for ' .
             ($repeatDecision['year_name'] ?: 'selected year') . ' - ' . ($repeatDecision['semester_name'] ?: 'semester') .
-            ' (SGPA: ' . number_format((float)$repeatDecision['semester_gpa'], 2) . ').'
+            ' (' . $metricLabel . ': ' . number_format($metricValue, 2) . ').'
         );
     }
 
@@ -511,6 +660,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'enro
         $conn->commit();
         if (!$session->hasFlash('warning')) {
             $session->setFlash('success', 'Enrollment completed successfully. Your semester courses are now available.');
+        }
+        $postGpaSummary = getLatestStudentGpaSummary($conn, (int)$studentProfile['id']);
+        $postPromotionMetric = (is_array($postGpaSummary) && isset($postGpaSummary['promotion_metric']) && $postGpaSummary['promotion_metric'] !== null)
+            ? (float)$postGpaSummary['promotion_metric']
+            : null;
+        $postRetakes = getOutstandingRetakeSummary($conn, (int)$studentProfile['id']);
+        if ($postPromotionMetric !== null && $postPromotionMetric >= 2.0 && (int)($postRetakes['count'] ?? 0) > 0) {
+            $retakeCount = (int)$postRetakes['count'];
+            $retakeList = !empty($postRetakes['courses']) ? implode(', ', $postRetakes['courses']) : '';
+            $msg = 'Reminder: continue with next semester, but complete your ' . $retakeCount
+                . ' outstanding retake paper' . ($retakeCount === 1 ? '' : 's') . '.';
+            if ($retakeList !== '') {
+                $msg .= ' Pending: ' . $retakeList . ($retakeCount > count($postRetakes['courses']) ? ' ...' : '') . '.';
+            }
+            $session->setFlash('info', $msg);
         }
     } catch (Exception $e) {
         if ($conn->inTransaction()) {
@@ -2028,6 +2192,11 @@ include '../../includes/header.php';
                 <i class="fas fa-redo"></i> <?php echo e($repeatEnforcedNotice); ?>
             </div>
         <?php endif; ?>
+        <?php if (!empty($retakeReminderNotice)): ?>
+            <div class="alert alert-info" role="alert" style="border-left:4px solid #17a2b8;">
+                <i class="fas fa-book-reader"></i> <?php echo e($retakeReminderNotice); ?>
+            </div>
+        <?php endif; ?>
         <?php if (!$isEnrollmentWindowOpen): ?>
             <div class="alert alert-warning" role="alert" style="border-left:4px solid #ffc107;">
                 <i class="fas fa-lock"></i>
@@ -2137,6 +2306,19 @@ include '../../includes/header.php';
                         </div>
                         <div class="enroll-form-row">
                             <div class="enroll-field">
+                                <label>ACADEMIC YEAR <span class="req">*</span></label>
+                                <select id="academic_year_id_input" name="academic_year_id" <?php echo $isRepeatLocked ? 'disabled' : ''; ?>>
+                                    <?php foreach ($academicYears as $ay): ?>
+                                        <option value="<?php echo (int)$ay['id']; ?>" <?php echo ((int)$selectedAcademicYearId === (int)$ay['id']) ? 'selected' : ''; ?>>
+                                            <?php echo e((string)$ay['year_name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <?php if ($isRepeatLocked): ?>
+                                    <input type="hidden" name="academic_year_id" value="<?php echo (int)$selectedAcademicYearId; ?>">
+                                <?php endif; ?>
+                            </div>
+                            <div class="enroll-field">
                                 <label>YEAR OF STUDY <span class="req">*</span></label>
                                 <select id="year_of_study_select" name="year_of_study" <?php echo $isRepeatLocked ? 'disabled' : ''; ?>>
                                     <?php for ($y = 1; $y <= 4; $y++): ?>
@@ -2172,7 +2354,6 @@ include '../../includes/header.php';
                                     <option value="yes" <?php echo $selectedHasRetakes === 'yes' ? 'selected' : ''; ?>>Yes</option>
                                 </select>
                             </div>
-                            <input type="hidden" id="academic_year_id_input" name="academic_year_id" value="<?php echo (int)$selectedAcademicYearId; ?>">
                         </div>
                         <div class="enroll-action-row">
                             <button type="submit" class="enroll-now-btn" <?php echo !$isEnrollmentWindowOpen ? 'disabled title="Enrollment window closed. Contact admin."' : ''; ?>>
@@ -2329,10 +2510,12 @@ document.addEventListener('click', function() {
 });
 
 var semesterSelect = document.getElementById('semester_number_select');
-if (semesterSelect && !semesterSelect.disabled) {
-    semesterSelect.addEventListener('change', function() {
+var academicYearSelect = document.getElementById('academic_year_id_input');
+function applyEnrollmentFilters() {
+    if (!semesterSelect) return;
+    if (semesterSelect.disabled) return;
         var params = new URLSearchParams(window.location.search);
-        var academicYearInput = document.getElementById('academic_year_id_input');
+        var academicYearInput = academicYearSelect;
         var yearSelect = document.getElementById('year_of_study_select');
         var enrollingAsSelect = document.getElementById('enrolling_as_select');
         var retakesSelect = document.getElementById('has_retakes_select');
@@ -2355,7 +2538,12 @@ if (semesterSelect && !semesterSelect.disabled) {
         }
 
         window.location.href = 'course-registration.php?' + params.toString();
-    });
+}
+if (semesterSelect && !semesterSelect.disabled) {
+    semesterSelect.addEventListener('change', applyEnrollmentFilters);
+}
+if (academicYearSelect && !academicYearSelect.disabled) {
+    academicYearSelect.addEventListener('change', applyEnrollmentFilters);
 }
 </script>
 

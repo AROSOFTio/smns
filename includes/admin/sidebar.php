@@ -34,6 +34,7 @@ if (!isset($currentUser) || !is_array($currentUser)) {
         box-shadow: none;
         z-index: 1000;
         border-right: 0;
+        transition: left 0.3s ease, width 0.3s ease;
     }
     .sidebar-header {
         padding: 20px 15px 15px;
@@ -75,6 +76,20 @@ if (!isset($currentUser) || !is_array($currentUser)) {
     .logout-item { margin-top: 15px; border-top: 2px solid #e5e7eb; padding-top: 8px; }
     .logout-link { color: #dc2626 !important; }
     .logout-link:hover { background: #fee2e2 !important; color: #991b1b !important; }
+
+    @media (max-width: 767.98px) {
+        .sidebar {
+            left: calc(-1 * var(--sidebar-width, 230px));
+        }
+        .sidebar.active {
+            left: 0;
+        }
+        .main-content {
+            margin-left: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+    }
 </style>
 
 <div class="sidebar" id="sidebar">

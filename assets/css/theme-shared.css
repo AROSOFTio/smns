@@ -176,6 +176,9 @@
         color: var(--app-text) !important;
         border-color: var(--app-border) !important;
     }
+    html[data-theme='dark'] .form-control-plaintext {
+        color: var(--app-text) !important;
+    }
     html[data-theme='dark'] .modal-content,
     html[data-theme='dark'] .dropdown-menu {
         background: var(--app-surface) !important;
@@ -896,6 +899,7 @@
     html[data-theme='dark'] .course-info small,
     html[data-theme='dark'] .lecturer-info,
     html[data-theme='dark'] .semester-info,
+    html[data-theme='dark'] .semester-term,
     html[data-theme='dark'] .assignment-date,
     html[data-theme='dark'] .activity-details p,
     html[data-theme='dark'] .activity-date,

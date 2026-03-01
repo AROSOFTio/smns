@@ -714,10 +714,50 @@ class Helper {
     public static function getCurrentSemester() {
         $db = new Database();
         $conn = $db->getConnection();
-        
-        $sql = "SELECT * FROM semesters WHERE status = 'active' ORDER BY start_date DESC LIMIT 1";
-        $stmt = $conn->query($sql);
-        return $stmt->fetch();
+
+        // Prefer active semesters in the active academic year.
+        $activeYear = self::getCurrentAcademicYear();
+        $activeYearId = (int)($activeYear['id'] ?? 0);
+
+        $today = date('Y-m-d');
+        $params = [
+            'today_between' => $today,
+            'today_started_1' => $today,
+            'today_started_2' => $today,
+            'today_upcoming' => $today,
+        ];
+        $where = "s.status = 'active'";
+        if ($activeYearId > 0) {
+            $where .= " AND s.academic_year_id = :academic_year_id";
+            $params['academic_year_id'] = $activeYearId;
+        }
+
+        // Selection priority:
+        // 1) Semester covering today's date.
+        // 2) Latest semester that already started.
+        // 3) Earliest upcoming semester.
+        $sql = "
+            SELECT s.*
+            FROM semesters s
+            WHERE {$where}
+            ORDER BY
+                CASE WHEN :today_between BETWEEN s.start_date AND s.end_date THEN 0 ELSE 1 END ASC,
+                CASE WHEN s.start_date <= :today_started_1 THEN 0 ELSE 1 END ASC,
+                CASE WHEN s.start_date <= :today_started_2 THEN s.start_date ELSE NULL END DESC,
+                CASE WHEN s.start_date > :today_upcoming THEN s.start_date ELSE NULL END ASC,
+                s.id DESC
+            LIMIT 1
+        ";
+        $stmt = $conn->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row) {
+            return $row;
+        }
+
+        // Final fallback: any active semester if active academic year has no active semester rows.
+        $fallbackStmt = $conn->query("SELECT * FROM semesters WHERE status = 'active' ORDER BY start_date DESC, id DESC LIMIT 1");
+        return $fallbackStmt->fetch();
     }
     
     /**

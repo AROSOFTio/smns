@@ -42,10 +42,10 @@ body {
 .wrapper {
     display: flex;
     min-height: 100vh;
-    max-width: 100vw;
+    width: 100%;
+    max-width: 100%;
     overflow-x: hidden;
     overflow-y: auto;
-}
 }
 
 .sidebar {
@@ -144,8 +144,9 @@ body {
 .sidebar.collapsed + .main-content,
 .main-content.expanded {
     margin-left: var(--sidebar-collapsed-width) !important;
-    width: calc(100vw - var(--sidebar-collapsed-width)) !important;
-    max-width: calc(100vw - var(--sidebar-collapsed-width)) !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0;
 }
 
 /* Sidebar Toggle Button in Header */
@@ -402,11 +403,21 @@ body {
 .main-content {
     flex: 1;
     margin-left: var(--sidebar-width);
-    width: calc(100vw - var(--sidebar-width));
+    width: auto;
     min-height: 100vh;
-    max-width: calc(100vw - var(--sidebar-width));
+    max-width: none;
+    min-width: 0;
     overflow-x: hidden;
     transition: margin-left 0.3s ease, width 0.3s ease, max-width 0.3s ease;
+}
+
+/* Enforce sidebar-aware width on desktop, even when pages set inline max-width values. */
+@media (min-width: 769px) {
+    .sidebar + .main-content {
+        width: auto !important;
+        max-width: none !important;
+        min-width: 0;
+    }
 }
 
 .topbar {
@@ -1255,8 +1266,9 @@ img, video, iframe, svg {
     }
     
     .main-content {
-        margin-left: 0;
-        max-width: 100vw;
+        margin-left: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
     }
     
     .content-area {

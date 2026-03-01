@@ -604,9 +604,12 @@ function getStudentLifecycleStatus($conn, $studentId, $semesterId = 0) {
     try {
         $resolvedSemesterId = $semesterId;
         if ($resolvedSemesterId <= 0) {
-            $sstmt = $conn->prepare("SELECT id FROM semesters WHERE status = 'active' ORDER BY start_date DESC LIMIT 1");
-            $sstmt->execute();
-            $resolvedSemesterId = (int)$sstmt->fetchColumn();
+            $studentCtx = getStudentCurrentSemesterContext($conn, $studentId);
+            $resolvedSemesterId = (int)($studentCtx['id'] ?? 0);
+        }
+        if ($resolvedSemesterId <= 0) {
+            $activeSemester = Helper::getCurrentSemester();
+            $resolvedSemesterId = (int)($activeSemester['id'] ?? 0);
         }
 
         $hasEnrollment = false;
@@ -795,8 +798,12 @@ function getStudentAcademicStatusMeta($conn, $studentId, $semesterId = 0, $fallb
 
 /**
  * Resolve the semester context to display for a student.
- * Prefers active calendar semester so "CURRENT" chips stay in sync with admin semester activation.
- * Falls back to latest approved semester registration, then latest course registration.
+ * Student-first context for continuous intake:
+ * 1) Latest approved semester enrollment for this student
+ * 2) Latest semester where student has course registrations
+ * 3) Semester 1 of active academic year (for students with no history)
+ * 4) Most recent Semester 1 fallback
+ * 5) Institution active semester final fallback
  */
 function getStudentCurrentSemesterContext($conn, $studentId) {
     $studentId = (int)$studentId;
@@ -813,25 +820,7 @@ function getStudentCurrentSemesterContext($conn, $studentId) {
     }
 
     try {
-        // 1) Active semester (system calendar source of truth for "current" context)
-        $active = Helper::getCurrentSemester();
-        if (!empty($active)) {
-            $yearName = '-';
-            if (!empty($active['academic_year_id'])) {
-                $ayStmt = $conn->prepare("SELECT year_name FROM academic_years WHERE id = :id LIMIT 1");
-                $ayStmt->execute(['id' => (int)$active['academic_year_id']]);
-                $yearName = (string)($ayStmt->fetchColumn() ?: '-');
-            }
-            return [
-                'id' => (int)($active['id'] ?? 0),
-                'semester_name' => (string)($active['semester_name'] ?? '-'),
-                'semester_number' => (int)($active['semester_number'] ?? 0),
-                'academic_year_id' => (int)($active['academic_year_id'] ?? 0),
-                'academic_year' => $yearName,
-            ];
-        }
-
-        // 2) Latest approved semester enrollment for this student
+        // 1) Latest approved semester enrollment for this student
         if ($studentId > 0) {
             $stmt = $conn->prepare("
                 SELECT s.id, s.semester_name, s.semester_number, s.academic_year_id, ay.year_name AS academic_year
@@ -855,7 +844,7 @@ function getStudentCurrentSemesterContext($conn, $studentId) {
             }
         }
 
-        // 3) Latest semester where student has course registrations
+        // 2) Latest semester where student has course registrations
         if ($studentId > 0) {
             $stmt = $conn->prepare("
                 SELECT s.id, s.semester_name, s.semester_number, s.academic_year_id, ay.year_name AS academic_year
@@ -879,12 +868,192 @@ function getStudentCurrentSemesterContext($conn, $studentId) {
             }
         }
 
-        // 4) No active semester and no student history
+        // 3) For students with no history, default to Semester 1 in the active academic year
+        $activeYear = Helper::getCurrentAcademicYear();
+        $activeYearId = (int)($activeYear['id'] ?? 0);
+        if ($activeYearId > 0) {
+            $semStmt = $conn->prepare("
+                SELECT s.id, s.semester_name, s.semester_number, s.academic_year_id, ay.year_name AS academic_year
+                FROM semesters s
+                INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+                WHERE s.academic_year_id = :academic_year_id
+                ORDER BY
+                    CASE WHEN s.semester_number = 1 THEN 0 ELSE 1 END,
+                    s.semester_number ASC,
+                    s.start_date ASC,
+                    s.id ASC
+                LIMIT 1
+            ");
+            $semStmt->execute(['academic_year_id' => $activeYearId]);
+            $row = $semStmt->fetch(PDO::FETCH_ASSOC);
+            if ($row) {
+                return [
+                    'id' => (int)($row['id'] ?? 0),
+                    'semester_name' => (string)($row['semester_name'] ?? '-'),
+                    'semester_number' => (int)($row['semester_number'] ?? 0),
+                    'academic_year_id' => (int)($row['academic_year_id'] ?? 0),
+                    'academic_year' => (string)($row['academic_year'] ?? '-'),
+                ];
+            }
+        }
+
+        // 4) Prefer most recent Semester 1 to avoid global Semester 2 default bias.
+        $semOneFallbackStmt = $conn->query("
+            SELECT s.id, s.semester_name, s.semester_number, s.academic_year_id, ay.year_name AS academic_year
+            FROM semesters s
+            INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+            WHERE s.semester_number = 1
+            ORDER BY ay.start_date DESC, s.start_date ASC, s.id DESC
+            LIMIT 1
+        ");
+        $row = $semOneFallbackStmt ? $semOneFallbackStmt->fetch(PDO::FETCH_ASSOC) : false;
+        if ($row) {
+            return [
+                'id' => (int)($row['id'] ?? 0),
+                'semester_name' => (string)($row['semester_name'] ?? '-'),
+                'semester_number' => (int)($row['semester_number'] ?? 0),
+                'academic_year_id' => (int)($row['academic_year_id'] ?? 0),
+                'academic_year' => (string)($row['academic_year'] ?? '-'),
+            ];
+        }
+
+        // 5) Institution active semester final fallback
+        $active = Helper::getCurrentSemester();
+        if (!empty($active)) {
+            $yearName = '-';
+            if (!empty($active['academic_year_id'])) {
+                $ayStmt = $conn->prepare("SELECT year_name FROM academic_years WHERE id = :id LIMIT 1");
+                $ayStmt->execute(['id' => (int)$active['academic_year_id']]);
+                $yearName = (string)($ayStmt->fetchColumn() ?: '-');
+            }
+            return [
+                'id' => (int)($active['id'] ?? 0),
+                'semester_name' => (string)($active['semester_name'] ?? '-'),
+                'semester_number' => (int)($active['semester_number'] ?? 0),
+                'academic_year_id' => (int)($active['academic_year_id'] ?? 0),
+                'academic_year' => $yearName,
+            ];
+        }
     } catch (Exception $e) {
         // Fall through to default.
     }
 
     return $fallback;
+}
+
+/**
+ * Resolve the student's default enrollment target for mixed cohorts.
+ * Priority:
+ * 1) Latest pending semester enrollment request (student is already in-progress for that semester)
+ * 2) Next semester after student's latest context:
+ *    - Semester 1 -> Semester 2 (same academic year)
+ *    - Semester 2 -> Semester 1 (next academic year)
+ * 3) Fall back to current context resolver
+ */
+function getStudentEnrollmentTargetContext($conn, $studentId) {
+    $base = getStudentCurrentSemesterContext($conn, $studentId);
+    if (!($conn instanceof PDO)) {
+        return $base;
+    }
+
+    $studentId = (int)$studentId;
+    if ($studentId <= 0) {
+        return $base;
+    }
+
+    try {
+        // 1) Keep student on latest pending request when present.
+        $pendingStmt = $conn->prepare("
+            SELECT s.id, s.semester_name, s.semester_number, s.academic_year_id, ay.year_name AS academic_year
+            FROM semester_registrations sr
+            INNER JOIN semesters s ON s.id = sr.semester_id
+            INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+            WHERE sr.student_id = :student_id
+              AND sr.status = 'pending'
+            ORDER BY COALESCE(sr.updated_at, sr.request_date, sr.created_at) DESC, sr.id DESC
+            LIMIT 1
+        ");
+        $pendingStmt->execute(['student_id' => $studentId]);
+        $pending = $pendingStmt->fetch(PDO::FETCH_ASSOC);
+        if ($pending) {
+            return [
+                'id' => (int)($pending['id'] ?? 0),
+                'semester_name' => (string)($pending['semester_name'] ?? '-'),
+                'semester_number' => (int)($pending['semester_number'] ?? 0),
+                'academic_year_id' => (int)($pending['academic_year_id'] ?? 0),
+                'academic_year' => (string)($pending['academic_year'] ?? '-'),
+            ];
+        }
+
+        $currentSemesterId = (int)($base['id'] ?? 0);
+        $currentYearId = (int)($base['academic_year_id'] ?? 0);
+        $currentSemNo = (int)($base['semester_number'] ?? 0);
+        if ($currentSemesterId <= 0 || $currentYearId <= 0 || ($currentSemNo !== 1 && $currentSemNo !== 2)) {
+            return $base;
+        }
+
+        // 2a) Semester 1 -> Semester 2 (same academic year)
+        if ($currentSemNo === 1) {
+            $sameYearStmt = $conn->prepare("
+                SELECT s.id, s.semester_name, s.semester_number, s.academic_year_id, ay.year_name AS academic_year
+                FROM semesters s
+                INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+                WHERE s.academic_year_id = :academic_year_id
+                  AND s.semester_number = 2
+                LIMIT 1
+            ");
+            $sameYearStmt->execute(['academic_year_id' => $currentYearId]);
+            $next = $sameYearStmt->fetch(PDO::FETCH_ASSOC);
+            if ($next) {
+                return [
+                    'id' => (int)($next['id'] ?? 0),
+                    'semester_name' => (string)($next['semester_name'] ?? '-'),
+                    'semester_number' => (int)($next['semester_number'] ?? 0),
+                    'academic_year_id' => (int)($next['academic_year_id'] ?? 0),
+                    'academic_year' => (string)($next['academic_year'] ?? '-'),
+                ];
+            }
+        }
+
+        // 2b) Semester 2 -> Semester 1 (next academic year)
+        if ($currentSemNo === 2) {
+            $nextYearStmt = $conn->prepare("
+                SELECT ay2.id
+                FROM academic_years ay1
+                INNER JOIN academic_years ay2 ON ay2.start_date > ay1.start_date
+                WHERE ay1.id = :academic_year_id
+                ORDER BY ay2.start_date ASC, ay2.id ASC
+                LIMIT 1
+            ");
+            $nextYearStmt->execute(['academic_year_id' => $currentYearId]);
+            $nextYearId = (int)$nextYearStmt->fetchColumn();
+            if ($nextYearId > 0) {
+                $nextSemStmt = $conn->prepare("
+                    SELECT s.id, s.semester_name, s.semester_number, s.academic_year_id, ay.year_name AS academic_year
+                    FROM semesters s
+                    INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+                    WHERE s.academic_year_id = :academic_year_id
+                      AND s.semester_number = 1
+                    LIMIT 1
+                ");
+                $nextSemStmt->execute(['academic_year_id' => $nextYearId]);
+                $next = $nextSemStmt->fetch(PDO::FETCH_ASSOC);
+                if ($next) {
+                    return [
+                        'id' => (int)($next['id'] ?? 0),
+                        'semester_name' => (string)($next['semester_name'] ?? '-'),
+                        'semester_number' => (int)($next['semester_number'] ?? 0),
+                        'academic_year_id' => (int)($next['academic_year_id'] ?? 0),
+                        'academic_year' => (string)($next['academic_year'] ?? '-'),
+                    ];
+                }
+            }
+        }
+    } catch (Exception $e) {
+        // Fall through to base context.
+    }
+
+    return $base;
 }
 
 /**

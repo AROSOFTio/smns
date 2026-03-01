@@ -164,6 +164,14 @@ include '../../includes/header.php';
 ?>
 <?php include '../../includes/admin/sidebar.php'; ?>
 
+<style>
+html[data-theme='dark'] .profile-details-card #profileView label,
+html[data-theme='dark'] .profile-details-card #profileView .form-control-plaintext,
+html[data-theme='dark'] .profile-details-card #profileView .form-control-plaintext * {
+    color: #ffffff !important;
+}
+</style>
+
 <div class="main-content" id="mainContent">
     <div class="topbar">
         <div class="topbar-left">
@@ -221,7 +229,7 @@ include '../../includes/header.php';
             </div>
 
             <div class="col-md-8">
-                <div class="card">
+                <div class="card profile-details-card">
                     <div class="card-header"><h5>Profile Details</h5></div>
                     <div class="card-body">
 

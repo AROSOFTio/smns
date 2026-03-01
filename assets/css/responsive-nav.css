@@ -29,8 +29,9 @@
     
     .main-content {
         margin-left: var(--sidebar-width, 230px); /* Account for sidebar */
-        width: calc(100vw - var(--sidebar-width, 230px));
-        max-width: calc(100vw - var(--sidebar-width, 230px));
+        width: auto;
+        max-width: none;
+        min-width: 0;
         transition: margin-left 0.3s ease, width 0.3s ease, max-width 0.3s ease;
     }
     
@@ -41,8 +42,9 @@
     .sidebar.collapsed + .main-content,
     .main-content.expanded {
         margin-left: var(--sidebar-collapsed-width, 70px);
-        width: calc(100vw - var(--sidebar-collapsed-width, 70px));
-        max-width: calc(100vw - var(--sidebar-collapsed-width, 70px));
+        width: auto;
+        max-width: none;
+        min-width: 0;
     }
 }
 
@@ -96,6 +98,8 @@
     
     .main-content {
         margin-left: 0;
+        width: 100%;
+        max-width: 100%;
         padding-top: 60px; /* Account for mobile menu button */
     }
     
