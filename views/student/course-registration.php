@@ -2111,7 +2111,7 @@ include '../../includes/header.php';
             <li><a href="services.php?tab=new_id">NEW ID CARDS</a></li>
         </ul>
         <li><a href="<?php echo e($linkDashboard); ?>">BIO DATA</a></li>
-        <li><a href="<?php echo e($linkResults); ?>">VIEW RESULTS</a></li>
+        <li><a href="provisional-results.php">MY PROVISIONAL RESULTS</a></li>
         <li><a href="<?php echo BASE_URL; ?>/views/student/transcript.php">VIEW TRANSCRIPT</a></li>
         <li><a href="<?php echo e($linkMailbox); ?>">MY MAILBOX</a></li>
         <li><a href="<?php echo e($linkAcademicCalendar); ?>">ACADEMIC CALENDAR</a></li>

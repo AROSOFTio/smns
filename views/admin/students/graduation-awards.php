@@ -16,6 +16,47 @@ $currentUser = $auth->getCurrentUser();
 $db = new Database();
 $conn = $db->getConnection();
 
+// Ensure transcript rights table exists for allocation from this page.
+try {
+    $conn->exec("CREATE TABLE IF NOT EXISTS transcript_download_rights (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        student_id INT NOT NULL UNIQUE,
+        status ENUM('granted','revoked') NOT NULL DEFAULT 'revoked',
+        verified_by_user_id INT NULL,
+        verified_at DATETIME NULL,
+        revoked_by_user_id INT NULL,
+        revoked_at DATETIME NULL,
+        one_time_download_used TINYINT(1) NOT NULL DEFAULT 0,
+        one_time_download_used_at DATETIME NULL,
+        one_time_download_format VARCHAR(16) NULL,
+        download_count INT NOT NULL DEFAULT 0,
+        last_downloaded_at DATETIME NULL,
+        last_download_format VARCHAR(16) NULL,
+        notes TEXT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+    $ensureColumn = function ($columnName, $alterSql) use ($conn) {
+        try {
+            $stmt = $conn->prepare("SHOW COLUMNS FROM transcript_download_rights LIKE :col");
+            $stmt->execute(['col' => $columnName]);
+            if (!$stmt->fetch(PDO::FETCH_ASSOC)) {
+                $conn->exec($alterSql);
+            }
+        } catch (Exception $e) {
+            // Non-fatal for legacy tables.
+        }
+    };
+    $ensureColumn('one_time_download_used', "ALTER TABLE transcript_download_rights ADD COLUMN one_time_download_used TINYINT(1) NOT NULL DEFAULT 0 AFTER revoked_at");
+    $ensureColumn('one_time_download_used_at', "ALTER TABLE transcript_download_rights ADD COLUMN one_time_download_used_at DATETIME NULL AFTER one_time_download_used");
+    $ensureColumn('one_time_download_format', "ALTER TABLE transcript_download_rights ADD COLUMN one_time_download_format VARCHAR(16) NULL AFTER one_time_download_used_at");
+    $ensureColumn('download_count', "ALTER TABLE transcript_download_rights ADD COLUMN download_count INT NOT NULL DEFAULT 0 AFTER one_time_download_format");
+    $ensureColumn('last_downloaded_at', "ALTER TABLE transcript_download_rights ADD COLUMN last_downloaded_at DATETIME NULL AFTER download_count");
+    $ensureColumn('last_download_format', "ALTER TABLE transcript_download_rights ADD COLUMN last_download_format VARCHAR(16) NULL AFTER last_downloaded_at");
+} catch (Exception $e) {
+}
+
 $studentId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 if ($studentId <= 0) {
     header('Location: list.php?error=invalid_id');
@@ -35,6 +76,17 @@ if (empty($student)) {
     header('Location: list.php?error=student_not_found');
     exit;
 }
+
+$transcriptEligibility = getStudentTranscriptEligibility($conn, $studentId);
+$transcriptRights = null;
+try {
+    $rightsStmt = $conn->prepare("SELECT * FROM transcript_download_rights WHERE student_id = :student_id LIMIT 1");
+    $rightsStmt->execute(['student_id' => $studentId]);
+    $transcriptRights = $rightsStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+} catch (Exception $e) {
+    $transcriptRights = null;
+}
+$transcriptRightsGranted = (bool)($transcriptRights && ($transcriptRights['status'] ?? '') === 'granted');
 
 $semesters = [];
 try {
@@ -155,6 +207,89 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $action = strtolower(trim((string)($_POST['action'] ?? '')));
+
+    if ($action === 'transcript_rights') {
+        $rightsAction = strtolower(trim((string)($_POST['transcript_rights_action'] ?? '')));
+        $rightsNotes = trim((string)($_POST['transcript_rights_notes'] ?? ''));
+        try {
+            if ($rightsAction === 'grant') {
+                if (empty($transcriptEligibility['eligible'])) {
+                    $reason = !empty($transcriptEligibility['blocking_reasons'])
+                        ? implode(' ', (array)$transcriptEligibility['blocking_reasons'])
+                        : 'Eligibility requirements are not yet met.';
+                    $session->setFlash('error', 'Transcript rights cannot be granted yet. ' . $reason);
+                    header('Location: graduation-awards.php?id=' . $studentId);
+                    exit;
+                }
+                $stmt = $conn->prepare("
+                    INSERT INTO transcript_download_rights (student_id, status, verified_by_user_id, verified_at, notes)
+                    VALUES (:student_id, 'granted', :admin_id, NOW(), :notes)
+                    ON DUPLICATE KEY UPDATE
+                        status = 'granted',
+                        verified_by_user_id = VALUES(verified_by_user_id),
+                        verified_at = VALUES(verified_at),
+                        notes = VALUES(notes),
+                        one_time_download_used = 0,
+                        one_time_download_used_at = NULL,
+                        one_time_download_format = NULL,
+                        revoked_by_user_id = NULL,
+                        revoked_at = NULL
+                ");
+                $stmt->execute([
+                    'student_id' => $studentId,
+                    'admin_id' => (int)($currentUser['id'] ?? 0),
+                    'notes' => $rightsNotes
+                ]);
+                try {
+                    if (class_exists('Logger')) {
+                        (new Logger())->log(
+                            (int)($currentUser['id'] ?? 0),
+                            'transcript_released',
+                            'students',
+                            'Transcript released from Graduation & Awards for student ' . (string)($student['student_id'] ?? ('#' . $studentId))
+                        );
+                    }
+                } catch (Exception $e) {
+                    // Non-fatal.
+                }
+                $session->setFlash('success', 'Transcript download rights granted.');
+            } elseif ($rightsAction === 'revoke') {
+                $stmt = $conn->prepare("
+                    INSERT INTO transcript_download_rights (student_id, status, revoked_by_user_id, revoked_at, notes)
+                    VALUES (:student_id, 'revoked', :admin_id, NOW(), :notes)
+                    ON DUPLICATE KEY UPDATE
+                        status = 'revoked',
+                        revoked_by_user_id = VALUES(revoked_by_user_id),
+                        revoked_at = VALUES(revoked_at),
+                        notes = VALUES(notes)
+                ");
+                $stmt->execute([
+                    'student_id' => $studentId,
+                    'admin_id' => (int)($currentUser['id'] ?? 0),
+                    'notes' => $rightsNotes
+                ]);
+                try {
+                    if (class_exists('Logger')) {
+                        (new Logger())->log(
+                            (int)($currentUser['id'] ?? 0),
+                            'transcript_release_revoked',
+                            'students',
+                            'Transcript rights revoked from Graduation & Awards for student ' . (string)($student['student_id'] ?? ('#' . $studentId))
+                        );
+                    }
+                } catch (Exception $e) {
+                    // Non-fatal.
+                }
+                $session->setFlash('success', 'Transcript download rights revoked.');
+            } else {
+                $session->setFlash('error', 'Invalid transcript rights action.');
+            }
+        } catch (Exception $e) {
+            $session->setFlash('error', 'Failed to update transcript rights.');
+        }
+        header('Location: graduation-awards.php?id=' . $studentId);
+        exit;
+    }
 
     if ($action === 'save_profile') {
         $status = strtolower(trim((string)($_POST['status'] ?? 'active')));
@@ -360,6 +495,9 @@ html[data-theme='dark'] .ga-summary-item .value { color: #e2e8f0; }
             <a href="view.php?id=<?php echo (int)$studentId; ?>" class="btn btn-info btn-sm mr-2">
                 <i class="fas fa-user"></i> Student Profile
             </a>
+            <a href="<?php echo BASE_URL; ?>/views/admin/student_requests.php?view=transcript" class="btn btn-outline-info btn-sm mr-2">
+                <i class="fas fa-file-signature"></i> Transcript
+            </a>
             <a href="?id=<?php echo (int)$studentId; ?>&export=csv" class="btn btn-outline-secondary btn-sm mr-2">
                 <i class="fas fa-file-csv"></i> Export CSV
             </a>
@@ -414,6 +552,54 @@ html[data-theme='dark'] .ga-summary-item .value { color: #e2e8f0; }
 
         <div class="row">
             <div class="col-lg-5">
+                <div class="ga-card card mb-3">
+                    <div class="card-header bg-info text-white">
+                        <h6 class="mb-0"><i class="fas fa-file-signature"></i> Transcript Allocation</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-2">
+                            <?php if ($transcriptRightsGranted): ?>
+                                <span class="badge badge-success">Transcript Rights: GRANTED</span>
+                            <?php else: ?>
+                                <span class="badge badge-secondary">Transcript Rights: REVOKED</span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="small mb-3">
+                            <div><strong>Eligibility Checklist</strong></div>
+                            <div>Completed studies: <?php echo !empty($transcriptEligibility['completed_studies']) ? 'YES' : 'NO'; ?></div>
+                            <div>No outstanding retakes: <?php echo !empty($transcriptEligibility['has_no_retakes']) ? 'YES' : 'NO'; ?><?php echo !empty($transcriptEligibility['retake_count']) ? ' (' . (int)$transcriptEligibility['retake_count'] . ')' : ''; ?></div>
+                            <div>Bills cleared: <?php echo !empty($transcriptEligibility['bills_cleared']) ? 'YES' : 'NO'; ?></div>
+                            <div>Discipline in good standing: <?php echo !empty($transcriptEligibility['discipline_ok']) ? 'YES' : 'NO'; ?><?php echo !empty($transcriptEligibility['discipline_status']) ? ' (' . e((string)$transcriptEligibility['discipline_status']) . ')' : ''; ?></div>
+                            <div>One-time download used: <?php echo !empty($transcriptRights['one_time_download_used']) ? 'YES' : 'NO'; ?></div>
+                            <?php if (!empty($transcriptRights['one_time_download_used_at'])): ?>
+                                <div>Used at: <?php echo e(Helper::formatDateTime((string)$transcriptRights['one_time_download_used_at'], 'M d, Y g:i A')); ?><?php echo !empty($transcriptRights['one_time_download_format']) ? ' (' . e(strtoupper((string)$transcriptRights['one_time_download_format'])) . ')' : ''; ?></div>
+                            <?php endif; ?>
+                        </div>
+                        <?php if (!empty($transcriptEligibility['blocking_reasons'])): ?>
+                            <div class="alert alert-danger py-2 px-3 small">
+                                <div class="font-weight-bold mb-1">Unfulfilled Requirements</div>
+                                <ul class="mb-0 pl-3">
+                                    <?php foreach ((array)$transcriptEligibility['blocking_reasons'] as $reason): ?>
+                                        <li><?php echo e((string)$reason); ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </div>
+                        <?php endif; ?>
+                        <form method="POST" class="mt-2">
+                            <?php echo csrfField(); ?>
+                            <input type="hidden" name="action" value="transcript_rights">
+                            <div class="form-group mb-2">
+                                <input type="text" name="transcript_rights_notes" class="form-control form-control-sm" placeholder="Optional note (reason/reference)">
+                            </div>
+                            <?php if ($transcriptRightsGranted): ?>
+                                <button type="submit" name="transcript_rights_action" value="revoke" class="btn btn-sm btn-danger">Revoke Rights</button>
+                            <?php else: ?>
+                                <button type="submit" name="transcript_rights_action" value="grant" class="btn btn-sm btn-success" <?php echo empty($transcriptEligibility['eligible']) ? 'disabled title="Eligibility requirements not met."' : ''; ?>>Grant Rights</button>
+                            <?php endif; ?>
+                        </form>
+                    </div>
+                </div>
+
                 <div class="ga-card card mb-3">
                     <div class="card-header bg-success text-white">
                         <h6 class="mb-0"><i class="fas fa-certificate"></i> Graduation Profile</h6>

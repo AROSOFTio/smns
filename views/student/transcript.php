@@ -38,23 +38,59 @@ try {
         verified_at DATETIME NULL,
         revoked_by_user_id INT NULL,
         revoked_at DATETIME NULL,
+        one_time_download_used TINYINT(1) NOT NULL DEFAULT 0,
+        one_time_download_used_at DATETIME NULL,
+        one_time_download_format VARCHAR(16) NULL,
+        download_count INT NOT NULL DEFAULT 0,
+        last_downloaded_at DATETIME NULL,
+        last_download_format VARCHAR(16) NULL,
         notes TEXT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_status (status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+    $ensureColumn = function ($columnName, $alterSql) use ($conn) {
+        try {
+            $stmt = $conn->prepare("SHOW COLUMNS FROM transcript_download_rights LIKE :col");
+            $stmt->execute(['col' => $columnName]);
+            if (!$stmt->fetch(PDO::FETCH_ASSOC)) {
+                $conn->exec($alterSql);
+            }
+        } catch (Exception $e) {
+            // Non-fatal; legacy environments may skip one-time tracking.
+        }
+    };
+    $ensureColumn('one_time_download_used', "ALTER TABLE transcript_download_rights ADD COLUMN one_time_download_used TINYINT(1) NOT NULL DEFAULT 0 AFTER revoked_at");
+    $ensureColumn('one_time_download_used_at', "ALTER TABLE transcript_download_rights ADD COLUMN one_time_download_used_at DATETIME NULL AFTER one_time_download_used");
+    $ensureColumn('one_time_download_format', "ALTER TABLE transcript_download_rights ADD COLUMN one_time_download_format VARCHAR(16) NULL AFTER one_time_download_used_at");
+    $ensureColumn('download_count', "ALTER TABLE transcript_download_rights ADD COLUMN download_count INT NOT NULL DEFAULT 0 AFTER one_time_download_format");
+    $ensureColumn('last_downloaded_at', "ALTER TABLE transcript_download_rights ADD COLUMN last_downloaded_at DATETIME NULL AFTER download_count");
+    $ensureColumn('last_download_format', "ALTER TABLE transcript_download_rights ADD COLUMN last_download_format VARCHAR(16) NULL AFTER last_downloaded_at");
 } catch (Exception $e) {
 }
 
 $transcriptDownloadRightsGranted = false;
+$transcriptDownloadAlreadyUsed = false;
+$transcriptDownloadUsedAt = '';
+$transcriptDownloadUsedFormat = '';
 try {
-    $rightsStmt = $conn->prepare("SELECT status FROM transcript_download_rights WHERE student_id = :student_id LIMIT 1");
+    $rightsStmt = $conn->prepare("SELECT * FROM transcript_download_rights WHERE student_id = :student_id LIMIT 1");
     $rightsStmt->execute(['student_id' => $studentId]);
     $rightsRow = $rightsStmt->fetch(PDO::FETCH_ASSOC) ?: null;
     $transcriptDownloadRightsGranted = (bool)($rightsRow && ($rightsRow['status'] ?? '') === 'granted');
+    $transcriptDownloadAlreadyUsed = (bool)($rightsRow && (int)($rightsRow['one_time_download_used'] ?? 0) === 1);
+    $transcriptDownloadUsedAt = (string)($rightsRow['one_time_download_used_at'] ?? '');
+    $transcriptDownloadUsedFormat = strtoupper((string)($rightsRow['one_time_download_format'] ?? ''));
 } catch (Exception $e) {
     $transcriptDownloadRightsGranted = false;
+    $transcriptDownloadAlreadyUsed = false;
+    $transcriptDownloadUsedAt = '';
+    $transcriptDownloadUsedFormat = '';
 }
+$transcriptEligibility = getStudentTranscriptEligibility($conn, $studentId);
+$transcriptViewGranted = $transcriptDownloadRightsGranted
+    && (($transcriptEligibility['eligible'] ?? false) === true);
+$transcriptDownloadAvailable = $transcriptViewGranted && !$transcriptDownloadAlreadyUsed;
 
 // Student + program profile.
 $studentStmt = $conn->prepare("
@@ -245,50 +281,6 @@ if ($finalCgpa !== null) {
     }
 }
 
-// Deterministic verification metadata for digitally verifiable records.
-$verificationMeta = [
-    'published_courses' => 0,
-    'published_credits' => 0.0,
-    'published_points' => 0.0,
-    'last_result_update' => ''
-];
-try {
-    $verifyStmt = $conn->prepare("
-        SELECT
-            COUNT(*) AS published_courses,
-            COALESCE(SUM(COALESCE(c.credit_hours,0)), 0) AS published_credits,
-            COALESCE(SUM(COALESCE(r.grade_points,0) * COALESCE(c.credit_hours,0)), 0) AS published_points,
-            MAX(COALESCE(r.updated_at, r.created_at)) AS last_result_update
-        FROM results r
-        INNER JOIN courses c ON c.id = r.course_id
-        WHERE r.student_id = :student_id
-          AND r.status = 'published'
-    ");
-    $verifyStmt->execute(['student_id' => $studentId]);
-    $verifyRow = $verifyStmt->fetch(PDO::FETCH_ASSOC) ?: [];
-    $verificationMeta['published_courses'] = (int)($verifyRow['published_courses'] ?? 0);
-    $verificationMeta['published_credits'] = (float)($verifyRow['published_credits'] ?? 0);
-    $verificationMeta['published_points'] = (float)($verifyRow['published_points'] ?? 0);
-    $verificationMeta['last_result_update'] = (string)($verifyRow['last_result_update'] ?? '');
-} catch (Exception $e) {
-}
-
-$verificationSeed = implode('|', [
-    (string)getSetting('institution_name', INSTITUTION_NAME),
-    (string)($student['student_id'] ?? ('student_' . $studentId)),
-    number_format((float)($verificationMeta['published_courses'] ?? 0), 0, '.', ''),
-    number_format((float)($verificationMeta['published_credits'] ?? 0), 2, '.', ''),
-    number_format((float)($verificationMeta['published_points'] ?? 0), 2, '.', ''),
-    $finalCgpa !== null ? number_format((float)$finalCgpa, 2, '.', '') : 'NA',
-    (string)($student['graduation_award_title'] ?? ''),
-    (string)($student['graduation_date'] ?? ''),
-    (string)($verificationMeta['last_result_update'] ?? '')
-]);
-$transcriptVerificationHash = hash('sha256', $verificationSeed);
-$transcriptVerificationCodeRaw = strtoupper(substr($transcriptVerificationHash, 0, 16));
-$transcriptVerificationCode = implode('-', str_split($transcriptVerificationCodeRaw, 4));
-$transcriptVerifyUrl = BASE_URL . '/views/verify/transcript.php';
-
 // Graduation/award metadata (latest explicit record wins).
 $graduationAward = null;
 try {
@@ -318,12 +310,50 @@ if (!$graduationAward && (!empty($student['graduation_date']) || !empty($student
 
 // Export transcript dataset.
 $export = strtolower(trim((string)($_GET['export'] ?? '')));
-if ($export !== '' && !$transcriptDownloadRightsGranted) {
-    $session->setFlash('error', 'Transcript download rights are locked. Contact admin for verification.');
+if ($export !== '' && !$transcriptDownloadAvailable) {
+    if ($transcriptDownloadAlreadyUsed) {
+        $when = $transcriptDownloadUsedAt !== '' ? date('Y-m-d H:i', strtotime($transcriptDownloadUsedAt)) : 'an earlier time';
+        $format = $transcriptDownloadUsedFormat !== '' ? $transcriptDownloadUsedFormat : 'EXPORT';
+        $session->setFlash('error', 'One-time transcript download was already used (' . $format . ') on ' . $when . '. Contact admin to re-enable.');
+        header('Location: ' . BASE_URL . '/views/student/transcript.php');
+        exit;
+    }
+    $blocking = !empty($transcriptEligibility['blocking_reasons']) ? implode(' ', $transcriptEligibility['blocking_reasons']) : '';
+    $session->setFlash('error', 'Transcript export is unavailable. ' . trim('Admin approval and eligibility are required. ' . $blocking));
     header('Location: ' . BASE_URL . '/views/student/transcript.php');
     exit;
 }
+$markOneTimeDownloadUsed = function (string $format) use ($conn, $studentId, $session) {
+    try {
+        $stmt = $conn->prepare("
+            UPDATE transcript_download_rights
+            SET one_time_download_used = 1,
+                one_time_download_used_at = NOW(),
+                one_time_download_format = :format,
+                download_count = COALESCE(download_count, 0) + 1,
+                last_downloaded_at = NOW(),
+                last_download_format = :format2
+            WHERE student_id = :student_id
+              AND status = 'granted'
+              AND COALESCE(one_time_download_used, 0) = 0
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'format' => strtoupper($format),
+            'format2' => strtoupper($format),
+            'student_id' => $studentId
+        ]);
+        return $stmt->rowCount() > 0;
+    } catch (Exception $e) {
+        return false;
+    }
+};
 if ($export === 'xml') {
+    if (!$markOneTimeDownloadUsed('xml')) {
+        $session->setFlash('error', 'Transcript one-time download is no longer available. Contact admin if you need re-enable.');
+        header('Location: ' . BASE_URL . '/views/student/transcript.php');
+        exit;
+    }
     $filename = 'transcript_' . preg_replace('/[^A-Za-z0-9_-]/', '', (string)($student['student_id'] ?? ('student_' . $studentId))) . '_' . date('Ymd_His') . '.xml';
     header('Content-Type: application/xml; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -333,13 +363,7 @@ if ($export === 'xml') {
 
     $root = $dom->createElement('transcript');
     $root->setAttribute('generated_at', date('c'));
-    $root->setAttribute('verification_hash', $transcriptVerificationHash);
-    $root->setAttribute('verification_code', $transcriptVerificationCode);
     $dom->appendChild($root);
-
-    $institution = $dom->createElement('institution');
-    $institution->appendChild($dom->createTextNode((string)getSetting('institution_name', INSTITUTION_NAME)));
-    $root->appendChild($institution);
 
     $studentNode = $dom->createElement('student');
     $studentNode->appendChild($dom->createElement('name', trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''))));
@@ -365,7 +389,6 @@ if ($export === 'xml') {
             $courseNode->appendChild($dom->createElement('course_code', (string)($courseRow['course_code'] ?? '')));
             $courseNode->appendChild($dom->createElement('course_name', (string)($courseRow['course_name'] ?? '')));
             $courseNode->appendChild($dom->createElement('credit_hours', (string)($courseRow['credit_hours'] ?? '0')));
-            $courseNode->appendChild($dom->createElement('total_marks', ($courseRow['total_marks'] !== null && $courseRow['total_marks'] !== '') ? (string)$courseRow['total_marks'] : ''));
             $courseNode->appendChild($dom->createElement('grade', (string)($courseRow['grade'] ?? '')));
             $courseNode->appendChild($dom->createElement('grade_points', ($courseRow['grade_points'] !== null && $courseRow['grade_points'] !== '') ? (string)$courseRow['grade_points'] : ''));
             $courseNode->appendChild($dom->createElement('result_status', (string)($courseRow['result_status'] ?? '')));
@@ -384,9 +407,6 @@ if ($export === 'xml') {
     $summaryNode->appendChild($dom->createElement('award_title', (string)($graduationAward['award_title'] ?? '')));
     $summaryNode->appendChild($dom->createElement('award_classification', (string)($graduationAward['classification'] ?? '')));
     $summaryNode->appendChild($dom->createElement('award_date', (string)($graduationAward['award_date'] ?? '')));
-    $summaryNode->appendChild($dom->createElement('verification_hash', (string)$transcriptVerificationHash));
-    $summaryNode->appendChild($dom->createElement('verification_code', (string)$transcriptVerificationCode));
-    $summaryNode->appendChild($dom->createElement('verification_url', (string)$transcriptVerifyUrl));
     $root->appendChild($summaryNode);
 
     echo $dom->saveXML();
@@ -394,6 +414,11 @@ if ($export === 'xml') {
 }
 
 if ($export === 'csv' || $export === 'excel') {
+    if (!$markOneTimeDownloadUsed($export)) {
+        $session->setFlash('error', 'Transcript one-time download is no longer available. Contact admin if you need re-enable.');
+        header('Location: ' . BASE_URL . '/views/student/transcript.php');
+        exit;
+    }
     $isExcel = ($export === 'excel');
     $filename = 'transcript_' . preg_replace('/[^A-Za-z0-9_-]/', '', (string)($student['student_id'] ?? ('student_' . $studentId))) . '_' . date('Ymd_His') . ($isExcel ? '.xls' : '.csv');
     if ($isExcel) {
@@ -404,15 +429,11 @@ if ($export === 'csv' || $export === 'excel') {
     header('Content-Disposition: attachment; filename="' . $filename . '"');
 
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['Institution', (string)getSetting('institution_name', INSTITUTION_NAME)]);
     fputcsv($out, ['Student Name', trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''))]);
     fputcsv($out, ['Student ID', (string)($student['student_id'] ?? '')]);
     fputcsv($out, ['Program', trim((string)($student['program_code'] ?? '') . ' - ' . (string)($student['program_name'] ?? ''))]);
-    fputcsv($out, ['Verification Code', (string)$transcriptVerificationCode]);
-    fputcsv($out, ['Verification Hash', (string)$transcriptVerificationHash]);
-    fputcsv($out, ['Verification URL', (string)$transcriptVerifyUrl]);
     fputcsv($out, []);
-    fputcsv($out, ['Academic Year', 'Semester', 'Year of Study', 'Course Code', 'Course Name', 'Credit Hours', 'Marks', 'Grade', 'Grade Points', 'Result Status']);
+    fputcsv($out, ['Academic Year', 'Semester', 'Year of Study', 'Course Code', 'Course Name', 'Credit Hours', 'Grade', 'Grade Points', 'Result Status']);
 
     foreach ($terms as $term) {
         foreach ($term['rows'] as $courseRow) {
@@ -423,7 +444,6 @@ if ($export === 'csv' || $export === 'excel') {
                 (string)($courseRow['course_code'] ?? ''),
                 (string)($courseRow['course_name'] ?? ''),
                 (string)($courseRow['credit_hours'] ?? ''),
-                (string)($courseRow['total_marks'] ?? ''),
                 (string)($courseRow['grade'] ?? ''),
                 (string)($courseRow['grade_points'] ?? ''),
                 (string)($courseRow['result_status'] ?? ''),
@@ -438,8 +458,7 @@ if ($export === 'csv' || $export === 'excel') {
             'Attempted: ' . number_format((float)$term['attempted_credits'], 0),
             '',
             '',
-            'SGPA: ' . ($term['sgpa'] !== null ? number_format((float)$term['sgpa'], 2) : 'N/A'),
-            '',
+            'SGPA: ' . ($term['sgpa'] !== null ? number_format((float)$term['sgpa'], 2) : 'N/A')
         ]);
     }
 
@@ -487,7 +506,7 @@ include '../../includes/header.php';
             <li><a href="<?php echo BASE_URL; ?>/views/student/services.php?tab=new_id">NEW ID CARDS</a></li>
         </ul>
         <li><a href="<?php echo BASE_URL; ?>/views/student/dashboard.php">BIO DATA</a></li>
-        <li><a href="<?php echo BASE_URL; ?>/views/student/results.php">VIEW RESULTS</a></li>
+        <li><a href="<?php echo BASE_URL; ?>/views/student/provisional-results.php">MY PROVISIONAL RESULTS</a></li>
         <li class="active"><a href="<?php echo BASE_URL; ?>/views/student/transcript.php">VIEW TRANSCRIPT</a></li>
         <li><a href="<?php echo BASE_URL; ?>/views/student/notifications.php">MY MAILBOX</a></li>
         <li><a href="<?php echo BASE_URL; ?>/views/student/academic-calendar.php">ACADEMIC CALENDAR</a></li>
@@ -653,20 +672,19 @@ html[data-theme='dark'] .services-submenu {
             <h4>My Transcript</h4>
         </div>
         <div class="topbar-right">
-            <?php if ($transcriptDownloadRightsGranted): ?>
+            <?php if ($transcriptDownloadAvailable): ?>
                 <a href="?export=csv" class="btn btn-outline-secondary btn-sm mr-2"><i class="fas fa-file-csv"></i> Export CSV</a>
                 <a href="?export=excel" class="btn btn-outline-secondary btn-sm mr-2"><i class="fas fa-file-excel"></i> Export Excel</a>
                 <a href="?export=xml" class="btn btn-outline-secondary btn-sm mr-2"><i class="fas fa-code"></i> Export XML</a>
             <?php else: ?>
-                <button type="button" class="btn btn-outline-secondary btn-sm mr-2" disabled title="Admin verification required">Export CSV</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm mr-2" disabled title="Admin verification required">Export Excel</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm mr-2" disabled title="Admin verification required">Export XML</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm mr-2" disabled title="<?php echo $transcriptDownloadAlreadyUsed ? 'One-time download already used' : 'Admin approval and eligibility required'; ?>">Export CSV</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm mr-2" disabled title="<?php echo $transcriptDownloadAlreadyUsed ? 'One-time download already used' : 'Admin approval and eligibility required'; ?>">Export Excel</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm mr-2" disabled title="<?php echo $transcriptDownloadAlreadyUsed ? 'One-time download already used' : 'Admin approval and eligibility required'; ?>">Export XML</button>
             <?php endif; ?>
-            <a href="<?php echo e($transcriptVerifyUrl . '?student_id=' . urlencode((string)($student['student_id'] ?? '')) . '&code=' . urlencode((string)$transcriptVerificationCode)); ?>" class="btn btn-outline-secondary btn-sm mr-2"><i class="fas fa-shield-check"></i> Verify Record</a>
-            <?php if ($transcriptDownloadRightsGranted): ?>
+            <?php if ($transcriptViewGranted): ?>
                 <button type="button" class="btn btn-outline-secondary btn-sm mr-2" onclick="window.print()"><i class="fas fa-print"></i> Official PDF (Print)</button>
             <?php else: ?>
-                <button type="button" class="btn btn-outline-secondary btn-sm mr-2" disabled title="Admin verification required">Official PDF (Print)</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm mr-2" disabled title="Admin approval and eligibility required">Official PDF (Print)</button>
             <?php endif; ?>
             <?php include '../../includes/notification_bell.php'; ?>
         </div>
@@ -679,10 +697,33 @@ html[data-theme='dark'] .services-submenu {
         <?php if ($session->getFlash('error')): ?>
             <div class="alert alert-danger"><?php echo e($session->getFlash('error')); ?></div>
         <?php endif; ?>
-        <?php if (!$transcriptDownloadRightsGranted): ?>
-            <div class="alert alert-warning">Transcript export is locked until admin verifies and grants download rights.</div>
+        <?php if ($transcriptDownloadAvailable): ?>
+            <div class="alert alert-info">Note: Official transcript export is available as a one-time download.</div>
+        <?php elseif ($transcriptDownloadAlreadyUsed && $transcriptViewGranted): ?>
+            <div class="alert alert-info">
+                One-time transcript download already used<?php echo $transcriptDownloadUsedAt !== '' ? ' on ' . e(date('Y-m-d H:i', strtotime($transcriptDownloadUsedAt))) : ''; ?>.
+                Contact admin if re-enable is required.
+            </div>
         <?php endif; ?>
-        <?php if (empty($terms)): ?>
+        <?php if (!$transcriptViewGranted): ?>
+            <div class="alert alert-warning">
+                Transcript access is locked until admin grants rights and eligibility is fully cleared.
+            </div>
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h6 class="mb-2">Transcript Eligibility Checklist</h6>
+                    <ul class="mb-0 pl-3">
+                        <li>Completed studies: <?php echo !empty($transcriptEligibility['completed_studies']) ? 'YES' : 'NO'; ?></li>
+                        <li>No outstanding retakes: <?php echo !empty($transcriptEligibility['has_no_retakes']) ? 'YES' : 'NO'; ?><?php echo !empty($transcriptEligibility['retake_count']) ? ' (' . (int)$transcriptEligibility['retake_count'] . ')' : ''; ?></li>
+                        <li>Bills cleared: <?php echo !empty($transcriptEligibility['bills_cleared']) ? 'YES' : 'NO'; ?></li>
+                        <li>Discipline in good standing: <?php echo !empty($transcriptEligibility['discipline_ok']) ? 'YES' : 'NO'; ?><?php echo !empty($transcriptEligibility['discipline_status']) ? ' (' . e((string)$transcriptEligibility['discipline_status']) . ')' : ''; ?></li>
+                        <li>Admin transcript rights granted: <?php echo $transcriptDownloadRightsGranted ? 'YES' : 'NO'; ?></li>
+                        <li>One-time download available: <?php echo $transcriptDownloadAlreadyUsed ? 'NO' : 'YES'; ?></li>
+                    </ul>
+                </div>
+            </div>
+        <?php endif; ?>
+        <?php if ($transcriptViewGranted && empty($terms)): ?>
             <div class="card">
                 <div class="card-body text-center text-muted py-5">
                     <i class="fas fa-file-alt fa-3x mb-3"></i>
@@ -690,12 +731,11 @@ html[data-theme='dark'] .services-submenu {
                     <p>Your transcript will appear after course registrations and published results are available.</p>
                 </div>
             </div>
-        <?php else: ?>
+        <?php elseif ($transcriptViewGranted): ?>
             <div class="transcript-card">
                 <div class="transcript-header">
-                    <h5 class="transcript-title"><?php echo e((string)getSetting('institution_name', INSTITUTION_NAME)); ?> - Official Academic Transcript</h5>
+                    <h5 class="transcript-title">Official Academic Transcript</h5>
                     <p class="transcript-subtitle">Generated on <?php echo e(date('Y-m-d H:i')); ?></p>
-                    <p class="transcript-subtitle">Verification Code: <?php echo e($transcriptVerificationCode); ?></p>
                 </div>
 
                 <div class="profile-grid">
@@ -732,7 +772,6 @@ html[data-theme='dark'] .services-submenu {
                                         <th>Course Code</th>
                                         <th>Course Title</th>
                                         <th class="text-center">CU</th>
-                                        <th class="text-center">Marks</th>
                                         <th class="text-center">Grade</th>
                                         <th class="text-center">GP</th>
                                         <th class="text-center">Status</th>
@@ -744,7 +783,6 @@ html[data-theme='dark'] .services-submenu {
                                             <td><?php echo e((string)($courseRow['course_code'] ?? '')); ?></td>
                                             <td><?php echo e((string)($courseRow['course_name'] ?? '')); ?></td>
                                             <td class="text-center"><?php echo e((string)($courseRow['credit_hours'] ?? '0')); ?></td>
-                                            <td class="text-center"><?php echo ($courseRow['total_marks'] !== null && $courseRow['total_marks'] !== '') ? e(number_format((float)$courseRow['total_marks'], 1)) : '-'; ?></td>
                                             <td class="text-center"><?php echo e((string)($courseRow['grade'] ?? '-')); ?></td>
                                             <td class="text-center"><?php echo ($courseRow['grade_points'] !== null && $courseRow['grade_points'] !== '') ? e(number_format((float)$courseRow['grade_points'], 2)) : '-'; ?></td>
                                             <td class="text-center"><?php echo e(ucfirst((string)($courseRow['result_status'] ?? 'pending'))); ?></td>

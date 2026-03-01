@@ -30,6 +30,7 @@ $requestCatalog = [
     'change_programme' => ['label' => 'CHANGE OF PROGRAMME', 'icon' => 'fas fa-user-graduate'],
     'administrative_registration' => ['label' => 'ADMINISTRATIVE REGISTRATION', 'icon' => 'fas fa-user-tie'],
     'accommodation' => ['label' => 'APPLY FOR ACCOMMODATION', 'icon' => 'fas fa-home'],
+    'transcript_request' => ['label' => 'REQUEST TRANSCRIPT', 'icon' => 'fas fa-file-signature'],
     'student_record_access' => ['label' => 'REQUEST RECORD ACCESS', 'icon' => 'fas fa-folder-open'],
     'student_record_correction' => ['label' => 'REQUEST RECORD CORRECTION', 'icon' => 'fas fa-pen-to-square'],
     'data_deletion_anonymization' => ['label' => 'DATA DELETION / ANONYMIZATION', 'icon' => 'fas fa-user-shield'],
@@ -44,6 +45,15 @@ $formatRequestType = static function (?string $requestType) use ($requestCatalog
         return (string)$requestCatalog[$requestType]['label'];
     }
     return $requestType === '' ? '-' : ucwords(str_replace('_', ' ', $requestType));
+};
+$buildTranscriptChecklist = static function (array $eligibility): string {
+    $parts = [
+        'Completed studies: ' . (!empty($eligibility['completed_studies']) ? 'YES' : 'NO'),
+        'No outstanding retakes: ' . (!empty($eligibility['has_no_retakes']) ? 'YES' : 'NO'),
+        'Bills cleared: ' . (!empty($eligibility['bills_cleared']) ? 'YES' : 'NO'),
+        'Discipline in good standing: ' . (!empty($eligibility['discipline_ok']) ? 'YES' : 'NO'),
+    ];
+    return implode(' | ', $parts);
 };
 
 $currentSemester = [
@@ -119,6 +129,31 @@ if ($studentId > 0) {
     } catch (Exception $e) {
     }
 }
+$transcriptEligibilityCurrent = null;
+if ($studentId > 0) {
+    try {
+        $transcriptEligibilityCurrent = getStudentTranscriptEligibility($conn, $studentId);
+    } catch (Exception $e) {
+        $transcriptEligibilityCurrent = null;
+    }
+}
+foreach ($serviceHistory as &$historyRow) {
+    $historyRow['transcript_system_check'] = '';
+    $historyRow['transcript_unfulfilled'] = [];
+    $historyRow['transcript_eligible'] = null;
+    if ((string)($historyRow['request_type'] ?? '') === 'transcript_request') {
+        $eligibility = is_array($transcriptEligibilityCurrent) ? $transcriptEligibilityCurrent : [];
+        $historyRow['transcript_eligible'] = !empty($eligibility['eligible']);
+        $historyRow['transcript_system_check'] = $buildTranscriptChecklist((array)$eligibility);
+        $historyRow['transcript_unfulfilled'] = !empty($eligibility['blocking_reasons'])
+            ? array_values((array)$eligibility['blocking_reasons'])
+            : [];
+        if (empty($historyRow['transcript_eligible']) && empty($historyRow['transcript_unfulfilled'])) {
+            $historyRow['transcript_unfulfilled'] = ['Unable to evaluate transcript requirements at the moment.'];
+        }
+    }
+}
+unset($historyRow);
 
 $studentViewsPath = BASE_PATH . '/views/student/';
 $linkDashboard = 'dashboard.php';
@@ -208,6 +243,22 @@ body { background: #f2f4f7; }
 .request-box label { font-size:.84rem; font-weight:700; margin-bottom:6px; display:block; }
 .request-box textarea { width:100%; min-height:110px; border:1px solid #cbd5e1; border-radius:8px; padding:8px 10px; font-size:.84rem; }
 .request-box button { margin-top:10px; border:1px solid #1f7aa8; background:#1f7aa8; color:#fff; border-radius:8px; padding:8px 12px; font-weight:700; font-size:.84rem; }
+.unfulfilled-box {
+    margin-top: 8px;
+    border: 1px solid #fca5a5;
+    background: #fff1f2;
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: #9f1239;
+}
+.unfulfilled-box .title {
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+.unfulfilled-box ul {
+    margin: 0;
+    padding-left: 18px;
+}
 
 /* Dark mode overrides for services tiles */
 html[data-theme='dark'] .service-tile {
@@ -221,6 +272,26 @@ html[data-theme='dark'] .service-tile:hover {
 }
 html[data-theme='dark'] .service-tile i {
     color: #93c5fd !important;
+}
+html[data-theme='dark'] .unfulfilled-box {
+    background: rgba(127, 29, 29, 0.22);
+    border-color: #7f1d1d;
+    color: #fecaca;
+}
+html[data-theme='dark'] .status-pill.pending {
+    background: #3f2a1f;
+    color: #fdba74;
+    border: 1px solid #7c2d12;
+}
+html[data-theme='dark'] .status-pill.approved {
+    background: #183427;
+    color: #86efac;
+    border: 1px solid #166534;
+}
+html[data-theme='dark'] .status-pill.rejected {
+    background: #3f1f25;
+    color: #fca5a5;
+    border: 1px solid #991b1b;
 }
 </style>
 
@@ -328,7 +399,22 @@ html[data-theme='dark'] .service-tile i {
                                     <td><?php echo e($formatRequestType((string)($h['request_type'] ?? ''))); ?></td>
                                     <td><?php echo e($h['reason'] ?? '-'); ?></td>
                                     <td><span class="status-pill <?php echo e($st); ?>"><?php echo e(strtoupper($st)); ?></span></td>
-                                    <td><?php echo e($h['admin_response'] ?? '-'); ?></td>
+                                    <td>
+                                        <?php echo e($h['admin_response'] ?? '-'); ?>
+                                        <?php if ((string)($h['request_type'] ?? '') === 'transcript_request'): ?>
+                                            <div class="mt-1"><small class="text-muted"><?php echo e((string)($h['transcript_system_check'] ?? '')); ?></small></div>
+                                            <?php if (!empty($h['transcript_unfulfilled'])): ?>
+                                                <div class="unfulfilled-box">
+                                                    <div class="title">Unfulfilled Requirements</div>
+                                                    <ul>
+                                                        <?php foreach ((array)$h['transcript_unfulfilled'] as $unmetItem): ?>
+                                                            <li><?php echo e((string)$unmetItem); ?></li>
+                                                        <?php endforeach; ?>
+                                                    </ul>
+                                                </div>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>

@@ -24,13 +24,21 @@ $search = $_GET['search'] ?? '';
 $program = $_GET['program'] ?? '';
 $status = $_GET['status'] ?? '';
 $level = $_GET['level'] ?? '';
+$allowedPageSizes = [25, 50, 100];
+$rowsPerPage = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 25;
+if (!in_array($rowsPerPage, $allowedPageSizes, true)) {
+    $rowsPerPage = 25;
+}
+$currentPage = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($currentPage <= 0) {
+    $currentPage = 1;
+}
 
 // Build query
 $db = new Database();
 $conn = $db->getConnection();
 
-$sql = "SELECT s.*, p.program_code, p.program_name, u.status as user_status
-        FROM students s
+$fromWhereSql = " FROM students s
         INNER JOIN programs p ON s.program_id = p.id
         INNER JOIN users u ON s.user_id = u.id
         WHERE 1=1";
@@ -38,31 +46,83 @@ $sql = "SELECT s.*, p.program_code, p.program_name, u.status as user_status
 $params = [];
 
 if ($search) {
-    $sql .= " AND (s.student_id LIKE :search OR s.first_name LIKE :search 
+    $fromWhereSql .= " AND (s.student_id LIKE :search OR s.first_name LIKE :search 
               OR s.last_name LIKE :search OR s.email LIKE :search)";
     $params['search'] = "%$search%";
 }
 
 if ($program) {
-    $sql .= " AND s.program_id = :program";
+    $fromWhereSql .= " AND s.program_id = :program";
     $params['program'] = $program;
 }
 
 if ($status) {
-    $sql .= " AND s.status = :status";
+    $fromWhereSql .= " AND s.status = :status";
     $params['status'] = $status;
 }
 
 if ($level) {
-    $sql .= " AND s.level_year = :level";
+    $fromWhereSql .= " AND s.level_year = :level";
     $params['level'] = $level;
 }
 
-$sql .= " ORDER BY s.created_at DESC";
+$totalStudents = 0;
+try {
+    $countStmt = $conn->prepare("SELECT COUNT(*)" . $fromWhereSql);
+    foreach ($params as $k => $v) {
+        $countStmt->bindValue(':' . $k, $v);
+    }
+    $countStmt->execute();
+    $totalStudents = (int)$countStmt->fetchColumn();
+} catch (Exception $e) {
+    $totalStudents = 0;
+}
+$totalPages = max(1, (int)ceil($totalStudents / max($rowsPerPage, 1)));
+if ($currentPage > $totalPages) {
+    $currentPage = $totalPages;
+}
+$offset = ($currentPage - 1) * $rowsPerPage;
 
-$stmt = $conn->prepare($sql);
-$stmt->execute($params);
-$students = $stmt->fetchAll();
+$students = [];
+try {
+    $sql = "SELECT s.*, p.program_code, p.program_name, u.status as user_status"
+        . $fromWhereSql
+        . " ORDER BY s.created_at DESC LIMIT :limit_rows OFFSET :offset_rows";
+    $stmt = $conn->prepare($sql);
+    foreach ($params as $k => $v) {
+        $stmt->bindValue(':' . $k, $v);
+    }
+    $stmt->bindValue(':limit_rows', $rowsPerPage, PDO::PARAM_INT);
+    $stmt->bindValue(':offset_rows', $offset, PDO::PARAM_INT);
+    $stmt->execute();
+    $students = $stmt->fetchAll();
+} catch (Exception $e) {
+    $students = [];
+}
+$displayStart = $totalStudents > 0 ? ($offset + 1) : 0;
+$displayEnd = $totalStudents > 0 ? min($offset + count($students), $totalStudents) : 0;
+$buildListUrl = static function (int $page, int $perPage, string $search, string $program, string $status, string $level): string {
+    $query = [];
+    if ($search !== '') {
+        $query['search'] = $search;
+    }
+    if ($program !== '') {
+        $query['program'] = $program;
+    }
+    if ($status !== '') {
+        $query['status'] = $status;
+    }
+    if ($level !== '') {
+        $query['level'] = $level;
+    }
+    if ($page > 1) {
+        $query['page'] = $page;
+    }
+    if ($perPage > 0) {
+        $query['per_page'] = $perPage;
+    }
+    return 'list.php' . (!empty($query) ? ('?' . http_build_query($query)) : '');
+};
 
 // Get programs for filter
 $stmt = $conn->query("SELECT * FROM programs WHERE status = 'active' ORDER BY program_name");
@@ -77,95 +137,35 @@ include '../../../includes/header.php';
 ?>
 
 <style>
-/* Prevent horizontal scrolling */
-body {
-    overflow-x: hidden;
-}
-
-.main-content {
-    max-width: 100%;
-    overflow-x: hidden;
-}
-
-.table-responsive {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-}
-
-/* Ensure table cells don't expand beyond container */
-.table td, .table th {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* Custom width constraints */
-.name-cell {
-    max-width: 150px;
-}
-
-.program-cell {
-    max-width: 120px;
-}
-
-/* Compact action buttons */
-.btn-group .btn {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.875rem;
-}
-
-.dropdown-menu {
-    min-width: 180px;
-    z-index: 9999;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    border: 1px solid #dee2e6;
-}
-
-/* Ensure dropdown appears above everything */
-.table-responsive {
-    position: relative;
-    overflow: visible !important;
-}
-
-.table {
-    position: relative;
-    overflow: visible !important;
-}
-
-.table td {
-    position: relative;
-    overflow: visible !important;
-}
-
-/* Force dropdown to be visible */
-.dropdown {
-    position: relative;
-}
-
-.dropdown-menu {
-    position: absolute;
-    top: 100% !important;
-    right: 0 !important;
-    left: auto !important;
-    transform: none !important;
-    margin-top: 2px !important;
-}
-
-/* Ensure Bootstrap dropdown works */
-.show > .dropdown-menu {
-    display: block;
-}
-
-/* Responsive adjustments */
+body { overflow-x: hidden; }
+.main-content { max-width: 100%; overflow-x: hidden; }
+.content-area { overflow-x: hidden; }
+.table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+.students-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.students-toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.students-meta { color: #64748b; font-size: 12px; font-weight: 600; }
+.students-per-page label { margin-bottom: 0; font-size: 12px; font-weight: 600; color: #475569; }
+.students-table { width: 100%; table-layout: fixed; }
+.students-table th, .students-table td { white-space: normal; word-break: break-word; vertical-align: top; }
+.students-table .col-id { width: 120px; }
+.students-table .col-name { width: 180px; }
+.students-table .col-adm { width: 130px; }
+.students-table .col-program { width: 170px; }
+.students-table .col-level { width: 72px; }
+.students-table .col-status { width: 96px; }
+.students-table .col-actions { width: 220px; }
+.students-name-wrap, .students-program-wrap { overflow: hidden; text-overflow: ellipsis; }
+.btn-group .btn { padding: 0.25rem 0.5rem; font-size: 0.82rem; }
+.dropdown-menu { min-width: 180px; z-index: 9999; box-shadow: 0 4px 8px rgba(0,0,0,0.1); border: 1px solid #dee2e6; }
+.students-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.students-pagination .pagination { margin-bottom: 0; }
 @media (max-width: 1200px) {
-    .table {
-        font-size: 0.85rem;
-    }
-    
-    .btn-sm {
-        padding: 0.2rem 0.4rem;
-        font-size: 0.75rem;
-    }
+    .students-table { font-size: 0.82rem; }
+}
+@media (max-width: 768px) {
+    .students-table .col-adm,
+    .students-table .col-program { width: 110px; }
+    .students-table .col-actions { width: 190px; }
 }
 </style>
 
@@ -225,6 +225,7 @@ body {
         <div class="card mb-3">
             <div class="card-body">
                 <form method="GET" action="" class="form-row">
+                    <input type="hidden" name="per_page" value="<?php echo (int)$rowsPerPage; ?>">
                     <div class="col-md-3 mb-2">
                         <input type="text" name="search" class="form-control form-control-sm" placeholder="Search students..." value="<?php echo e($search); ?>">
                     </div>
@@ -260,7 +261,7 @@ body {
                         <button type="submit" class="btn btn-primary btn-sm mr-1">
                             <i class="fas fa-filter"></i> Filter
                         </button>
-                        <a href="list.php" class="btn btn-secondary btn-sm mr-1">
+                        <a href="<?php echo e($buildListUrl(1, $rowsPerPage, '', '', '', '')); ?>" class="btn btn-secondary btn-sm mr-1">
                             <i class="fas fa-redo"></i> Reset
                         </a>
                         <a href="<?php echo BASE_URL; ?>/views/admin/students/add.php" class="btn btn-success btn-sm">
@@ -274,41 +275,56 @@ body {
         <!-- Students Table -->
         <div class="card">
             <div class="card-header">
-                <div class="d-flex justify-content-between align-items-center">
-                    <span><i class="fas fa-users"></i> Students (<?php echo count($students); ?>)</span>
+                <div class="students-toolbar">
+                    <span><i class="fas fa-users"></i> Students (<?php echo (int)$totalStudents; ?>)</span>
+                    <div class="students-toolbar-right">
+                        <span class="students-meta">Showing <?php echo (int)$displayStart; ?>-<?php echo (int)$displayEnd; ?> of <?php echo (int)$totalStudents; ?></span>
+                        <form method="GET" class="form-inline students-per-page">
+                            <?php if ($search !== ''): ?><input type="hidden" name="search" value="<?php echo e($search); ?>"><?php endif; ?>
+                            <?php if ($program !== ''): ?><input type="hidden" name="program" value="<?php echo e($program); ?>"><?php endif; ?>
+                            <?php if ($status !== ''): ?><input type="hidden" name="status" value="<?php echo e($status); ?>"><?php endif; ?>
+                            <?php if ($level !== ''): ?><input type="hidden" name="level" value="<?php echo e($level); ?>"><?php endif; ?>
+                            <label for="studentsPerPage" class="mr-2">Rows</label>
+                            <select id="studentsPerPage" name="per_page" class="form-control form-control-sm" onchange="this.form.submit()">
+                                <?php foreach ($allowedPageSizes as $size): ?>
+                                    <option value="<?php echo (int)$size; ?>" <?php echo $rowsPerPage === (int)$size ? 'selected' : ''; ?>><?php echo (int)$size; ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </form>
+                    </div>
                 </div>
             </div>
             <div class="card-body p-0">
                 <?php if (count($students) > 0): ?>
                     <div class="table-responsive">
-                        <table class="table table-hover table-sm mb-0">
+                        <table class="table table-hover table-sm mb-0 students-table">
                             <thead class="thead-light">
                                 <tr>
-                                    <th style="width: 100px;">Student ID</th>
-                                    <th style="width: 150px;">Name</th>
-                                    <th style="width: 110px;">Admission #</th>
-                                    <th style="width: 120px;">Program</th>
-                                    <th style="width: 60px;">Level</th>
-                                    <th style="width: 90px;">Status</th>
-                                    <th style="width: 210px;" class="text-center">Actions</th>
+                                    <th class="col-id">Student ID</th>
+                                    <th class="col-name">Name</th>
+                                    <th class="col-adm">Admission #</th>
+                                    <th class="col-program">Program</th>
+                                    <th class="col-level">Level</th>
+                                    <th class="col-status">Status</th>
+                                    <th class="col-actions text-center">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php foreach($students as $student): ?>
                                     <tr>
                                         <td><strong><?php echo e($student['student_id']); ?></strong></td>
-                                        <td class="name-cell">
-                                            <div style="overflow: hidden; text-overflow: ellipsis;" title="<?php echo e($student['first_name'] . ' ' . $student['last_name']); ?>">
+                                        <td>
+                                            <div class="students-name-wrap" title="<?php echo e($student['first_name'] . ' ' . $student['last_name']); ?>">
                                                 <?php echo e($student['first_name'] . ' ' . $student['last_name']); ?>
                                             </div>
                                             <small class="text-muted"><?php echo e($student['gender']); ?></small>
                                         </td>
                                         <td><?php echo e($student['admission_number'] ?? 'N/A'); ?></td>
-                                        <td class="program-cell">
-                                            <div style="overflow: hidden; text-overflow: ellipsis;" title="<?php echo e($student['program_name']); ?>">
+                                        <td>
+                                            <div class="students-program-wrap" title="<?php echo e($student['program_name']); ?>">
                                                 <strong><?php echo e($student['program_code']); ?></strong>
                                             </div>
-                                            <small class="text-muted" style="overflow: hidden; text-overflow: ellipsis; display: block;"><?php echo e($student['program_name']); ?></small>
+                                            <small class="text-muted d-block"><?php echo e($student['program_name']); ?></small>
                                         </td>
                                         <td><span class="badge badge-secondary">Y<?php echo $student['level_year']; ?></span></td>
                                         <td>
@@ -353,6 +369,28 @@ body {
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
+                    </div>
+                    <div class="students-footer p-3 border-top">
+                        <div class="students-meta">Showing <?php echo (int)$displayStart; ?>-<?php echo (int)$displayEnd; ?> of <?php echo (int)$totalStudents; ?> students</div>
+                        <div class="students-pagination">
+                            <ul class="pagination pagination-sm">
+                                <li class="page-item <?php echo $currentPage <= 1 ? 'disabled' : ''; ?>">
+                                    <a class="page-link" href="<?php echo e($buildListUrl(max(1, $currentPage - 1), $rowsPerPage, $search, $program, $status, $level)); ?>">Previous</a>
+                                </li>
+                                <?php
+                                    $startPage = max(1, $currentPage - 2);
+                                    $endPage = min($totalPages, $currentPage + 2);
+                                    for ($p = $startPage; $p <= $endPage; $p++):
+                                ?>
+                                    <li class="page-item <?php echo $p === $currentPage ? 'active' : ''; ?>">
+                                        <a class="page-link" href="<?php echo e($buildListUrl($p, $rowsPerPage, $search, $program, $status, $level)); ?>"><?php echo (int)$p; ?></a>
+                                    </li>
+                                <?php endfor; ?>
+                                <li class="page-item <?php echo $currentPage >= $totalPages ? 'disabled' : ''; ?>">
+                                    <a class="page-link" href="<?php echo e($buildListUrl(min($totalPages, $currentPage + 1), $rowsPerPage, $search, $program, $status, $level)); ?>">Next</a>
+                                </li>
+                            </ul>
+                        </div>
                     </div>
                 <?php else: ?>
                     <div class="text-center py-5">

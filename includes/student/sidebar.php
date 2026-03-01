@@ -41,8 +41,8 @@ $studentProfile = $currentUser['profile'] ?? [];
             </li>
             
             <li>
-                <a href="<?php echo BASE_URL; ?>/views/student/results.php" class="<?php echo $currentPage == 'results.php' ? 'active' : ''; ?>" title="My Results">
-                    <i class="fas fa-chart-line"></i> <span>My Results</span>
+                <a href="<?php echo BASE_URL; ?>/views/student/provisional-results.php" class="<?php echo $currentPage == 'provisional-results.php' ? 'active' : ''; ?>" title="My Provisional Results">
+                    <i class="fas fa-chart-line"></i> <span>My Provisional Results</span>
                 </a>
             </li>
             

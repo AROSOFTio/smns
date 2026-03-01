@@ -1328,6 +1328,182 @@ function getStudentFinancialSnapshot($conn, $studentId, $semesterId = 0, $progra
 }
 
 /**
+ * Count outstanding retakes using the latest published attempt per course.
+ */
+function getStudentOutstandingRetakeCount(PDO $conn, int $studentId): int
+{
+    if ($studentId <= 0) {
+        return 0;
+    }
+
+    try {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM results r
+            INNER JOIN semesters s ON s.id = r.semester_id
+            WHERE r.student_id = :student_id
+              AND r.status = 'published'
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM results r2
+                    INNER JOIN semesters s2 ON s2.id = r2.semester_id
+                    WHERE r2.student_id = r.student_id
+                      AND r2.course_id = r.course_id
+                      AND r2.status = 'published'
+                      AND (
+                            s2.end_date > s.end_date
+                            OR (s2.end_date = s.end_date AND s2.start_date > s.start_date)
+                            OR (s2.end_date = s.end_date AND s2.start_date = s.start_date AND r2.id > r.id)
+                      )
+              )
+              AND (
+                    (r.grade_points IS NOT NULL AND r.grade_points < 2.0)
+                    OR UPPER(COALESCE(r.grade, '')) IN ('E', 'F')
+              )
+        ");
+        $stmt->execute(['student_id' => $studentId]);
+        return (int)$stmt->fetchColumn();
+    } catch (Exception $e) {
+        return 0;
+    }
+}
+
+/**
+ * Resolve all-time outstanding bills for a student.
+ */
+function getStudentOutstandingBillsTotal(PDO $conn, int $studentId): float
+{
+    if ($studentId <= 0) {
+        return 0.0;
+    }
+
+    try {
+        $balStmt = $conn->prepare("
+            SELECT COALESCE(SUM(GREATEST(COALESCE(balance, 0), 0)), 0)
+            FROM student_balances
+            WHERE student_id = :student_id
+        ");
+        $balStmt->execute(['student_id' => $studentId]);
+        $balanceOutstanding = (float)$balStmt->fetchColumn();
+        if ($balanceOutstanding > 0) {
+            return $balanceOutstanding;
+        }
+    } catch (Exception $e) {
+        // Fall back to invoices/payments path.
+    }
+
+    try {
+        $invoiceStmt = $conn->prepare("
+            SELECT COALESCE(SUM(total_amount), 0)
+            FROM invoices
+            WHERE student_id = :student_id
+        ");
+        $invoiceStmt->execute(['student_id' => $studentId]);
+        $invoiceTotal = (float)$invoiceStmt->fetchColumn();
+
+        $verifiedPaymentsPredicate = getVerifiedPaymentsPredicate($conn);
+        $paidStmt = $conn->prepare("
+            SELECT COALESCE(SUM(amount), 0)
+            FROM payments
+            WHERE student_id = :student_id
+              AND {$verifiedPaymentsPredicate}
+        ");
+        $paidStmt->execute(['student_id' => $studentId]);
+        $paidTotal = (float)$paidStmt->fetchColumn();
+
+        return max($invoiceTotal - $paidTotal, 0.0);
+    } catch (Exception $e) {
+        return 0.0;
+    }
+}
+
+/**
+ * Evaluate whether a student's transcript can be released.
+ */
+function getStudentTranscriptEligibility(PDO $conn, int $studentId): array
+{
+    $result = [
+        'eligible' => false,
+        'completed_studies' => false,
+        'has_no_retakes' => true,
+        'retake_count' => 0,
+        'bills_cleared' => true,
+        'outstanding_bills' => 0.0,
+        'discipline_ok' => true,
+        'discipline_status' => '',
+        'blocking_reasons' => []
+    ];
+
+    if ($studentId <= 0) {
+        $result['blocking_reasons'][] = 'Invalid student record.';
+        return $result;
+    }
+
+    $student = [];
+    try {
+        $studentStmt = $conn->prepare("SELECT * FROM students WHERE id = :student_id LIMIT 1");
+        $studentStmt->execute(['student_id' => $studentId]);
+        $student = $studentStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    } catch (Exception $e) {
+        $student = [];
+    }
+
+    $academicStatus = strtolower(trim((string)($student['academic_status'] ?? '')));
+    $studentStatus = strtolower(trim((string)($student['status'] ?? '')));
+    $hasGraduationRecord = !empty($student['graduation_date']) || !empty($student['graduation_award_title']);
+    $completedStudies = $hasGraduationRecord
+        || in_array($academicStatus, ['graduated', 'completed', 'complete'], true)
+        || in_array($studentStatus, ['graduated', 'completed', 'complete'], true);
+    $result['completed_studies'] = $completedStudies;
+
+    $retakeCount = getStudentOutstandingRetakeCount($conn, $studentId);
+    $result['retake_count'] = $retakeCount;
+    $result['has_no_retakes'] = ($retakeCount === 0);
+
+    $outstandingBills = getStudentOutstandingBillsTotal($conn, $studentId);
+    $result['outstanding_bills'] = $outstandingBills;
+    $result['bills_cleared'] = ($outstandingBills <= 0.009);
+
+    $disciplineStatus = trim((string)($student['discipline_status'] ?? ''));
+    $disciplineStatusLower = strtolower($disciplineStatus);
+    $disciplineGoodStatuses = ['good standing', 'good', 'cleared', 'clear'];
+    $disciplineBadStatuses = ['probation', 'suspended', 'expelled', 'dismissed', 'disciplinary'];
+    $disciplineOk = ($disciplineStatusLower === '' || in_array($disciplineStatusLower, $disciplineGoodStatuses, true));
+    if (!$disciplineOk) {
+        foreach ($disciplineBadStatuses as $badStatus) {
+            if (strpos($disciplineStatusLower, $badStatus) !== false) {
+                $disciplineOk = false;
+                break;
+            }
+        }
+    }
+    $result['discipline_status'] = $disciplineStatus;
+    $result['discipline_ok'] = $disciplineOk;
+
+    if (!$result['completed_studies']) {
+        $result['blocking_reasons'][] = 'Student has not completed studies.';
+    }
+    if (!$result['has_no_retakes']) {
+        $result['blocking_reasons'][] = 'Outstanding retakes: ' . (int)$result['retake_count'] . '.';
+    }
+    if (!$result['bills_cleared']) {
+        $result['blocking_reasons'][] = 'Outstanding institutional bills: UGX ' . number_format((float)$result['outstanding_bills']);
+    }
+    if (!$result['discipline_ok']) {
+        $result['blocking_reasons'][] = 'Discipline status is not in good standing.';
+    }
+
+    $result['eligible'] = (
+        $result['completed_studies']
+        && $result['has_no_retakes']
+        && $result['bills_cleared']
+        && $result['discipline_ok']
+    );
+
+    return $result;
+}
+
+/**
  * Build monitor rows for students enrolled (approved semester registration)
  * in the selected semester.
  * Amounts are returned in UGX base, with row-level display currency metadata.

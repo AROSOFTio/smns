@@ -21,6 +21,7 @@ $requestTypeLabels = [
     'change_programme' => 'Change Of Programme',
     'administrative_registration' => 'Administrative Registration',
     'accommodation' => 'Apply For Accommodation',
+    'transcript_request' => 'Transcript Request',
     'new_id_card' => 'New ID Card',
     'semester_registration' => 'Semester Registration',
     'enable_registration' => 'Enable Registration',
@@ -33,6 +34,15 @@ $formatRequestType = static function (string $type) use ($requestTypeLabels): st
         return (string)$requestTypeLabels[$type];
     }
     return ucwords(str_replace('_', ' ', $type));
+};
+$buildTranscriptChecklist = static function (array $eligibility): string {
+    $parts = [
+        'Completed studies: ' . (!empty($eligibility['completed_studies']) ? 'YES' : 'NO'),
+        'No outstanding retakes: ' . (!empty($eligibility['has_no_retakes']) ? 'YES' : 'NO'),
+        'Bills cleared: ' . (!empty($eligibility['bills_cleared']) ? 'YES' : 'NO'),
+        'Discipline in good standing: ' . (!empty($eligibility['discipline_ok']) ? 'YES' : 'NO'),
+    ];
+    return implode(' | ', $parts);
 };
 
 if (!Security::verifyCSRFToken($csrf)) {
@@ -111,6 +121,18 @@ try {
             exit;
         }
     }
+    if ($requestType === 'transcript_request') {
+        $dupTranscript = $conn->prepare("SELECT id FROM student_requests WHERE student_id = :student_id AND request_type = :request_type AND status = 'pending' LIMIT 1");
+        $dupTranscript->execute([
+            'student_id' => (int)($studentProfile['id'] ?? 0),
+            'request_type' => $requestType
+        ]);
+        if ($dupTranscript->fetch()) {
+            $session->setFlash('info', 'You already have a pending Transcript Request.');
+            header('Location: ' . BASE_URL . '/views/student/services.php?tab=history');
+            exit;
+        }
+    }
 
     $ins = $conn->prepare("INSERT INTO student_requests (student_id, user_id, request_type, reason, semester_id, status, created_at) VALUES (:student_id, :user_id, :request_type, :reason, :semester_id, 'pending', NOW())");
     $ins->execute([
@@ -122,6 +144,32 @@ try {
     ]);
 
     $requestId = (int)$conn->lastInsertId();
+    $isTranscriptRequest = ($requestType === 'transcript_request');
+    $transcriptEligibility = null;
+    $transcriptChecklist = '';
+    $transcriptGuidance = '';
+    if ($isTranscriptRequest) {
+        $transcriptEligibility = getStudentTranscriptEligibility($conn, (int)($studentProfile['id'] ?? 0));
+        $transcriptChecklist = $buildTranscriptChecklist((array)$transcriptEligibility);
+        if (!empty($transcriptEligibility['eligible'])) {
+            $transcriptGuidance = 'Eligibility check: PASSED. Admin can release verified transcript.';
+        } else {
+            $failReasons = !empty($transcriptEligibility['blocking_reasons'])
+                ? implode(' ', (array)$transcriptEligibility['blocking_reasons'])
+                : 'Some transcript requirements are not yet fulfilled.';
+            $transcriptGuidance = 'Eligibility check: NOT MET. ' . $failReasons;
+        }
+
+        try {
+            $seedResponse = $conn->prepare("UPDATE student_requests SET admin_response = :system_note WHERE id = :id");
+            $seedResponse->execute([
+                'system_note' => 'System check: ' . $transcriptChecklist . '. ' . $transcriptGuidance,
+                'id' => $requestId
+            ]);
+        } catch (Exception $e) {
+            // Non-fatal.
+        }
+    }
     $semLabel = '';
     if ($semesterId) {
         $ss = $conn->prepare('SELECT s.semester_name, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id WHERE s.id = :id LIMIT 1');
@@ -140,6 +188,9 @@ try {
         $studentName = trim((string)($studentProfile['first_name'] ?? '') . ' ' . (string)($studentProfile['last_name'] ?? ''));
         $title = 'Student Request: ' . $formatRequestType($requestType);
         $message = $studentName . ' (Reg#: ' . ($studentProfile['student_id'] ?? '-') . ') submitted a request: ' . mb_substr($reason, 0, 250) . $semLabel;
+        if ($isTranscriptRequest) {
+            $message .= ' | ' . $transcriptChecklist . ' | ' . $transcriptGuidance;
+        }
         $link = BASE_URL . '/views/admin/student_requests.php';
         foreach ($adminUsers as $adminUserId) {
             $noteStmt->execute([
@@ -157,6 +208,9 @@ try {
     try {
         $sTitle = 'Request Submitted: ' . $formatRequestType($requestType);
         $sMessage = 'Your request for ' . $formatRequestType($requestType) . ' has been submitted and is pending review' . ($semLabel ? ' for ' . trim($semLabel, '()') : '') . '. Request ID: ' . $requestId;
+        if ($isTranscriptRequest) {
+            $sMessage .= ' ' . $transcriptChecklist . '. ' . $transcriptGuidance;
+        }
         $sLink = BASE_URL . '/views/student/services.php?tab=history&request_id=' . $requestId;
         $snote = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, link, created_at) VALUES (:uid, :title, :message, 'info', :link, NOW())");
         $snote->execute([

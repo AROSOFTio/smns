@@ -102,27 +102,8 @@ $mailUnreadCount = !empty($currentUser['id']) ? getUnreadNotificationCountForUse
 
 $results = [];
 $organizedResults = [];
-$activePublishedSemesterId = 0;
 
 if ($studentId > 0) {
-    try {
-        $latestPublishedStmt = $conn->prepare("
-            SELECT s.id
-            FROM results r
-            INNER JOIN semesters s ON s.id = r.semester_id
-            INNER JOIN academic_years ay ON ay.id = s.academic_year_id
-            WHERE r.student_id = :student_id
-              AND r.status = 'published'
-            ORDER BY ay.start_date DESC, s.semester_number DESC, s.start_date DESC, s.id DESC
-            LIMIT 1
-        ");
-        $latestPublishedStmt->execute(['student_id' => $studentId]);
-        $activePublishedSemesterId = (int)$latestPublishedStmt->fetchColumn();
-    } catch (Exception $e) {
-        $activePublishedSemesterId = 0;
-    }
-
-    if ($activePublishedSemesterId > 0) {
     $sql = "
         SELECT
             cr.semester_id,
@@ -153,7 +134,6 @@ if ($studentId > 0) {
             AND r.course_id = cr.course_id
             AND r.semester_id = cr.semester_id
         WHERE cr.student_id = :student_id
-          AND cr.semester_id = :active_semester_id
           AND EXISTS (
                 SELECT 1
                 FROM results rp
@@ -184,12 +164,8 @@ if ($studentId > 0) {
     ";
 
     $stmt = $conn->prepare($sql);
-    $stmt->execute([
-        'student_id' => $studentId,
-        'active_semester_id' => $activePublishedSemesterId
-    ]);
+    $stmt->execute(['student_id' => $studentId]);
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
 }
 
 $bestCourses = [];
@@ -253,7 +229,7 @@ foreach ($organizedResults as &$semesters) {
 }
 unset($semesters);
 
-$pageTitle = 'View Results - ' . APP_NAME;
+$pageTitle = 'My Provisional Results - ' . APP_NAME;
 include '../../includes/header.php';
 ?>
 
@@ -389,7 +365,7 @@ body { background: #f8fafc; }
             <li><a href="services.php?tab=new_id">NEW ID CARDS</a></li>
         </ul>
         <li><a href="<?php echo e($linkDashboard); ?>">BIO DATA</a></li>
-        <li><a href="<?php echo e($linkProvisionalResults); ?>">MY PROVISIONAL RESULTS</a></li>
+        <li class="active"><a href="<?php echo e($linkProvisionalResults); ?>">MY PROVISIONAL RESULTS</a></li>
         <li><a href="<?php echo BASE_URL; ?>/views/student/transcript.php">VIEW TRANSCRIPT</a></li>
         <li><a href="<?php echo e($linkMailbox); ?>">MY MAILBOX</a></li>
         <li><a href="<?php echo e($linkAcademicCalendar); ?>">ACADEMIC CALENDAR</a></li>
@@ -458,7 +434,7 @@ body { background: #f8fafc; }
     <div class="results-wrap">
         <div class="results-card">
             <div class="results-header">
-                <h4>View Results (Current Semester)</h4>
+                <h4>My Provisional Results</h4>
                 <div class="student-meta">
                     STUDENT NO: <?php echo e($studentProfile['student_id'] ?? '-'); ?>
                 </div>
