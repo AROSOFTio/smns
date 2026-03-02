@@ -2,9 +2,9 @@
 /**
  * Keeps academic years/semesters aligned to the system calendar model.
  * Model:
- * - Academic year: Aug 01 -> Jun 30
- * - Semester 1 (August intake): Aug 01 -> Dec 20
- * - Semester 2 (January intake): Jan 15 -> Jun 30
+ * - Academic year label: Y/(Y+1)
+ * - Semester 1 (January intake): Feb -> Jul in (Y+1)
+ * - Semester 2 (August intake): Aug -> Dec in (Y)
  */
 class AcademicCalendarManager
 {
@@ -35,6 +35,7 @@ class AcademicCalendarManager
                 self::upsertSemester($conn, $academicYearId, $year, 1);
                 self::upsertSemester($conn, $academicYearId, $year, 2);
             }
+            self::syncActiveIntakeByCalendarMonth($conn);
 
             if (!$wasInTransaction) {
                 $conn->commit();
@@ -94,16 +95,19 @@ class AcademicCalendarManager
 
         if ($semesterNumber === 1) {
             $semesterName = 'Semester 1';
-            $startDate = sprintf('%04d-08-01', $startYear);
-            $endDate = sprintf('%04d-12-20', $startYear);
-            $registrationStartDate = sprintf('%04d-08-01', $startYear);
-            $registrationEndDate = sprintf('%04d-09-15', $startYear);
+            $janStartDay = ($startYear === 2025) ? 13 : 10;
+            $janYear = $startYear + 1;
+            $startDate = sprintf('%04d-02-%02d', $janYear, $janStartDay);
+            $endDate = sprintf('%04d-07-30', $janYear);
+            $registrationStartDate = $startDate;
+            $registrationEndDate = sprintf('%04d-03-31', $janYear);
         } else {
             $semesterName = 'Semester 2';
-            $startDate = sprintf('%04d-01-15', $startYear + 1);
-            $endDate = sprintf('%04d-06-30', $startYear + 1);
-            $registrationStartDate = sprintf('%04d-01-15', $startYear + 1);
-            $registrationEndDate = sprintf('%04d-03-31', $startYear + 1);
+            $augStartDay = ($startYear === 2025) ? 3 : 10;
+            $startDate = sprintf('%04d-08-%02d', $startYear, $augStartDay);
+            $endDate = sprintf('%04d-12-12', $startYear);
+            $registrationStartDate = $startDate;
+            $registrationEndDate = sprintf('%04d-09-30', $startYear);
         }
 
         $findStmt = $conn->prepare(
@@ -170,5 +174,54 @@ class AcademicCalendarManager
             'registration_start_date' => $registrationStartDate,
             'registration_end_date' => $registrationEndDate
         ]);
+    }
+
+    /**
+     * Calendar rule:
+     * - Jan-Jul: activate January intake only (Semester 1)
+     * - Aug-Dec: activate August intake only (Semester 2)
+     */
+    private static function syncActiveIntakeByCalendarMonth(PDO $conn)
+    {
+        $year = (int)gmdate('Y');
+        $month = (int)gmdate('n');
+        $targetStartYear = ($month >= 8) ? $year : ($year - 1);
+        $targetSemesterNumber = ($month >= 8) ? 2 : 1;
+
+        $targetYearName = $targetStartYear . '/' . ($targetStartYear + 1);
+        $targetStmt = $conn->prepare("
+            SELECT s.id AS semester_id, s.academic_year_id
+            FROM semesters s
+            INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+            WHERE ay.year_name = :year_name
+              AND s.semester_number = :semester_number
+            LIMIT 1
+        ");
+        $targetStmt->execute([
+            'year_name' => $targetYearName,
+            'semester_number' => $targetSemesterNumber
+        ]);
+        $target = $targetStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!$target) {
+            return;
+        }
+
+        $targetSemesterId = (int)($target['semester_id'] ?? 0);
+        $targetAcademicYearId = (int)($target['academic_year_id'] ?? 0);
+        if ($targetAcademicYearId <= 0 || $targetSemesterId <= 0) {
+            return;
+        }
+
+        $deactivateOtherSemestersStmt = $conn->prepare("UPDATE semesters SET status = 'inactive' WHERE status = 'active' AND id <> :id");
+        $deactivateOtherSemestersStmt->execute(['id' => $targetSemesterId]);
+
+        $activateTargetSemesterStmt = $conn->prepare("UPDATE semesters SET status = 'active' WHERE id = :id");
+        $activateTargetSemesterStmt->execute(['id' => $targetSemesterId]);
+
+        $deactivateOtherYearsStmt = $conn->prepare("UPDATE academic_years SET status = 'inactive' WHERE status = 'active' AND id <> :id");
+        $deactivateOtherYearsStmt->execute(['id' => $targetAcademicYearId]);
+
+        $activateTargetYearStmt = $conn->prepare("UPDATE academic_years SET status = 'active' WHERE id = :id");
+        $activateTargetYearStmt->execute(['id' => $targetAcademicYearId]);
     }
 }
