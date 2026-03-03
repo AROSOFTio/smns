@@ -992,8 +992,26 @@ function getStudentEnrollmentTargetContext($conn, $studentId) {
             return $base;
         }
 
+        // Institutional progression guard:
+        // only advance away from current context when the student has an approved
+        // semester registration in the current semester.
+        $approvedCurrentStmt = $conn->prepare("
+            SELECT id
+            FROM semester_registrations
+            WHERE student_id = :student_id
+              AND semester_id = :semester_id
+              AND status = 'approved'
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+        $approvedCurrentStmt->execute([
+            'student_id' => $studentId,
+            'semester_id' => $currentSemesterId
+        ]);
+        $canProgressFromCurrent = ((int)$approvedCurrentStmt->fetchColumn() > 0);
+
         // 2a) Semester 1 -> Semester 2 (same academic year)
-        if ($currentSemNo === 1) {
+        if ($currentSemNo === 1 && $canProgressFromCurrent) {
             $sameYearStmt = $conn->prepare("
                 SELECT s.id, s.semester_name, s.semester_number, s.academic_year_id, ay.year_name AS academic_year
                 FROM semesters s
@@ -1016,7 +1034,7 @@ function getStudentEnrollmentTargetContext($conn, $studentId) {
         }
 
         // 2b) Semester 2 -> Semester 1 (next academic year)
-        if ($currentSemNo === 2) {
+        if ($currentSemNo === 2 && $canProgressFromCurrent) {
             $nextYearStmt = $conn->prepare("
                 SELECT ay2.id
                 FROM academic_years ay1

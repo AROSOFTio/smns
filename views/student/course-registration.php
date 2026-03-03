@@ -34,9 +34,9 @@ $semesters = $sstmt->fetchAll();
 $academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_years ORDER BY start_date DESC")->fetchAll();
 
 // Default semester & academic year context.
-// Mixed cohorts: default each student to their own enrollment target context.
-// No-history fallback still resolves to Semester 1 of active academic year.
-$currentSemester = getStudentEnrollmentTargetContext($conn, (int)($studentProfile['id'] ?? 0));
+// Mixed cohorts: default each student to institutional current semester context.
+// This prevents auto-advancing students to another semester unless explicitly allowed by policy.
+$currentSemester = getStudentCurrentSemesterContext($conn, (int)($studentProfile['id'] ?? 0));
 $hasExplicitSemesterContext = isset($_GET['semester_id']) || isset($_GET['academic_year_id']) || isset($_GET['semester_number']);
 
 $defaultSemesterId = 0;
@@ -272,7 +272,12 @@ function getRepeatSemesterDecision(PDO $conn, int $studentId, int $targetAcademi
         $promotionMetric = isset($row['promotion_metric']) && $row['promotion_metric'] !== null
             ? (float)$row['promotion_metric']
             : null;
-        if ($promotionMetric === null || $promotionMetric >= 2.0) {
+        $retakeSummary = getOutstandingRetakeSummary($conn, $studentId);
+        $outstandingRetakes = (int)($retakeSummary['count'] ?? 0);
+
+        $triggerByGpa = ($promotionMetric !== null && $promotionMetric < 2.0);
+        $triggerByRetakes = ($outstandingRetakes >= 3);
+        if (!$triggerByGpa && !$triggerByRetakes) {
             return null;
         }
 
@@ -378,6 +383,8 @@ function getRepeatSemesterDecision(PDO $conn, int $studentId, int $targetAcademi
             'semester_gpa' => $row['semester_gpa_value'] !== null ? (float)$row['semester_gpa_value'] : null,
             'cumulative_gpa' => $row['cumulative_gpa_value'] !== null ? (float)$row['cumulative_gpa_value'] : null,
             'year_of_study' => $repeatYear > 0 ? $repeatYear : null,
+            'outstanding_retakes' => $outstandingRetakes,
+            'lock_reason' => $triggerByRetakes ? 'retakes' : 'gpa',
         ];
     } catch (Exception $e) {
         return null;
@@ -485,12 +492,25 @@ if ($forcedRepeatDecision) {
     }
 
     $metricLabel = (string)($forcedRepeatDecision['promotion_metric_label'] ?? 'GPA');
-    $metricValue = isset($forcedRepeatDecision['promotion_metric']) ? (float)$forcedRepeatDecision['promotion_metric'] : 0.0;
-    $repeatEnforcedNotice =
-        'Promotion requires GPA 2.00 or above. You are locked to repeat ' .
-        (($forcedRepeatDecision['year_name'] ?? '') ?: 'the previous academic year') . ' - ' .
-        (($forcedRepeatDecision['semester_name'] ?? '') ?: 'the previous semester') . '. ' .
-        'Your latest ' . $metricLabel . ' is ' . number_format($metricValue, 2) . '.';
+    $metricValue = isset($forcedRepeatDecision['promotion_metric']) && $forcedRepeatDecision['promotion_metric'] !== null
+        ? (float)$forcedRepeatDecision['promotion_metric']
+        : null;
+    $lockReason = (string)($forcedRepeatDecision['lock_reason'] ?? 'gpa');
+    $retakeCount = (int)($forcedRepeatDecision['outstanding_retakes'] ?? 0);
+
+    if ($lockReason === 'retakes') {
+        $repeatEnforcedNotice =
+            'Progression blocked. You have ' . $retakeCount . ' outstanding retake paper' . ($retakeCount === 1 ? '' : 's') .
+            ' (limit to proceed is 2). You are locked to repeat ' .
+            (($forcedRepeatDecision['year_name'] ?? '') ?: 'the previous academic year') . ' - ' .
+            (($forcedRepeatDecision['semester_name'] ?? '') ?: 'the previous semester') . '.';
+    } else {
+        $repeatEnforcedNotice =
+            'Promotion requires GPA 2.00 or above. You are locked to repeat ' .
+            (($forcedRepeatDecision['year_name'] ?? '') ?: 'the previous academic year') . ' - ' .
+            (($forcedRepeatDecision['semester_name'] ?? '') ?: 'the previous semester') . '. ' .
+            'Your latest ' . $metricLabel . ' is ' . number_format((float)$metricValue, 2) . '.';
+    }
 }
 
 $latestGpaSummary = getLatestStudentGpaSummary($conn, (int)$studentProfile['id']);
@@ -512,9 +532,115 @@ if (!isset($_GET['has_retakes']) && (int)($retakeSummary['count'] ?? 0) > 0) {
     $selectedHasRetakes = 'yes';
 }
 
+// Promotion gate: Semester 2 progression requires promotion metric >= 2.00 and fewer than 3 outstanding retakes.
+$evaluateSemesterProgression = function (int $targetSemesterId) use ($conn, $studentProfile): array {
+    $result = [
+        'allowed' => true,
+        'semester_number' => 0,
+        'metric' => null,
+        'metric_label' => 'GPA',
+        'outstanding_retakes' => 0,
+        'message' => ''
+    ];
+
+    if ($targetSemesterId <= 0) {
+        return $result;
+    }
+
+    try {
+        $semStmt = $conn->prepare("SELECT semester_number FROM semesters WHERE id = :id LIMIT 1");
+        $semStmt->execute(['id' => $targetSemesterId]);
+        $semesterNumber = (int)$semStmt->fetchColumn();
+        $result['semester_number'] = $semesterNumber;
+        if ($semesterNumber !== 2) {
+            return $result;
+        }
+
+        $gpa = getLatestStudentGpaSummary($conn, (int)$studentProfile['id']);
+        $metric = (is_array($gpa) && isset($gpa['promotion_metric']) && $gpa['promotion_metric'] !== null)
+            ? (float)$gpa['promotion_metric']
+            : null;
+        $metricLabel = (is_array($gpa) && !empty($gpa['promotion_metric_label']))
+            ? (string)$gpa['promotion_metric_label']
+            : 'GPA';
+
+        $result['metric'] = $metric;
+        $result['metric_label'] = $metricLabel;
+
+        $retakes = getOutstandingRetakeSummary($conn, (int)$studentProfile['id']);
+        $retakeCount = (int)($retakes['count'] ?? 0);
+        $result['outstanding_retakes'] = $retakeCount;
+        if ($retakeCount >= 3) {
+            $result['allowed'] = false;
+            $result['message'] = 'Semester 2 progression is blocked because you have ' . $retakeCount
+                . ' outstanding retake papers. Maximum allowed to proceed is 2.';
+            return $result;
+        }
+
+        if ($metric === null || $metric < 2.0) {
+            $result['allowed'] = false;
+            $result['message'] = $metric === null
+                ? 'Semester 2 progression requires a published promotion GPA of at least 2.00.'
+                : ('Semester 2 progression requires GPA 2.00 or above. Your latest ' . $metricLabel . ' is ' . number_format($metric, 2) . '.');
+        }
+    } catch (Exception $e) {
+        // Fail-safe: if lookup fails, keep existing flow to avoid hard lock due to transient errors.
+    }
+
+    return $result;
+};
+
+// Institutional semester guard: student can only operate in their resolved enrollment target
+// (or enforced repeat target). This prevents manually switching to an unauthorized semester.
+$institutionTargetContext = $forcedRepeatDecision
+    ? [
+        'id' => (int)($forcedRepeatDecision['semester_id'] ?? 0),
+        'academic_year_id' => (int)($forcedRepeatDecision['academic_year_id'] ?? 0),
+        'semester_number' => (int)($forcedRepeatDecision['semester_number'] ?? 0),
+    ]
+    : getStudentCurrentSemesterContext($conn, (int)$studentProfile['id']);
+$institutionAllowedSemesterId = (int)($institutionTargetContext['id'] ?? 0);
+$institutionAllowedAcademicYearId = (int)($institutionTargetContext['academic_year_id'] ?? 0);
+$institutionAllowedSemesterNumber = (int)($institutionTargetContext['semester_number'] ?? 0);
+
 // Recompute window against final resolved semester context (important after repeat-lock override).
 $currentSemesterWindow = $getSemesterRegistrationWindow((int)$semesterId);
 $isEnrollmentWindowOpen = (bool)$currentSemesterWindow['open'];
+
+// GET guard: if user manually changes URL filters to a semester they are not eligible for,
+// force canonical institutional context.
+if ($_SERVER['REQUEST_METHOD'] !== 'POST'
+    && $regTab === 'enroll'
+    && $semesterId > 0
+    && $institutionAllowedSemesterId > 0
+    && $semesterId !== $institutionAllowedSemesterId
+) {
+    $session->setFlash(
+        'warning',
+        'You can only view/register courses for your current institutional semester context.'
+    );
+    header(
+        'Location: course-registration.php?semester_id=' . $institutionAllowedSemesterId
+        . '&academic_year_id=' . $institutionAllowedAcademicYearId
+        . '&semester_number=' . $institutionAllowedSemesterNumber
+        . '&year_of_study=' . $yearOfStudy
+    );
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $regTab === 'enroll' && $semesterId > 0) {
+    $progressionCheck = $evaluateSemesterProgression((int)$semesterId);
+    if (!$progressionCheck['allowed']) {
+        $session->setFlash('warning', $progressionCheck['message']);
+        header(
+            'Location: course-registration.php?semester_id=' . $institutionAllowedSemesterId
+            . '&academic_year_id=' . $institutionAllowedAcademicYearId
+            . '&semester_number=' . $institutionAllowedSemesterNumber
+            . '&year_of_study=' . $yearOfStudy
+        );
+        exit;
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'enroll_now')) {
     if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -540,6 +666,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'enro
         exit;
     }
 
+    $progressionCheck = $evaluateSemesterProgression((int)$semesterId);
+    if (!$progressionCheck['allowed']) {
+        $session->setFlash('error', $progressionCheck['message']);
+        header(
+            'Location: course-registration.php?semester_id=' . $institutionAllowedSemesterId
+            . '&academic_year_id=' . $institutionAllowedAcademicYearId
+            . '&semester_number=' . $institutionAllowedSemesterNumber
+            . '&year_of_study=' . $yearOfStudy
+        );
+        exit;
+    }
+
+    if ($institutionAllowedSemesterId > 0 && $semesterId !== $institutionAllowedSemesterId) {
+        $session->setFlash('error', 'Enrollment blocked. You are not eligible for the selected semester.');
+        header(
+            'Location: course-registration.php?semester_id=' . $institutionAllowedSemesterId
+            . '&academic_year_id=' . $institutionAllowedAcademicYearId
+            . '&semester_number=' . $institutionAllowedSemesterNumber
+            . '&year_of_study=' . $yearOfStudy
+        );
+        exit;
+    }
+
+    // Do not allow repeat self-enrollment once this semester is already approved.
+    $existingApprovedStmt = $conn->prepare("
+        SELECT id
+        FROM semester_registrations
+        WHERE student_id = :student_id
+          AND semester_id = :semester_id
+          AND status = 'approved'
+        ORDER BY id DESC
+        LIMIT 1
+    ");
+    $existingApprovedStmt->execute([
+        'student_id' => (int)$studentProfile['id'],
+        'semester_id' => (int)$semesterId
+    ]);
+    if ((int)$existingApprovedStmt->fetchColumn() > 0) {
+        $session->setFlash('info', 'You are already enrolled for this semester. Enrollment is locked for this context.');
+        header('Location: course-registration.php?semester_id=' . $semesterId . '&academic_year_id=' . $selectedAcademicYearId . '&semester_number=' . $selectedSemesterNumber . '&year_of_study=' . $yearOfStudy);
+        exit;
+    }
+
     $repeatDecision = getRepeatSemesterDecision(
         $conn,
         (int)$studentProfile['id'],
@@ -554,13 +723,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'enro
             $yearOfStudy = (int)$repeatDecision['year_of_study'];
         }
         $metricLabel = (string)($repeatDecision['promotion_metric_label'] ?? 'GPA');
-        $metricValue = isset($repeatDecision['promotion_metric']) ? (float)$repeatDecision['promotion_metric'] : 0.0;
-        $session->setFlash(
-            'warning',
-            'Promotion requires GPA 2.00 or above. Repeat semester enforced for ' .
-            ($repeatDecision['year_name'] ?: 'selected year') . ' - ' . ($repeatDecision['semester_name'] ?: 'semester') .
-            ' (' . $metricLabel . ': ' . number_format($metricValue, 2) . ').'
-        );
+        $metricValue = isset($repeatDecision['promotion_metric']) && $repeatDecision['promotion_metric'] !== null
+            ? (float)$repeatDecision['promotion_metric']
+            : null;
+        $lockReason = (string)($repeatDecision['lock_reason'] ?? 'gpa');
+        $retakeCount = (int)($repeatDecision['outstanding_retakes'] ?? 0);
+        if ($lockReason === 'retakes') {
+            $session->setFlash(
+                'warning',
+                'Repeat semester enforced for ' .
+                ($repeatDecision['year_name'] ?: 'selected year') . ' - ' . ($repeatDecision['semester_name'] ?: 'semester') .
+                '. You have ' . $retakeCount . ' outstanding retake papers (maximum allowed to proceed is 2).'
+            );
+        } else {
+            $session->setFlash(
+                'warning',
+                'Promotion requires GPA 2.00 or above. Repeat semester enforced for ' .
+                ($repeatDecision['year_name'] ?: 'selected year') . ' - ' . ($repeatDecision['semester_name'] ?: 'semester') .
+                ' (' . $metricLabel . ': ' . number_format((float)$metricValue, 2) . ').'
+            );
+        }
     }
 
     // Strict lock: students cannot self-enroll outside registration window.
@@ -997,6 +1179,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit;
     }
 
+    $progressionCheck = $evaluateSemesterProgression((int)$semesterId);
+    if (!$progressionCheck['allowed']) {
+        $session->setFlash('error', $progressionCheck['message']);
+        header(
+            'Location: course-registration.php?semester_id=' . $institutionAllowedSemesterId
+            . '&academic_year_id=' . $institutionAllowedAcademicYearId
+            . '&semester_number=' . $institutionAllowedSemesterNumber
+            . '&year_of_study=' . $yearOfStudy
+        );
+        exit;
+    }
+
+    if ($institutionAllowedSemesterId > 0 && (int)$semesterId !== (int)$institutionAllowedSemesterId) {
+        $session->setFlash('error', 'Registration blocked. You are not eligible for the selected semester.');
+        header(
+            'Location: course-registration.php?semester_id=' . $institutionAllowedSemesterId
+            . '&academic_year_id=' . $institutionAllowedAcademicYearId
+            . '&semester_number=' . $institutionAllowedSemesterNumber
+            . '&year_of_study=' . $yearOfStudy
+        );
+        exit;
+    }
+
     // Strict lock: students cannot create/update semester registration outside configured window.
     $requestWindow = $getSemesterRegistrationWindow((int)$semesterId);
     if (!$requestWindow['configured'] || !$requestWindow['open']) {
@@ -1187,6 +1392,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $session->setFlash('error', 'Invalid CSRF token.');
         header('Location: course-registration.php?semester_id=' . $semesterId);
+        exit;
+    }
+
+    $progressionCheck = $evaluateSemesterProgression((int)$semesterId);
+    if (!$progressionCheck['allowed']) {
+        $session->setFlash('error', $progressionCheck['message']);
+        header(
+            'Location: course-registration.php?semester_id=' . $institutionAllowedSemesterId
+            . '&academic_year_id=' . $institutionAllowedAcademicYearId
+            . '&semester_number=' . $institutionAllowedSemesterNumber
+            . '&year_of_study=' . $yearOfStudy
+        );
+        exit;
+    }
+
+    if ($institutionAllowedSemesterId > 0 && (int)$semesterId !== (int)$institutionAllowedSemesterId) {
+        $session->setFlash('error', 'Course registration blocked. You are not eligible for the selected semester.');
+        header(
+            'Location: course-registration.php?semester_id=' . $institutionAllowedSemesterId
+            . '&academic_year_id=' . $institutionAllowedAcademicYearId
+            . '&semester_number=' . $institutionAllowedSemesterNumber
+            . '&year_of_study=' . $yearOfStudy
+        );
         exit;
     }
 
@@ -2356,8 +2584,14 @@ include '../../includes/header.php';
                             </div>
                         </div>
                         <div class="enroll-action-row">
-                            <button type="submit" class="enroll-now-btn" <?php echo !$isEnrollmentWindowOpen ? 'disabled title="Enrollment window closed. Contact admin."' : ''; ?>>
-                                <?php echo $isEnrollmentWindowOpen ? 'ENROLL NOW' : 'ENROLLMENT CLOSED'; ?>
+                            <button
+                                type="submit"
+                                class="enroll-now-btn"
+                                id="enroll_now_btn"
+                                data-default-label="<?php echo ($isEnrollmentWindowOpen && !$semesterApproval) ? 'ENROLL NOW' : ($semesterApproval ? 'ENROLLED' : 'ENROLLMENT CLOSED'); ?>"
+                                <?php echo (!$isEnrollmentWindowOpen || $semesterApproval) ? 'disabled title="' . ($semesterApproval ? 'Already enrolled for this semester.' : 'Enrollment window closed. Contact admin.') . '"' : ''; ?>
+                            >
+                                <?php echo $isEnrollmentWindowOpen ? ($semesterApproval ? 'ENROLLED' : 'ENROLL NOW') : 'ENROLLMENT CLOSED'; ?>
                             </button>
                         </div>
                     </div>
@@ -2544,6 +2778,19 @@ if (semesterSelect && !semesterSelect.disabled) {
 }
 if (academicYearSelect && !academicYearSelect.disabled) {
     academicYearSelect.addEventListener('change', applyEnrollmentFilters);
+}
+
+var enrollmentForm = document.getElementById('courseFilterForm');
+var enrollNowBtn = document.getElementById('enroll_now_btn');
+if (enrollmentForm && enrollNowBtn) {
+    enrollmentForm.addEventListener('submit', function () {
+        if (enrollNowBtn.disabled) {
+            return false;
+        }
+        enrollNowBtn.disabled = true;
+        enrollNowBtn.textContent = 'PROCESSING...';
+        enrollNowBtn.setAttribute('aria-busy', 'true');
+    });
 }
 </script>
 
