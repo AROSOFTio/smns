@@ -30,7 +30,13 @@ $isDashboardHome = $currentPage === 'dashboard.php' && $currentSection === '';
                     <i class="fas fa-sitemap"></i> <span>Fee Structures</span>
                 </a>
             </li>
-            
+
+            <li>
+                <a href="<?php echo BASE_URL; ?>/views/finance/student-profile.php" class="<?php echo $currentPage === 'student-profile.php' ? 'active' : ''; ?>" title="Student Financial Profile">
+                    <i class="fas fa-user-graduate"></i> <span>Student Profiles</span>
+                </a>
+            </li>
+             
             <li class="menu-section">Operations</li>
             
             <li>

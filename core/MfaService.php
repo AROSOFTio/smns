@@ -138,7 +138,15 @@ class MfaService {
         $message .= "This code expires in " . (int)ceil($ttl / 60) . " minute(s).\n";
         $message .= "If you did not try to sign in, contact support immediately.";
 
-        $sent = Helper::sendEmail([$email], $subject, $message, ['context_label' => 'MFA OTP']);
+        $sent = Helper::sendEmail([$email], $subject, $message, [
+            'context_label' => 'MFA OTP',
+            // Keep MFA responsive on slow localhost SMTP/network links.
+            'retry_attempts' => 1,
+            'retry_delay_ms' => 0,
+            'smtp_connection_timeout_ms' => 6000,
+            'smtp_greeting_timeout_ms' => 5000,
+            'smtp_socket_timeout_ms' => 7000
+        ]);
         if (!$sent) {
             $lastError = method_exists('Helper', 'getLastEmailError') ? trim((string)Helper::getLastEmailError()) : '';
             error_log('MFA email delivery failed for user ' . $userId . ' (' . $module . '): ' . ($lastError !== '' ? $lastError : 'unknown error'));

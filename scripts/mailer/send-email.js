@@ -83,6 +83,15 @@ async function main() {
     smtp.secure !== undefined ? smtp.secure : process.env.SMTP_SECURE,
     smtpPort === 465
   );
+  const connectionTimeout = Number(
+    smtp.connection_timeout || process.env.SMTP_CONNECTION_TIMEOUT || 12000
+  );
+  const greetingTimeout = Number(
+    smtp.greeting_timeout || process.env.SMTP_GREETING_TIMEOUT || 9000
+  );
+  const socketTimeout = Number(
+    smtp.socket_timeout || process.env.SMTP_SOCKET_TIMEOUT || 12000
+  );
 
   if (!smtpHost) {
     fail('SMTP host is missing');
@@ -101,9 +110,9 @@ async function main() {
     host: resolvedHost.host,
     port: smtpPort,
     secure: smtpSecure,
-    connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT || 20000),
-    greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT || 15000),
-    socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT || 20000)
+    connectionTimeout: connectionTimeout,
+    greetingTimeout: greetingTimeout,
+    socketTimeout: socketTimeout
   };
 
   if (resolvedHost.tlsServername) {

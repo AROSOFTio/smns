@@ -1366,32 +1366,31 @@
         var STORAGE_KEY = 'smns_theme_mode';
         var root = document.documentElement;
         var btn = document.getElementById('themeToggleBtn');
-        if (!btn) return;
+        if (btn) {
+            btn.style.display = 'none';
+        }
 
         function applyTheme(mode) {
             if (mode === 'dark') {
                 root.setAttribute('data-theme', 'dark');
-                btn.innerHTML = '<i class="fas fa-sun" aria-hidden="true"></i>';
-                btn.setAttribute('title', 'Switch to Light Mode');
-                btn.setAttribute('aria-label', 'Switch to Light Mode');
+                if (btn) {
+                    btn.innerHTML = '<i class="fas fa-sun" aria-hidden="true"></i>';
+                    btn.setAttribute('title', 'Switch to Light Mode');
+                    btn.setAttribute('aria-label', 'Switch to Light Mode');
+                }
             } else {
                 root.removeAttribute('data-theme');
-                btn.innerHTML = '<i class="fas fa-moon" aria-hidden="true"></i>';
-                btn.setAttribute('title', 'Switch to Dark Mode');
-                btn.setAttribute('aria-label', 'Switch to Dark Mode');
+                if (btn) {
+                    btn.innerHTML = '<i class="fas fa-moon" aria-hidden="true"></i>';
+                    btn.setAttribute('title', 'Switch to Dark Mode');
+                    btn.setAttribute('aria-label', 'Switch to Dark Mode');
+                }
             }
         }
 
-        var saved = localStorage.getItem(STORAGE_KEY);
-        var initial = (saved === 'dark' || saved === 'light') ? saved : 'light';
+        var initial = 'dark';
+        localStorage.setItem(STORAGE_KEY, 'dark');
         applyTheme(initial);
-
-        btn.addEventListener('click', function() {
-            var current = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-            var next = current === 'dark' ? 'light' : 'dark';
-            localStorage.setItem(STORAGE_KEY, next);
-            applyTheme(next);
-        });
     })();
     </script>
 </body>

@@ -360,6 +360,30 @@ html[data-theme='dark'] .warning-box code,
 html[data-theme='dark'] .warning-box i {
     color: #fef3c7 !important;
 }
+
+html[data-theme='dark'] .result-success {
+    background: #143221 !important;
+    border-color: #1f6f46 !important;
+    color: #bbf7d0 !important;
+}
+
+html[data-theme='dark'] .result-success h4,
+html[data-theme='dark'] .result-success p,
+html[data-theme='dark'] .result-success i {
+    color: #bbf7d0 !important;
+}
+
+html[data-theme='dark'] .result-error {
+    background: #3a1820 !important;
+    border-color: #7f1d1d !important;
+    color: #fecaca !important;
+}
+
+html[data-theme='dark'] .result-error h4,
+html[data-theme='dark'] .result-error p,
+html[data-theme='dark'] .result-error i {
+    color: #fecaca !important;
+}
 </style>
 
 <?php include '../../includes/admin/sidebar.php'; ?>

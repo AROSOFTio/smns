@@ -139,8 +139,9 @@ if ($studentId > 0) {
                 FROM results rp
                 WHERE rp.student_id = cr.student_id
                   AND rp.semester_id = cr.semester_id
-                  AND rp.status = 'published'
+                  AND rp.status IN ('approved', 'submitted', 'draft')
           )
+          AND (r.status IS NULL OR r.status IN ('approved', 'submitted', 'draft'))
           AND (c.semester_offered = s.semester_number OR c.semester_offered = 3)
           AND (
                 NOT EXISTS (
@@ -175,7 +176,7 @@ foreach ($results as $row) {
     $courseCode = strtoupper(trim((string)($row['course_code'] ?? '')));
     $courseKey = $year . '-' . $sem . '-' . $courseCode;
 
-    // Prefer rows that are actually published and have computed marks.
+    // Prefer rows that are furthest along the provisional workflow.
     $status = strtolower((string)($row['result_status'] ?? ''));
     $score = 0;
     if ($status === 'published') {
@@ -377,7 +378,7 @@ body { background: #f8fafc; }
         <div style="display:flex; align-items:center; gap:0.7rem;">
             <button id="menuBtn" style="background:none; border:none; font-size:1.1rem; cursor:pointer;" title="Toggle Sidebar"><i class="fas fa-bars"></i></button>
             <button onclick="location.href='<?php echo e($linkDashboard); ?>'" style="background:#2563eb; color:#fff; border:none; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW BIO DATA</button>
-            <button onclick="location.href='<?php echo e($linkResults); ?>'" style="background:#2563eb; color:#fff; border:none; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW RESULTS</button>
+                    <button onclick="location.href='<?php echo e($linkProvisionalResults); ?>'" style="background:#2563eb; color:#fff; border:none; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW PROVISIONAL RESULTS</button>
             <button onclick="location.href='<?php echo e($linkInvoices); ?>'" style="background:#f1f5f9; color:#222; border:1px solid #e5e7eb; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW INVOICES</button>
             <button onclick="location.href='<?php echo e($linkFees); ?>'" style="background:#f1f5f9; color:#222; border:1px solid #e5e7eb; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW FEES STRUCTURE</button>
             <button onclick="location.href='<?php echo e($linkGeneratePrn); ?>'" style="background:#f1f5f9; color:#222; border:1px solid #e5e7eb; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">Generate PRN</button>
@@ -443,7 +444,7 @@ body { background: #f8fafc; }
             <div class="p-3">
                 <?php if (empty($organizedResults)): ?>
                     <div class="alert alert-info mb-0">
-                        No published results found yet.
+                        No provisional results found yet.
                     </div>
                 <?php else: ?>
                     <?php

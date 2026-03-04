@@ -61,6 +61,21 @@ class Helper {
         }
         $smtpSecureDefault = defined('SMTP_SECURE') ? (SMTP_SECURE ? '1' : '0') : '0';
         $smtpSecure = self::isTruthy(self::getSettingValue('smtp_secure', $smtpSecureDefault), false);
+        $smtpConnectionTimeout = (int)($options['smtp_connection_timeout_ms']
+            ?? self::getSettingValue('smtp_connection_timeout_ms', (defined('SMTP_CONNECTION_TIMEOUT_MS') ? SMTP_CONNECTION_TIMEOUT_MS : 12000)));
+        $smtpGreetingTimeout = (int)($options['smtp_greeting_timeout_ms']
+            ?? self::getSettingValue('smtp_greeting_timeout_ms', (defined('SMTP_GREETING_TIMEOUT_MS') ? SMTP_GREETING_TIMEOUT_MS : 9000)));
+        $smtpSocketTimeout = (int)($options['smtp_socket_timeout_ms']
+            ?? self::getSettingValue('smtp_socket_timeout_ms', (defined('SMTP_SOCKET_TIMEOUT_MS') ? SMTP_SOCKET_TIMEOUT_MS : 12000)));
+        if ($smtpConnectionTimeout < 1000) {
+            $smtpConnectionTimeout = 1000;
+        }
+        if ($smtpGreetingTimeout < 1000) {
+            $smtpGreetingTimeout = 1000;
+        }
+        if ($smtpSocketTimeout < 1000) {
+            $smtpSocketTimeout = 1000;
+        }
 
         $fromEmailDefault = (string)self::getSettingValue('smtp_from_email', (defined('SMTP_FROM_EMAIL') ? SMTP_FROM_EMAIL : ''));
         $fromNameDefault = (string)self::getSettingValue('smtp_from_name', (defined('SMTP_FROM_NAME') ? SMTP_FROM_NAME : APP_NAME));
@@ -117,7 +132,10 @@ class Helper {
                         'port' => $smtpPort,
                         'username' => $smtpUsername,
                         'password' => $smtpPassword,
-                        'secure' => $smtpSecure
+                        'secure' => $smtpSecure,
+                        'connection_timeout' => $smtpConnectionTimeout,
+                        'greeting_timeout' => $smtpGreetingTimeout,
+                        'socket_timeout' => $smtpSocketTimeout
                     ]
                 ];
 
