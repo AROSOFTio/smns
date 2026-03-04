@@ -733,7 +733,7 @@ $selectedMessageStudentName = '';
 $selectedMessageStudentRegNo = '';
 
 if ($financeMessagingService) {
-    $financeMessageThreads = $financeMessagingService->getFinanceThreadSummaries(120);
+    $financeMessageThreads = $financeMessagingService->getFinanceThreadSummaries(60);
     foreach ($financeMessageThreads as $threadSummary) {
         $financeMessageUnreadCount += (int)($threadSummary['unread_for_finance'] ?? 0);
     }
@@ -776,7 +776,7 @@ if ($financeMessagingService) {
             $messageStudentId,
             $messagePrn,
             $messageTx,
-            120
+            40
         );
     }
 }
@@ -807,6 +807,58 @@ if ($messageTx !== '') {
 $financeMessagePollUrl = BASE_URL . '/api/messages/finance_thread.php';
 if (!empty($financeMessagePollParams)) {
     $financeMessagePollUrl .= '?' . http_build_query($financeMessagePollParams);
+}
+$paymentAlertsCsrfToken = Security::generateCSRFToken();
+$paymentAlertsApiUrl = BASE_URL . '/api/finance/payment_alerts.php';
+$paymentAlerts = [];
+$paymentAlertsUnreadCount = 0;
+if ($currentUserId > 0) {
+    try {
+        $paymentAlertStmt = $conn->prepare("
+            SELECT id, title, message, type, link, created_at
+            FROM notifications
+            WHERE user_id = :user_id
+              AND COALESCE(read_status, 'unread') <> 'read'
+              AND (
+                    title IN ('PRN Payment Posted', 'Bank Proof Submitted')
+                    OR message LIKE :msg_prn
+                    OR link LIKE :link_pay
+                    OR link LIKE :link_bank
+              )
+            ORDER BY created_at DESC, id DESC
+            LIMIT 8
+        ");
+        $paymentAlertStmt->execute([
+            'user_id' => $currentUserId,
+            'msg_prn' => '%PRN %',
+            'link_pay' => '%/views/finance/dashboard.php?section=payments%',
+            'link_bank' => '%#bank-verification-section%'
+        ]);
+        $paymentAlerts = $paymentAlertStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $paymentAlertCountStmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM notifications
+            WHERE user_id = :user_id
+              AND COALESCE(read_status, 'unread') <> 'read'
+              AND (
+                    title IN ('PRN Payment Posted', 'Bank Proof Submitted')
+                    OR message LIKE :msg_prn
+                    OR link LIKE :link_pay
+                    OR link LIKE :link_bank
+              )
+        ");
+        $paymentAlertCountStmt->execute([
+            'user_id' => $currentUserId,
+            'msg_prn' => '%PRN %',
+            'link_pay' => '%/views/finance/dashboard.php?section=payments%',
+            'link_bank' => '%#bank-verification-section%'
+        ]);
+        $paymentAlertsUnreadCount = (int)$paymentAlertCountStmt->fetchColumn();
+    } catch (Exception $e) {
+        $paymentAlerts = [];
+        $paymentAlertsUnreadCount = 0;
+    }
 }
 
 $unreadNotifications = fetchUnreadNotificationsForUser($currentUserId, 10);
@@ -1335,6 +1387,81 @@ include '../../includes/header.php';
             </div>
         </div>
 
+        <div class="card finance-payment-alerts-card" id="finance-payment-alerts-section" data-api-url="<?php echo e($paymentAlertsApiUrl); ?>" data-csrf-token="<?php echo e($paymentAlertsCsrfToken); ?>">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-bell mr-1"></i>Payment Alerts</span>
+                <div class="d-flex align-items-center" style="gap:8px;">
+                    <small id="financePaymentAlertCount" class="text-muted">Unread: <?php echo number_format((int)$paymentAlertsUnreadCount); ?></small>
+                    <button type="button" id="financePaymentAlertMarkAll" class="btn btn-sm btn-outline-secondary">Mark all read</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="finance-payment-alert-list" id="financePaymentAlertList">
+                    <?php if (!empty($paymentAlerts)): ?>
+                        <?php foreach ($paymentAlerts as $paymentAlert): ?>
+                            <?php
+                                $alertType = strtolower(trim((string)($paymentAlert['type'] ?? 'info')));
+                                if (!in_array($alertType, ['info', 'success', 'warning', 'error'], true)) {
+                                    $alertType = 'info';
+                                }
+                                $alertBadgeClass = $alertType === 'error' ? 'danger' : $alertType;
+                                $alertLinkRaw = trim((string)($paymentAlert['link'] ?? ''));
+                                $alertLinkSafe = '#';
+                                if (
+                                    $alertLinkRaw !== '' &&
+                                    stripos($alertLinkRaw, 'javascript:') !== 0 &&
+                                    stripos($alertLinkRaw, 'data:') !== 0 &&
+                                    stripos($alertLinkRaw, 'vbscript:') !== 0 &&
+                                    !preg_match('#/views/(admin|student|lecturer|finance)/logout\.php#i', $alertLinkRaw)
+                                ) {
+                                    $parsedAlertLink = @parse_url($alertLinkRaw);
+                                    if (is_array($parsedAlertLink) && !empty($parsedAlertLink['path'])) {
+                                        $alertLinkSafe = (string)$parsedAlertLink['path'];
+                                        if (isset($parsedAlertLink['query']) && $parsedAlertLink['query'] !== '') {
+                                            $alertLinkSafe .= '?' . $parsedAlertLink['query'];
+                                        }
+                                        $alertFragment = isset($parsedAlertLink['fragment']) ? (string)$parsedAlertLink['fragment'] : '';
+                                        if ($alertFragment === '' && stripos((string)$parsedAlertLink['path'], '/views/finance/dashboard.php') !== false) {
+                                            $alertQuery = (string)($parsedAlertLink['query'] ?? '');
+                                            if (stripos($alertQuery, 'section=payments') !== false) {
+                                                $alertFragment = 'payments-section';
+                                            } elseif (stripos($alertQuery, 'section=bank-verification') !== false) {
+                                                $alertFragment = 'bank-verification-section';
+                                            }
+                                        }
+                                        if ($alertFragment !== '') {
+                                            $alertLinkSafe .= '#' . $alertFragment;
+                                        }
+                                    } else {
+                                        $alertLinkSafe = $alertLinkRaw;
+                                    }
+                                }
+                            ?>
+                            <div class="finance-payment-alert-item">
+                                <div class="d-flex justify-content-between align-items-start" style="gap:8px;">
+                                    <div>
+                                        <strong><?php echo e((string)($paymentAlert['title'] ?? 'Payment Alert')); ?></strong>
+                                        <div class="text-muted" style="font-size:11px;">
+                                            <?php echo !empty($paymentAlert['created_at']) ? e(Helper::timeAgo((string)$paymentAlert['created_at'])) : '-'; ?>
+                                        </div>
+                                    </div>
+                                    <span class="badge badge-<?php echo e($alertBadgeClass); ?>"><?php echo e(strtoupper($alertType)); ?></span>
+                                </div>
+                                <div class="finance-payment-alert-message"><?php echo e((string)($paymentAlert['message'] ?? '-')); ?></div>
+                                <?php if ($alertLinkSafe !== '#'): ?>
+                                    <div class="text-right mt-1">
+                                        <a href="<?php echo e($alertLinkSafe); ?>" class="btn btn-sm btn-outline-primary">Open</a>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <div class="finance-payment-alert-empty" id="financePaymentAlertEmpty">No unread payment alerts right now.</div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+
         <?php
             $financeChatLastId = 0;
             if (!empty($financeMessageRows)) {
@@ -1342,9 +1469,9 @@ include '../../includes/header.php';
                 $financeChatLastId = (int)($lastFinanceChatMessage['id'] ?? 0);
             }
         ?>
-        <div class="card" id="finance-messages-section" data-poll-url="<?php echo e($financeMessagePollUrl); ?>">
+        <div class="card finance-msg-card" id="finance-messages-section" data-poll-url="<?php echo e($financeMessagePollUrl); ?>">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <span>Student-Finance Messages</span>
+                <span><i class="fas fa-comments mr-1"></i>Student-Finance Messages</span>
                 <small id="financeMsgUnreadBadge" class="text-muted">Unread: <?php echo number_format((int)$financeMessageUnreadCount); ?></small>
             </div>
             <div class="card-body">
@@ -1353,7 +1480,16 @@ include '../../includes/header.php';
                 <?php elseif (empty($financeMessageThreads)): ?>
                     <p class="text-center mb-0">No student messages yet.</p>
                 <?php else: ?>
-                    <div class="row">
+                    <div class="finance-msg-toolbar mb-2">
+                        <input type="text" id="financeMsgThreadSearch" class="form-control form-control-sm" placeholder="Search student, reg no, PRN, TX, message...">
+                        <label class="finance-msg-unread-toggle mb-0">
+                            <input type="checkbox" id="financeMsgUnreadOnly">
+                            <span>Unread only</span>
+                        </label>
+                        <button type="button" id="financeMsgLoadMore" class="btn btn-sm btn-outline-secondary">Load more</button>
+                        <small id="financeMsgThreadMeta" class="text-muted"></small>
+                    </div>
+                    <div class="row finance-msg-layout">
                         <div class="col-lg-4 mb-3 mb-lg-0">
                             <div class="list-group finance-msg-thread-list" id="financeMsgThreadList">
                                 <?php foreach ($financeMessageThreads as $threadSummary): ?>
@@ -1395,10 +1531,10 @@ include '../../includes/header.php';
                                                 <span class="badge badge-danger"><?php echo (int)$threadUnread; ?></span>
                                             <?php endif; ?>
                                         </div>
-                                        <?php if ($threadStudentRegNo !== ''): ?>
-                                            <small><?php echo e($threadStudentRegNo); ?></small><br>
-                                        <?php endif; ?>
-                                        <small><?php echo e($threadContext); ?></small><br>
+                                        <small>
+                                            <?php echo e($threadStudentRegNo !== '' ? ($threadStudentRegNo . ' | ') : ''); ?>
+                                            <?php echo e($threadContext); ?>
+                                        </small><br>
                                         <small class="text-muted">
                                             <?php echo e($threadPreview !== '' ? $threadPreview : 'No message body'); ?>
                                         </small>
@@ -1430,7 +1566,7 @@ include '../../includes/header.php';
                                         (<span id="financeMsgStudentReg"><?php echo e($selectedMessageStudentRegNo); ?></span>)
                                     </span>
                                     <br>
-                                    <small class="text-muted" id="financeMsgContextLabel">Thread: <?php echo e($selectedContext); ?></small>
+                                    <small class="text-muted" id="financeMsgContextLabel">Context: <?php echo e($selectedContext); ?></small>
                                 </div>
 
                                 <div class="alert alert-info" id="financeMsgEmptyAlert" style="<?php echo !empty($financeMessageRows) ? 'display:none;' : ''; ?>">No messages in this thread yet.</div>
@@ -1457,7 +1593,7 @@ include '../../includes/header.php';
                                     <input type="hidden" name="student_id" value="<?php echo (int)$messageStudentId; ?>">
                                     <input type="hidden" name="prn_reference" value="<?php echo e($messagePrn); ?>">
                                     <input type="hidden" name="transaction_ref" value="<?php echo e($messageTx); ?>">
-                                    <textarea class="form-control mb-2" name="message_text" rows="3" maxlength="2000" placeholder="Write a reply to the student..." required></textarea>
+                                    <textarea class="form-control mb-2" name="message_text" rows="2" maxlength="2000" placeholder="Reply..." required></textarea>
                                     <div class="text-right">
                                         <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-paper-plane"></i> Send Reply</button>
                                     </div>
@@ -1803,31 +1939,92 @@ include '../../includes/header.php';
     transition: none !important;
 }
 
-.finance-msg-thread-list {
-    max-height: 520px;
+.finance-payment-alerts-card .card-body {
+    padding: 10px;
+}
+
+.finance-payment-alert-list {
+    display: grid;
+    gap: 8px;
+    max-height: 240px;
     overflow-y: auto;
+}
+
+.finance-payment-alert-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 8px;
+}
+
+.finance-payment-alert-message {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #334155;
+    line-height: 1.35;
+}
+
+.finance-payment-alert-empty {
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    padding: 10px;
+    color: #64748b;
+    font-size: 12px;
+}
+
+.finance-msg-thread-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.finance-msg-card .card-body {
+    padding: 10px;
+}
+
+.finance-msg-toolbar {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) auto auto auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.finance-msg-unread-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #334155;
+    white-space: nowrap;
+}
+
+.finance-msg-unread-toggle input[type="checkbox"] {
+    margin: 0;
+}
+
+.finance-msg-layout {
+    align-items: stretch;
 }
 
 .finance-msg-context {
     border: 1px solid #e2e8f0;
     background: #f8fafc;
     border-radius: 8px;
-    padding: 8px 10px;
-    margin-bottom: 10px;
+    padding: 6px 8px;
+    margin-bottom: 8px;
 }
 
 .finance-msg-thread {
     border: 1px solid #e2e8f0;
     border-radius: 8px;
     background: #fff;
-    max-height: 380px;
+    max-height: 230px;
     overflow-y: auto;
-    padding: 10px;
-    margin-bottom: 10px;
+    padding: 8px;
+    margin-bottom: 8px;
 }
 
 .finance-msg-item {
-    margin-bottom: 9px;
+    margin-bottom: 7px;
 }
 
 .finance-msg-item:last-child {
@@ -1843,9 +2040,9 @@ include '../../includes/header.php';
 .finance-msg-bubble {
     border: 1px solid #e2e8f0;
     border-radius: 8px;
-    padding: 7px 9px;
+    padding: 6px 8px;
     font-size: 12px;
-    line-height: 1.4;
+    line-height: 1.3;
 }
 
 .finance-msg-item.student .finance-msg-bubble {
@@ -1874,6 +2071,39 @@ html[data-theme='dark'] #finance-messages-section .card-body {
 
 html[data-theme='dark'] #finance-messages-section .text-muted {
     color: #94a3b8 !important;
+}
+
+html[data-theme='dark'] #finance-payment-alerts-section {
+    background: #0f172a;
+    border-color: #334155;
+}
+
+html[data-theme='dark'] #finance-payment-alerts-section .card-header {
+    background: #111827;
+    border-bottom-color: #334155;
+    color: #e2e8f0;
+}
+
+html[data-theme='dark'] #finance-payment-alerts-section .card-body {
+    background: #0f172a;
+}
+
+html[data-theme='dark'] .finance-payment-alert-item {
+    background: #111827;
+    border-color: #334155;
+}
+
+html[data-theme='dark'] .finance-payment-alert-message {
+    color: #cbd5e1;
+}
+
+html[data-theme='dark'] .finance-payment-alert-empty {
+    border-color: #334155;
+    color: #94a3b8;
+}
+
+html[data-theme='dark'] .finance-msg-unread-toggle {
+    color: #cbd5e1;
 }
 
 html[data-theme='dark'] #finance-messages-section .list-group-item {
@@ -1995,6 +2225,12 @@ html[data-theme='dark'] #finance-saved-notifications-section .text-muted {
 @media (max-width: 1200px) {
     .finance-dashboard .stats-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 992px) {
+    .finance-msg-toolbar {
+        grid-template-columns: minmax(0, 1fr) auto;
     }
 }
 
@@ -2166,6 +2402,146 @@ document.addEventListener('DOMContentLoaded', function() {
         countInfoId: 'financeSavedNotifCountInfo'
     });
 
+    function initFinancePaymentAlertsPolling() {
+        var sectionEl = document.getElementById('finance-payment-alerts-section');
+        var listEl = document.getElementById('financePaymentAlertList');
+        var countEl = document.getElementById('financePaymentAlertCount');
+        var markAllBtn = document.getElementById('financePaymentAlertMarkAll');
+        if (!sectionEl || !listEl || !countEl || typeof window.fetch !== 'function') return;
+
+        var apiUrl = sectionEl.getAttribute('data-api-url') || '';
+        var csrfToken = sectionEl.getAttribute('data-csrf-token') || '';
+        if (!apiUrl) return;
+
+        var inFlight = false;
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function typeBadgeClass(type) {
+            var clean = String(type || 'info').toLowerCase();
+            if (clean === 'error') return 'danger';
+            if (clean === 'success') return 'success';
+            if (clean === 'warning') return 'warning';
+            return 'info';
+        }
+
+        function safeLink(link) {
+            var url = String(link || '').trim();
+            if (!url || url === '#' || /^javascript:/i.test(url) || /^data:/i.test(url) || /^vbscript:/i.test(url)) {
+                return '#';
+            }
+            return url;
+        }
+
+        function renderAlerts(alerts) {
+            var rows = Array.isArray(alerts) ? alerts : [];
+            if (!rows.length) {
+                listEl.innerHTML = '<div class="finance-payment-alert-empty" id="financePaymentAlertEmpty">No unread payment alerts right now.</div>';
+                return;
+            }
+
+            var html = '';
+            rows.forEach(function(alert) {
+                var title = escapeHtml(alert && alert.title ? alert.title : 'Payment Alert');
+                var message = escapeHtml(alert && alert.message ? alert.message : '-');
+                var type = String(alert && alert.type ? alert.type : 'info').toLowerCase();
+                var badgeClass = typeBadgeClass(type);
+                var typeLabel = escapeHtml(type.toUpperCase());
+                var timeAgo = escapeHtml(alert && alert.time_ago ? alert.time_ago : '-');
+                var link = safeLink(alert && alert.link ? alert.link : '#');
+
+                html += '<div class="finance-payment-alert-item">';
+                html += '<div class="d-flex justify-content-between align-items-start" style="gap:8px;">';
+                html += '<div><strong>' + title + '</strong><div class="text-muted" style="font-size:11px;">' + timeAgo + '</div></div>';
+                html += '<span class="badge badge-' + badgeClass + '">' + typeLabel + '</span>';
+                html += '</div>';
+                html += '<div class="finance-payment-alert-message">' + message + '</div>';
+                if (link !== '#') {
+                    html += '<div class="text-right mt-1"><a href="' + escapeHtml(link) + '" class="btn btn-sm btn-outline-primary">Open</a></div>';
+                }
+                html += '</div>';
+            });
+            listEl.innerHTML = html;
+        }
+
+        function poll() {
+            if (inFlight) return;
+            inFlight = true;
+
+            var glue = apiUrl.indexOf('?') === -1 ? '?' : '&';
+            fetch(apiUrl + glue + 'limit=8', {
+                method: 'GET',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(payload) {
+                if (!payload || !payload.success) return;
+                var unreadCount = Number(payload.unread_count || 0);
+                countEl.textContent = 'Unread: ' + String(unreadCount);
+                if (markAllBtn) {
+                    markAllBtn.disabled = unreadCount <= 0;
+                }
+                renderAlerts(payload.alerts || []);
+            })
+            .catch(function() {})
+            .finally(function() {
+                inFlight = false;
+            });
+        }
+
+        if (markAllBtn) {
+            markAllBtn.addEventListener('click', function() {
+                if (inFlight || !csrfToken) return;
+                inFlight = true;
+                markAllBtn.disabled = true;
+                var originalText = markAllBtn.textContent;
+                markAllBtn.textContent = 'Marking...';
+
+                fetch(apiUrl, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({
+                        action: 'mark_all_read',
+                        csrf_token: csrfToken
+                    })
+                })
+                .then(function(response) { return response.json(); })
+                .then(function(payload) {
+                    if (!payload || !payload.success) return;
+                    countEl.textContent = 'Unread: 0';
+                    renderAlerts([]);
+                    poll();
+                })
+                .catch(function() {})
+                .finally(function() {
+                    inFlight = false;
+                    markAllBtn.textContent = originalText;
+                    poll();
+                });
+            });
+        }
+
+        poll();
+        window.setInterval(poll, 3500);
+    }
+
     function initFinanceMessagePolling() {
         var sectionEl = document.getElementById('finance-messages-section');
         var listEl = document.getElementById('financeMsgThreadList');
@@ -2175,6 +2551,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!pollUrl) return;
 
         var unreadBadge = document.getElementById('financeMsgUnreadBadge');
+        var threadSearchInput = document.getElementById('financeMsgThreadSearch');
+        var unreadOnlyInput = document.getElementById('financeMsgUnreadOnly');
+        var loadMoreBtn = document.getElementById('financeMsgLoadMore');
+        var threadMetaEl = document.getElementById('financeMsgThreadMeta');
         var threadEl = document.getElementById('financeMsgThread');
         var emptyEl = document.getElementById('financeMsgEmptyAlert');
         var contextNameEl = document.getElementById('financeMsgStudentName');
@@ -2183,6 +2563,13 @@ document.addEventListener('DOMContentLoaded', function() {
         var contextLabelEl = document.getElementById('financeMsgContextLabel');
         var replyForm = document.getElementById('financeMsgReplyForm');
         var inFlight = false;
+        var THREAD_PAGE_SIZE = 30;
+        var threadState = {
+            query: '',
+            unreadOnly: false,
+            loadedRows: [],
+            hasMore: false
+        };
 
         function escapeHtml(value) {
             return String(value || '')
@@ -2225,6 +2612,13 @@ document.addEventListener('DOMContentLoaded', function() {
             var rows = Array.isArray(threads) ? threads : [];
             if (!rows.length) {
                 listEl.innerHTML = '<div class="list-group-item">No student messages yet.</div>';
+                if (threadMetaEl) {
+                    threadMetaEl.textContent = 'Showing 0 threads';
+                }
+                if (loadMoreBtn) {
+                    loadMoreBtn.disabled = true;
+                    loadMoreBtn.style.display = 'none';
+                }
                 return;
             }
 
@@ -2241,13 +2635,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 html += '</div>';
                 if (regNo) {
-                    html += '<small>' + escapeHtml(regNo) + '</small><br>';
+                    html += '<small>' + escapeHtml(regNo) + ' | </small>';
                 }
                 html += '<small>' + escapeHtml(thread.context_label || '') + '</small><br>';
                 html += '<small class="text-muted">' + escapeHtml(thread.last_message_preview || 'No message body') + '</small>';
                 html += '</a>';
             });
             listEl.innerHTML = html;
+            if (threadMetaEl) {
+                threadMetaEl.textContent = 'Showing ' + String(rows.length) + ' thread' + (rows.length === 1 ? '' : 's');
+            }
+            if (loadMoreBtn) {
+                loadMoreBtn.disabled = !threadState.hasMore || inFlight;
+                loadMoreBtn.style.display = threadState.hasMore ? '' : 'none';
+            }
         }
 
         function renderMessages(messages, lastMessageId) {
@@ -2305,15 +2706,35 @@ document.addEventListener('DOMContentLoaded', function() {
                 contextRegWrapEl.style.display = regNo !== '' ? '' : 'none';
             }
             if (contextLabelEl && selected.context_label) {
-                contextLabelEl.textContent = 'Thread: ' + String(selected.context_label);
+                contextLabelEl.textContent = 'Context: ' + String(selected.context_label);
             }
         }
 
-        function poll() {
+        function buildThreadPollUrl(offset, limit) {
+            var glue = pollUrl.indexOf('?') === -1 ? '?' : '&';
+            var query = threadState.query ? ('&thread_q=' + encodeURIComponent(threadState.query)) : '';
+            var unreadOnly = threadState.unreadOnly ? '&unread_only=1' : '';
+            return pollUrl + glue + 'thread_offset=' + String(Math.max(0, offset)) + '&thread_limit=' + String(Math.max(1, limit)) + query + unreadOnly;
+        }
+
+        function poll(options) {
+            options = options || {};
+            var append = !!options.append;
             if (inFlight) return;
             inFlight = true;
 
-            fetch(pollUrl, {
+            var currentCount = threadState.loadedRows.length;
+            var offset = append ? currentCount : 0;
+            var limit = append ? THREAD_PAGE_SIZE : Math.max(THREAD_PAGE_SIZE, currentCount || THREAD_PAGE_SIZE);
+
+            if (loadMoreBtn) {
+                loadMoreBtn.disabled = true;
+                if (append) {
+                    loadMoreBtn.textContent = 'Loading...';
+                }
+            }
+
+            fetch(buildThreadPollUrl(offset, limit), {
                 method: 'GET',
                 credentials: 'same-origin',
                 cache: 'no-store',
@@ -2328,7 +2749,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (unreadBadge) {
                     unreadBadge.textContent = 'Unread: ' + String(Number(payload.unread_total || 0));
                 }
-                renderThreads(payload.threads || []);
+                var incomingThreads = Array.isArray(payload.threads) ? payload.threads : [];
+                if (append) {
+                    threadState.loadedRows = threadState.loadedRows.concat(incomingThreads);
+                } else {
+                    threadState.loadedRows = incomingThreads;
+                }
+                threadState.hasMore = !!payload.threads_has_more;
+                renderThreads(threadState.loadedRows);
                 applySelectedContext(payload.selected || null);
 
                 if (threadEl) {
@@ -2344,12 +2772,43 @@ document.addEventListener('DOMContentLoaded', function() {
             .catch(function() {})
             .finally(function() {
                 inFlight = false;
+                if (loadMoreBtn) {
+                    loadMoreBtn.textContent = 'Load more';
+                    loadMoreBtn.disabled = !threadState.hasMore;
+                }
             });
         }
 
-        window.setInterval(poll, 8000);
+        if (threadSearchInput) {
+            threadSearchInput.addEventListener('input', function() {
+                threadState.query = String(threadSearchInput.value || '').trim();
+                threadState.loadedRows = [];
+                threadState.hasMore = false;
+                poll({ append: false });
+            });
+        }
+
+        if (unreadOnlyInput) {
+            unreadOnlyInput.addEventListener('change', function() {
+                threadState.unreadOnly = !!unreadOnlyInput.checked;
+                threadState.loadedRows = [];
+                threadState.hasMore = false;
+                poll({ append: false });
+            });
+        }
+
+        if (loadMoreBtn) {
+            loadMoreBtn.addEventListener('click', function() {
+                if (!threadState.hasMore || inFlight) return;
+                poll({ append: true });
+            });
+        }
+
+        poll({ append: false });
+        window.setInterval(function() { poll({ append: false }); }, 8000);
     }
 
+    initFinancePaymentAlertsPolling();
     initFinanceMessagePolling();
 });
 </script>

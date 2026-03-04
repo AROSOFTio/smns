@@ -92,7 +92,21 @@ if ($mfaCodeLength > 8) {
             background-size: cover;
         }
         .login-container {
-            max-width: 420px;
+            max-width: 320px !important;
+            width: min(320px, calc(100% - 24px)) !important;
+            margin: 14px auto !important;
+        }
+        .login-card {
+            padding: 18px 14px !important;
+            border-radius: 12px;
+        }
+        .login-header .logo {
+            max-width: 64px !important;
+            margin-bottom: 6px !important;
+        }
+        .login-header h2 {
+            font-size: 1.2rem;
+            margin-bottom: 8px;
         }
         .mfa-helper {
             font-size: 13px;
@@ -118,6 +132,16 @@ if ($mfaCodeLength > 8) {
         html[data-theme='dark'] .mfa-helper {
             color: #9ca3af;
         }
+        @media (max-width: 576px) {
+            .login-container {
+                max-width: 320px !important;
+                width: calc(100% - 16px) !important;
+                margin: 10px auto !important;
+            }
+            .login-card {
+                padding: 16px 12px !important;
+            }
+        }
     </style>
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css">
 </head>
@@ -135,7 +159,7 @@ $moduleLabel = ucfirst($module);
 <div class="login-container">
     <div class="login-card <?php echo e($cardThemeClass); ?>">
         <div class="login-header">
-            <img src="../../assets/img/sem.PNG" alt="Logo" class="logo mb-2" style="max-width:80px;">
+            <img src="../../assets/img/sem.PNG" alt="Logo" class="logo mb-2">
             <h2>Security Verification</h2>
             <span class="role-badge"><?php echo e($moduleLabel); ?> OTP</span>
         </div>
@@ -166,9 +190,6 @@ $moduleLabel = ucfirst($module);
                     autofocus
                 >
             </div>
-            <button type="submit" class="btn btn-primary btn-block">
-                <i class="fas fa-check-circle"></i> Verify and Continue
-            </button>
         </form>
 
         <form method="post" class="mfa-actions">
@@ -179,7 +200,7 @@ $moduleLabel = ucfirst($module);
         </form>
 
         <div class="text-center mt-2">
-            <a href="<?php echo e(BASE_URL . '/views/' . $module . '/login.php'); ?>" class="btn btn-link btn-sm">
+            <a href="<?php echo e(BASE_URL . '/views/auth/login.php?role=' . urlencode($module)); ?>" class="btn btn-link btn-sm">
                 <i class="fas fa-arrow-left"></i> Back to login
             </a>
         </div>

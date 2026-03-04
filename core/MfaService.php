@@ -138,11 +138,31 @@ class MfaService {
         $message .= "This code expires in " . (int)ceil($ttl / 60) . " minute(s).\n";
         $message .= "If you did not try to sign in, contact support immediately.";
 
+        // Localhost delivery mode switch:
+        // - fast: return OTP immediately in response (no SMTP wait)
+        // - email: send through configured email transport for real inbox testing
+        $localDeliveryMode = strtolower(trim((string)self::getSettingValue(
+            'mfa_local_delivery_mode',
+            (defined('MFA_LOCAL_DELIVERY_MODE') ? MFA_LOCAL_DELIVERY_MODE : 'fast')
+        )));
+        if (!in_array($localDeliveryMode, ['fast', 'email'], true)) {
+            $localDeliveryMode = 'fast';
+        }
+        if (self::isLocalRequest() && $localDeliveryMode === 'fast') {
+            error_log('MFA local fast mode challenge for user ' . $userId . ' (' . $module . '): ' . $code);
+            return [
+                'success' => true,
+                'message' => 'Local verification code: ' . $code
+                    . ' (expires in ' . (int)ceil($ttl / 60) . ' minute(s)).'
+            ];
+        }
+
         $sent = Helper::sendEmail([$email], $subject, $message, [
             'context_label' => 'MFA OTP',
             // Keep MFA responsive on slow localhost SMTP/network links.
             'retry_attempts' => 1,
             'retry_delay_ms' => 0,
+            'allow_php_fallback' => false,
             'smtp_connection_timeout_ms' => 6000,
             'smtp_greeting_timeout_ms' => 5000,
             'smtp_socket_timeout_ms' => 7000
@@ -152,9 +172,10 @@ class MfaService {
             error_log('MFA email delivery failed for user ' . $userId . ' (' . $module . '): ' . ($lastError !== '' ? $lastError : 'unknown error'));
 
             if ((defined('APP_DEBUG') && APP_DEBUG) || self::isLocalRequest()) {
+                $reason = $lastError !== '' ? $lastError : 'unknown transport error';
                 return [
                     'success' => true,
-                    'message' => 'Email delivery is unavailable in this environment. Use verification code: ' . $code
+                    'message' => 'Email delivery failed (' . $reason . '). Use verification code: ' . $code
                         . ' (expires in ' . (int)ceil($ttl / 60) . ' minute(s)).'
                 ];
             }

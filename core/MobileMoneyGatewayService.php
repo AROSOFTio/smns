@@ -491,6 +491,14 @@ class MobileMoneyGatewayService {
                 'finance',
                 'Bank transfer proof submitted. PRN: ' . $referenceNumber . '. TX: ' . $transactionRef
             );
+            $this->notifyFinanceTeamBankProofSubmitted(
+                $studentId,
+                $referenceNumber,
+                (float)$amountSubmitted,
+                $paymentMethodLabel,
+                $transactionRef,
+                $transferReference
+            );
 
             return [
                 'success' => true,
@@ -1316,17 +1324,37 @@ class MobileMoneyGatewayService {
         ];
     }
 
-    private function notifyFinanceTeamPaymentPosted($studentId, $referenceNumber, $amountPaid, $paymentMethod, $transactionRef = '') {
+    private function notifyFinanceTeamBankProofSubmitted($studentId, $referenceNumber, $amountSubmitted, $paymentMethod, $transactionRef = '', $transferReference = '') {
         $studentId = (int)$studentId;
         $referenceNumber = strtoupper(trim((string)$referenceNumber));
-        $amountPaid = (float)$amountPaid;
+        $amountSubmitted = (float)$amountSubmitted;
         $paymentMethod = strtolower(trim((string)$paymentMethod));
-        $transactionRef = trim((string)$transactionRef);
-
-        if ($studentId <= 0 || $referenceNumber === '' || $amountPaid <= 0) {
+        $transactionRef = strtoupper(trim((string)$transactionRef));
+        $transferReference = strtoupper(trim((string)$transferReference));
+        if ($studentId <= 0 || $referenceNumber === '') {
             return;
         }
 
+        $financeUserIds = $this->resolveFinanceUserIds();
+        if (empty($financeUserIds)) {
+            return;
+        }
+
+        $studentLabel = $this->resolveStudentLabelForNotification($studentId);
+        $amountLabel = $amountSubmitted > 0 ? Helper::formatCurrency($amountSubmitted, 'UGX', 0) : 'UGX -';
+        $methodLabel = strtoupper(str_replace('_', ' ', $paymentMethod !== '' ? $paymentMethod : 'bank_transfer'));
+        $txPiece = $transactionRef !== '' ? (' TX: ' . $transactionRef . '.') : '';
+        $bankRefPiece = $transferReference !== '' ? (' Bank Ref: ' . $transferReference . '.') : '';
+        $title = 'Bank Proof Submitted';
+        $message = $studentLabel . ' submitted bank payment proof for PRN ' . $referenceNumber . ' (' . $amountLabel . ', ' . $methodLabel . ').' . $txPiece . $bankRefPiece;
+        $link = BASE_URL . '/views/finance/dashboard.php?section=payments#bank-verification-section';
+
+        foreach (array_keys($financeUserIds) as $financeUserId) {
+            $this->notifyUser((int)$financeUserId, $title, $message, 'info', $link);
+        }
+    }
+
+    private function resolveFinanceUserIds() {
         $financeUserIds = [];
         try {
             $stmt = $this->conn->query("
@@ -1362,14 +1390,35 @@ class MobileMoneyGatewayService {
                     }
                 }
             } catch (Exception $e) {
+                // Backward-compatible fallback when users.status column is absent.
+                try {
+                    $stmt = $this->conn->query("
+                        SELECT id
+                        FROM users
+                        WHERE role = 'finance'
+                    ");
+                    $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+                    foreach ($rows as $row) {
+                        $uid = (int)($row['id'] ?? 0);
+                        if ($uid > 0) {
+                            $financeUserIds[$uid] = true;
+                        }
+                    }
+                } catch (Exception $ignored) {
+                }
             }
         }
 
-        if (empty($financeUserIds)) {
-            return;
+        return $financeUserIds;
+    }
+
+    private function resolveStudentLabelForNotification($studentId) {
+        $studentId = (int)$studentId;
+        $studentLabel = 'Student #' . $studentId;
+        if ($studentId <= 0) {
+            return $studentLabel;
         }
 
-        $studentLabel = 'Student #' . $studentId;
         try {
             $studentStmt = $this->conn->prepare("
                 SELECT student_id, first_name, last_name
@@ -1383,22 +1432,45 @@ class MobileMoneyGatewayService {
                 $name = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
                 $sid = trim((string)($student['student_id'] ?? ''));
                 if ($name !== '' && $sid !== '') {
-                    $studentLabel = $name . ' (' . $sid . ')';
-                } elseif ($name !== '') {
-                    $studentLabel = $name;
-                } elseif ($sid !== '') {
-                    $studentLabel = $sid;
+                    return $name . ' (' . $sid . ')';
+                }
+                if ($name !== '') {
+                    return $name;
+                }
+                if ($sid !== '') {
+                    return $sid;
                 }
             }
         } catch (Exception $e) {
         }
+
+        return $studentLabel;
+    }
+
+    private function notifyFinanceTeamPaymentPosted($studentId, $referenceNumber, $amountPaid, $paymentMethod, $transactionRef = '') {
+        $studentId = (int)$studentId;
+        $referenceNumber = strtoupper(trim((string)$referenceNumber));
+        $amountPaid = (float)$amountPaid;
+        $paymentMethod = strtolower(trim((string)$paymentMethod));
+        $transactionRef = trim((string)$transactionRef);
+
+        if ($studentId <= 0 || $referenceNumber === '' || $amountPaid <= 0) {
+            return;
+        }
+
+        $financeUserIds = $this->resolveFinanceUserIds();
+        if (empty($financeUserIds)) {
+            return;
+        }
+
+        $studentLabel = $this->resolveStudentLabelForNotification($studentId);
 
         $amountLabel = Helper::formatCurrency($amountPaid, 'UGX', 0);
         $methodLabel = strtoupper(str_replace('_', ' ', $paymentMethod));
         $txLabel = $transactionRef !== '' ? ' TX: ' . $transactionRef . '.' : '';
         $title = 'PRN Payment Posted';
         $message = 'PRN ' . $referenceNumber . ' for ' . $studentLabel . ' amount ' . $amountLabel . ' via ' . $methodLabel . ' has been posted to ledger.' . $txLabel;
-        $link = BASE_URL . '/views/finance/dashboard.php?section=payments&pay_tab=mobile_money';
+        $link = BASE_URL . '/views/finance/dashboard.php?section=payments#payments-section';
 
         foreach (array_keys($financeUserIds) as $financeUserId) {
             $this->notifyUser((int)$financeUserId, $title, $message, 'info', $link);

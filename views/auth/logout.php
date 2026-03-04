@@ -39,6 +39,23 @@ function destroyRoleSession($role) {
     session_destroy();
 }
 
+function destroySsoSession() {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+    session_name('SMNS_SSO_SESSION');
+    @session_start();
+    $_SESSION = [];
+    if (ini_get("session.use_cookies")) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000,
+            $params["path"], $params["domain"],
+            $params["secure"], $params["httponly"]
+        );
+    }
+    @session_destroy();
+}
+
 $module = detectLogoutModuleFromRequest();
 $logoutAll = isset($_GET['all']) && $_GET['all'] === '1';
 
@@ -47,11 +64,12 @@ if ($module) {
     $auth->logout();
     $_SESSION['flash_success'] = 'You have been logged out successfully.';
     session_write_close();
-    header('Location: ' . BASE_URL . '/views/' . $module . '/login.php');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?action=logout&module=' . urlencode($module));
     exit;
 }
 
 if ($logoutAll) {
+    destroySsoSession();
     foreach (['admin', 'student', 'lecturer', 'finance'] as $role) {
         destroyRoleSession($role);
     }

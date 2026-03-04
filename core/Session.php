@@ -16,15 +16,18 @@ class Session {
         
         $hasActiveSession = (session_status() === PHP_SESSION_ACTIVE);
 
-        // Determine the correct session name for this context.
-        // If no role is supplied and a session is already active, keep that active session name
-        // to avoid switching away from module sessions mid-request.
-        if ($this->role) {
-            $desiredName = 'SMNS_' . strtoupper($this->role) . '_SESSION';
-        } elseif ($hasActiveSession) {
-            $desiredName = session_name();
+        // Unified RBAC mode: use one shared browser session across modules.
+        if (defined('UNIFIED_RBAC_LOGIN') && UNIFIED_RBAC_LOGIN) {
+            $desiredName = 'SMNS_SSO_SESSION';
         } else {
-            $desiredName = 'SMNS_PUBLIC_SESSION';
+            // Legacy isolated mode.
+            if ($this->role) {
+                $desiredName = 'SMNS_' . strtoupper($this->role) . '_SESSION';
+            } elseif ($hasActiveSession) {
+                $desiredName = session_name();
+            } else {
+                $desiredName = 'SMNS_PUBLIC_SESSION';
+            }
         }
         
         // If headers have already been sent, we cannot change ini settings or start a new session.

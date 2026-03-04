@@ -27,15 +27,51 @@ class Auth {
                     $stmt->execute(['lid' => $username]);
                     $user = $stmt->fetch();
                     if ($user) {
+                        $moduleName = $this->module ?: (string)($user['role'] ?? '');
+                        if (!$this->userHasModuleAccess($user, $moduleName)) {
+                            return false;
+                        }
+                        if ($moduleName !== '') {
+                            $user['role'] = $moduleName;
+                        }
                         return $user;
                     }
                     // Fall back to regular username/email check
+                }
+                if ($this->module === 'student') {
+                    $ssql = "SELECT u.* FROM users u
+                            INNER JOIN students s ON s.user_id = u.id
+                            WHERE s.student_id = :sid
+                            LIMIT 1";
+                    $sstmt = $this->db->prepare($ssql);
+                    $sstmt->execute(['sid' => $username]);
+                    $studentUser = $sstmt->fetch();
+                    if ($studentUser) {
+                        $moduleName = $this->module ?: (string)($studentUser['role'] ?? '');
+                        if (!$this->userHasModuleAccess($studentUser, $moduleName)) {
+                            return false;
+                        }
+                        if ($moduleName !== '') {
+                            $studentUser['role'] = $moduleName;
+                        }
+                        return $studentUser;
+                    }
                 }
                 $sql = "SELECT * FROM users WHERE username = :username OR email = :email LIMIT 1";
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute(['username' => $username, 'email' => $username]);
                 $user = $stmt->fetch();
-                return $user ?: false;
+                if (!$user) {
+                    return false;
+                }
+                $moduleName = $this->module ?: (string)($user['role'] ?? '');
+                if (!$this->userHasModuleAccess($user, $moduleName)) {
+                    return false;
+                }
+                if ($moduleName !== '') {
+                    $user['role'] = $moduleName;
+                }
+                return $user;
             } catch (Exception $e) {
                 error_log("usernameExists error: " . $e->getMessage());
                 return false;
@@ -65,6 +101,14 @@ class Auth {
             || in_array($remoteAddr, $locals, true)
             || in_array($serverAddr, $locals, true);
     }
+
+    private function isUserStatusActive($status) {
+        $status = strtolower(trim((string)$status));
+        if ($status === '' || $status === 'active') {
+            return true;
+        }
+        return !in_array($status, ['inactive', 'disabled', 'suspended', 'locked'], true);
+    }
     
     public function __construct($role = null) {
         $database = new Database();
@@ -79,6 +123,10 @@ class Auth {
     private function detectModuleFromActiveSession() {
         if (session_status() !== PHP_SESSION_ACTIVE) {
             return null;
+        }
+
+        if (session_name() === 'SMNS_SSO_SESSION' && !empty($this->module)) {
+            return $this->module;
         }
 
         $map = [
@@ -143,6 +191,18 @@ class Auth {
                     $username = $user['username'];
                 }
             }
+            if ($this->module === 'student') {
+                $ssql = "SELECT u.* FROM users u
+                         INNER JOIN students s ON s.user_id = u.id
+                         WHERE s.student_id = :sid
+                         LIMIT 1";
+                $sstmt = $this->db->prepare($ssql);
+                $sstmt->execute(['sid' => $username]);
+                $studentUser = $sstmt->fetch();
+                if ($studentUser) {
+                    $username = $studentUser['username'];
+                }
+            }
 
             // Check user by username/email
             $sql = "SELECT * FROM users WHERE username = :username OR email = :email";
@@ -185,11 +245,14 @@ class Auth {
             }
             
             // Check if account is active
-            if ($user['status'] !== 'active') {
+            if (!$this->isUserStatusActive($user['status'] ?? 'active')) {
                 return ['success' => false, 'message' => 'Account is not active'];
             }
             
             $moduleName = $this->module ?: $user['role'];
+            if (!$this->userHasModuleAccess($user, $moduleName)) {
+                return ['success' => false, 'message' => 'Access denied for this module.'];
+            }
 
             // Optional MFA gate before session is finalized.
             if (MfaService::isMfaRequiredForRole((string)$user['role'])) {
@@ -201,7 +264,7 @@ class Auth {
                 $this->setPendingLoginContext($moduleName, (int)$user['id'], 'mfa', (string)($challenge['message'] ?? ''));
                 return [
                     'success' => false,
-                    'role' => $user['role'],
+                    'role' => $moduleName,
                     'mfa_required' => true,
                     'message' => $challenge['message'] ?? 'Verification code sent.'
                 ];
@@ -217,7 +280,7 @@ class Auth {
                     $this->setPendingLoginContext($moduleName, (int)$user['id'], 'consent');
                     return [
                         'success' => false,
-                        'role' => $user['role'],
+                        'role' => $moduleName,
                         'consent_required' => true,
                         'message' => 'Privacy consent is required before proceeding.'
                     ];
@@ -276,6 +339,15 @@ class Auth {
         // Clear only THIS module's session data
         if ($modulePrefix) {
             $this->clearModuleSession($modulePrefix);
+            if (!$this->hasAnyActiveModuleSession()) {
+                unset($_SESSION['sso_logged_in']);
+                unset($_SESSION['sso_user_id']);
+                unset($_SESSION['sso_username']);
+                unset($_SESSION['sso_email']);
+                unset($_SESSION['sso_primary_role']);
+                unset($_SESSION['sso_access_modules']);
+                unset($_SESSION['sso_last_login_at']);
+            }
         } else {
             $this->session->destroy();
         }
@@ -291,8 +363,12 @@ class Auth {
         $loggedInKey = $this->module . '_logged_in';
         $roleKey = $this->module . '_role';
 
-        return (isset($_SESSION[$loggedInKey]) && $_SESSION[$loggedInKey] === true &&
-                isset($_SESSION[$roleKey]) && $_SESSION[$roleKey] === $this->module);
+        if (isset($_SESSION[$loggedInKey]) && $_SESSION[$loggedInKey] === true &&
+            isset($_SESSION[$roleKey]) && $_SESSION[$roleKey] === $this->module) {
+            return true;
+        }
+
+        return $this->hydrateModuleSessionFromSso($this->module);
     }
 
     /**
@@ -300,6 +376,9 @@ class Auth {
      */
     public function getRole() {
         if (!$this->module) {
+            return $_SESSION['sso_primary_role'] ?? null;
+        }
+        if (!$this->isLoggedIn()) {
             return null;
         }
         $roleKey = $this->module . '_role';
@@ -356,6 +435,7 @@ class Auth {
             'username' => $_SESSION[$prefix . 'username'] ?? null,
             'email' => $_SESSION[$prefix . 'email'] ?? null,
             'role' => $_SESSION[$prefix . 'role'] ?? null,
+            'primary_role' => $_SESSION[$prefix . 'primary_role'] ?? ($_SESSION['sso_primary_role'] ?? null),
             'profile' => $_SESSION[$prefix . 'profile'] ?? null
         ];
     }
@@ -506,6 +586,151 @@ class Auth {
         } catch (Exception $e) {
             // Non-fatal
         }
+
+        try {
+            $this->db->exec("
+                CREATE TABLE IF NOT EXISTS user_module_access (
+                    id INT(11) NOT NULL AUTO_INCREMENT,
+                    user_id INT(11) NOT NULL,
+                    module ENUM('admin','student','lecturer','finance') NOT NULL,
+                    is_active TINYINT(1) NOT NULL DEFAULT 1,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uniq_user_module (user_id, module),
+                    KEY idx_module_active (module, is_active),
+                    KEY idx_user_active (user_id, is_active)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        } catch (Exception $e) {
+            // Non-fatal
+        }
+    }
+
+    private function normalizeModuleName($module) {
+        $module = strtolower(trim((string)$module));
+        if (!in_array($module, ['admin', 'student', 'lecturer', 'finance'], true)) {
+            return '';
+        }
+        return $module;
+    }
+
+    private function resolveAccessibleModules(array $user) {
+        $primary = $this->normalizeModuleName((string)($user['role'] ?? ''));
+        $modules = [];
+        if ($primary !== '') {
+            $modules[$primary] = true;
+        }
+
+        $userId = (int)($user['id'] ?? 0);
+        if ($userId <= 0) {
+            return array_keys($modules);
+        }
+
+        try {
+            $stmt = $this->db->prepare("
+                SELECT module
+                FROM user_module_access
+                WHERE user_id = :user_id
+                  AND is_active = 1
+            ");
+            $stmt->execute(['user_id' => $userId]);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            foreach ($rows as $row) {
+                $module = $this->normalizeModuleName((string)($row['module'] ?? ''));
+                if ($module !== '') {
+                    $modules[$module] = true;
+                }
+            }
+        } catch (Exception $e) {
+        }
+
+        return array_keys($modules);
+    }
+
+    private function userHasModuleAccess(array $user, $module) {
+        $module = $this->normalizeModuleName($module);
+        if ($module === '') {
+            return false;
+        }
+        $modules = $this->resolveAccessibleModules($user);
+        if (!in_array($module, $modules, true)) {
+            return false;
+        }
+        if ($module === $this->normalizeModuleName((string)($user['role'] ?? ''))) {
+            return true;
+        }
+        return $this->moduleProfileExists((int)($user['id'] ?? 0), $module);
+    }
+
+    private function moduleProfileExists($userId, $module) {
+        $userId = (int)$userId;
+        $module = $this->normalizeModuleName($module);
+        if ($userId <= 0 || $module === '') {
+            return false;
+        }
+        $tableMap = [
+            'admin' => 'admins',
+            'student' => 'students',
+            'lecturer' => 'lecturers',
+            'finance' => 'finance_staff'
+        ];
+        $table = $tableMap[$module] ?? '';
+        if ($table === '') {
+            return false;
+        }
+        try {
+            $stmt = $this->db->prepare("SELECT id FROM {$table} WHERE user_id = :user_id LIMIT 1");
+            $stmt->execute(['user_id' => $userId]);
+            return (bool)$stmt->fetchColumn();
+        } catch (Exception $e) {
+            return false;
+        }
+    }
+
+    private function hydrateModuleSessionFromSso($moduleName) {
+        $moduleName = $this->normalizeModuleName($moduleName);
+        if ($moduleName === '') {
+            return false;
+        }
+
+        if (empty($_SESSION['sso_logged_in']) || empty($_SESSION['sso_user_id'])) {
+            return false;
+        }
+
+        $ssoUserId = (int)($_SESSION['sso_user_id'] ?? 0);
+        if ($ssoUserId <= 0) {
+            return false;
+        }
+
+        $user = $this->getUserById($ssoUserId);
+        if (!$user || !$this->isUserStatusActive($user['status'] ?? 'active')) {
+            return false;
+        }
+        if (!$this->userHasModuleAccess($user, $moduleName)) {
+            return false;
+        }
+
+        $profile = $this->getUserProfile((int)$user['id'], $moduleName);
+        $_SESSION[$moduleName . '_user_id'] = (int)$user['id'];
+        $_SESSION[$moduleName . '_username'] = (string)($user['username'] ?? '');
+        $_SESSION[$moduleName . '_email'] = (string)($user['email'] ?? '');
+        $_SESSION[$moduleName . '_role'] = $moduleName;
+        $_SESSION[$moduleName . '_primary_role'] = (string)($user['role'] ?? '');
+        $_SESSION[$moduleName . '_profile'] = $profile;
+        $_SESSION[$moduleName . '_logged_in'] = true;
+        $_SESSION[$moduleName . '_login_time'] = time();
+        $_SESSION[$moduleName . '_session_token'] = bin2hex(random_bytes(32));
+        return true;
+    }
+
+    private function hasAnyActiveModuleSession() {
+        foreach (['admin', 'student', 'lecturer', 'finance'] as $module) {
+            if (!empty($_SESSION[$module . '_logged_in']) && !empty($_SESSION[$module . '_user_id'])) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -513,7 +738,7 @@ class Auth {
      */
     private function finalizeAuthenticatedLogin(array $user) {
         $moduleName = $this->module ?: $user['role'];
-        $profile = $this->getUserProfile($user['id'], $user['role']);
+        $profile = $this->getUserProfile($user['id'], $moduleName);
 
         // Successful auth finalization: clear lock state and update login audit.
         $this->resetFailedAttempts($user['id']);
@@ -529,12 +754,21 @@ class Auth {
         $_SESSION[$moduleName . '_user_id'] = $user['id'];
         $_SESSION[$moduleName . '_username'] = $user['username'];
         $_SESSION[$moduleName . '_email'] = $user['email'];
-        $_SESSION[$moduleName . '_role'] = $user['role'];
+        $_SESSION[$moduleName . '_role'] = $moduleName;
+        $_SESSION[$moduleName . '_primary_role'] = (string)$user['role'];
         $_SESSION[$moduleName . '_profile'] = $profile;
         $_SESSION[$moduleName . '_logged_in'] = true;
         $_SESSION[$moduleName . '_login_time'] = time();
         $_SESSION[$moduleName . '_session_token'] = bin2hex(random_bytes(32));
         $this->clearPendingLoginContext($moduleName);
+        $accessibleModules = $this->resolveAccessibleModules($user);
+        $_SESSION['sso_logged_in'] = true;
+        $_SESSION['sso_user_id'] = (int)$user['id'];
+        $_SESSION['sso_username'] = (string)$user['username'];
+        $_SESSION['sso_email'] = (string)$user['email'];
+        $_SESSION['sso_primary_role'] = (string)$user['role'];
+        $_SESSION['sso_access_modules'] = $accessibleModules;
+        $_SESSION['sso_last_login_at'] = time();
 
         // Log successful login so admin can see it in Recent Activity / Login Sessions
         $deviceAlertMeta = $this->buildDeviceAlertMeta((int)$user['id'], $moduleName);
@@ -544,7 +778,7 @@ class Auth {
 
         return [
             'success' => true,
-            'role' => $user['role'],
+            'role' => $moduleName,
             'require_password_change' => !empty($user['require_password_change'])
         ];
     }
@@ -817,7 +1051,7 @@ class Auth {
             }
 
             $user = $this->getUserById((int)$ctx['user_id']);
-            if (!$user || ($user['status'] ?? '') !== 'active') {
+            if (!$user || !$this->isUserStatusActive($user['status'] ?? 'active')) {
                 $this->clearPendingLoginContext($ctx['module']);
                 return ['success' => false, 'message' => 'User account is not active.'];
             }
@@ -837,7 +1071,7 @@ class Auth {
                     $this->setPendingLoginContext($ctx['module'], (int)$ctx['user_id'], 'consent');
                     return [
                         'success' => false,
-                        'role' => $user['role'],
+                        'role' => (string)$ctx['module'],
                         'consent_required' => true,
                         'message' => 'Privacy consent is required before proceeding.'
                     ];
@@ -860,7 +1094,7 @@ class Auth {
                 return ['success' => false, 'message' => 'No pending MFA challenge found.'];
             }
             $user = $this->getUserById((int)$ctx['user_id']);
-            if (!$user || ($user['status'] ?? '') !== 'active') {
+            if (!$user || !$this->isUserStatusActive($user['status'] ?? 'active')) {
                 return ['success' => false, 'message' => 'User account is not active.'];
             }
             $mfa = new MfaService($this->db);
@@ -885,7 +1119,7 @@ class Auth {
             }
 
             $user = $this->getUserById((int)$ctx['user_id']);
-            if (!$user || ($user['status'] ?? '') !== 'active') {
+            if (!$user || !$this->isUserStatusActive($user['status'] ?? 'active')) {
                 $this->clearPendingLoginContext($ctx['module']);
                 return ['success' => false, 'message' => 'User account is not active.'];
             }

@@ -89,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </label>
                         </div>
                         <button type="submit" class="btn btn-primary">Accept and Continue</button>
-                        <a href="<?php echo e(BASE_URL . '/views/' . $module . '/login.php'); ?>" class="btn btn-link">Cancel</a>
+                        <a href="<?php echo e(BASE_URL . '/views/auth/login.php?role=' . urlencode($module)); ?>" class="btn btn-link">Cancel</a>
                     </form>
                 </div>
             </div>

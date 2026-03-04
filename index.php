@@ -88,6 +88,10 @@ if ($requestedModule !== null) {
 
 // Default landing behavior: send active users to their dashboard, otherwise to unified login.
 if (!empty($activeRoles)) {
+    if (defined('UNIFIED_RBAC_LOGIN') && UNIFIED_RBAC_LOGIN && !empty($_COOKIE['SMNS_SSO_SESSION'])) {
+        header('Location: views/auth/module-hub.php');
+        exit;
+    }
     $primaryRole = $activeRoles[0];
     header('Location: ' . $modules[$primaryRole]['dashboard']);
     exit;

@@ -6,6 +6,36 @@ $requestedModule = strtolower(trim((string)($_GET['module'] ?? $_REQUEST['module
 $userId = 0;
 $activeModule = '';
 
+// Unified SSO session support.
+if ($userId <= 0 && !empty($_COOKIE['SMNS_SSO_SESSION'])) {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+    session_name('SMNS_SSO_SESSION');
+    @session_start();
+
+    if (in_array($requestedModule, $modules, true)) {
+        $loggedInKey = $requestedModule . '_logged_in';
+        $userIdKey = $requestedModule . '_user_id';
+        if (!empty($_SESSION[$loggedInKey]) && $_SESSION[$loggedInKey] === true && !empty($_SESSION[$userIdKey])) {
+            $userId = (int)$_SESSION[$userIdKey];
+            $activeModule = $requestedModule;
+        }
+    }
+
+    if ($userId <= 0) {
+        foreach ($modules as $mod) {
+            $loggedInKey = $mod . '_logged_in';
+            $userIdKey = $mod . '_user_id';
+            if (!empty($_SESSION[$loggedInKey]) && $_SESSION[$loggedInKey] === true && !empty($_SESSION[$userIdKey])) {
+                $userId = (int)$_SESSION[$userIdKey];
+                $activeModule = $mod;
+                break;
+            }
+        }
+    }
+}
+
 $tryModuleSession = function ($mod) use (&$userId, &$activeModule) {
     $cookieName = 'SMNS_' . strtoupper($mod) . '_SESSION';
     if (empty($_COOKIE[$cookieName])) {
@@ -30,12 +60,14 @@ $tryModuleSession = function ($mod) use (&$userId, &$activeModule) {
     return false;
 };
 
-if (in_array($requestedModule, $modules, true)) {
-    $tryModuleSession($requestedModule);
-} else {
-    foreach ($modules as $mod) {
-        if ($tryModuleSession($mod)) {
-            break;
+if ($userId <= 0) {
+    if (in_array($requestedModule, $modules, true)) {
+        $tryModuleSession($requestedModule);
+    } else {
+        foreach ($modules as $mod) {
+            if ($tryModuleSession($mod)) {
+                break;
+            }
         }
     }
 }

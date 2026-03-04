@@ -19,6 +19,19 @@ if (!$auth->isLoggedIn() || $auth->getRole() !== 'finance') {
 $studentId = (int)($_GET['msg_student_id'] ?? ($_GET['student_id'] ?? 0));
 $prnReference = strtoupper(trim((string)($_GET['msg_prn'] ?? ($_GET['prn_ref'] ?? ($_GET['prn'] ?? '')))));
 $transactionRef = strtoupper(trim((string)($_GET['msg_tx'] ?? ($_GET['tx_ref'] ?? ($_GET['tx'] ?? ($_GET['transaction_ref'] ?? ''))))));
+$threadQ = trim((string)($_GET['thread_q'] ?? ($_GET['q'] ?? '')));
+$unreadOnly = in_array(strtolower(trim((string)($_GET['unread_only'] ?? '0'))), ['1', 'true', 'yes', 'on'], true);
+$threadLimit = (int)($_GET['thread_limit'] ?? 30);
+if ($threadLimit < 1) {
+    $threadLimit = 30;
+}
+if ($threadLimit > 100) {
+    $threadLimit = 100;
+}
+$threadOffset = (int)($_GET['thread_offset'] ?? 0);
+if ($threadOffset < 0) {
+    $threadOffset = 0;
+}
 
 try {
     $db = new Database();
@@ -27,13 +40,13 @@ try {
     $service = new FinanceMessagingService($conn);
     $service->ensureSchema();
 
-    $threadsRaw = $service->getFinanceThreadSummaries(120);
-    $selectedSummary = null;
-    $unreadTotal = 0;
-
-    foreach ($threadsRaw as $threadRow) {
-        $unreadTotal += (int)($threadRow['unread_for_finance'] ?? 0);
+    $threadsRaw = $service->getFinanceThreadSummariesPaged($threadLimit + 1, $threadOffset, $threadQ, $unreadOnly);
+    $threadsHasMore = count($threadsRaw) > $threadLimit;
+    if ($threadsHasMore) {
+        $threadsRaw = array_slice($threadsRaw, 0, $threadLimit);
     }
+    $selectedSummary = null;
+    $unreadTotal = $service->getFinanceUnreadTotal();
 
     if ($studentId <= 0 && !empty($threadsRaw)) {
         $selectedSummary = $threadsRaw[0];
@@ -159,6 +172,11 @@ try {
         'success' => true,
         'unread_total' => $unreadTotal,
         'threads' => $threads,
+        'threads_offset' => $threadOffset,
+        'threads_limit' => $threadLimit,
+        'threads_has_more' => $threadsHasMore,
+        'thread_q' => $threadQ,
+        'unread_only' => $unreadOnly ? 1 : 0,
         'selected' => [
             'student_id' => $studentId,
             'student_name' => $selectedName !== '' ? $selectedName : ($studentId > 0 ? ('Student #' . $studentId) : ''),
@@ -179,4 +197,3 @@ try {
         'error' => (defined('APP_DEBUG') && APP_DEBUG) ? $e->getMessage() : null
     ]);
 }
-

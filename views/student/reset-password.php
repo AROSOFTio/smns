@@ -96,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                         <button type="submit" class="btn btn-success btn-block">Reset Password</button>
                     </form>
-                    <a href="login.php" class="btn btn-link mt-2">Back to Login</a>
+                    <a href="<?php echo BASE_URL; ?>/views/auth/login.php?role=student" class="btn btn-link mt-2">Back to Login</a>
                 </div>
             </div>
         </div>

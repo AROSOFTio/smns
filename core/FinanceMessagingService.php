@@ -200,8 +200,16 @@ class FinanceMessagingService {
     }
 
     public function getFinanceThreadSummaries($limit = 60) {
+        return $this->getFinanceThreadSummariesPaged($limit, 0, '', false);
+    }
+
+    public function getFinanceThreadSummariesPaged($limit = 60, $offset = 0, $search = '', $unreadOnly = false) {
         $limit = max(1, min(300, (int)$limit));
-        $stmt = $this->conn->query("
+        $offset = max(0, (int)$offset);
+        $search = trim((string)$search);
+        $unreadOnly = (bool)$unreadOnly;
+
+        $baseSql = "
             SELECT
                 latest.thread_key,
                 latest.student_id,
@@ -230,10 +238,45 @@ class FinanceMessagingService {
                 FROM finance_messages
                 GROUP BY thread_key
             ) stats ON stats.thread_key = latest.thread_key
-            ORDER BY latest.id DESC
-            LIMIT {$limit}
+            WHERE 1=1
+        ";
+        $params = [];
+
+        if ($unreadOnly) {
+            $baseSql .= " AND COALESCE(stats.unread_for_finance, 0) > 0";
+        }
+        if ($search !== '') {
+            $baseSql .= " AND (
+                s.student_id LIKE :q
+                OR s.first_name LIKE :q
+                OR s.last_name LIKE :q
+                OR CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, '')) LIKE :q
+                OR latest.prn_reference LIKE :q
+                OR latest.transaction_ref LIKE :q
+                OR latest.message_text LIKE :q
+            )";
+            $params['q'] = '%' . $search . '%';
+        }
+
+        $baseSql .= " ORDER BY latest.id DESC LIMIT {$limit} OFFSET {$offset}";
+        $stmt = $this->conn->prepare($baseSql);
+        foreach ($params as $k => $v) {
+            $stmt->bindValue(':' . $k, $v, PDO::PARAM_STR);
+        }
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function getFinanceUnreadTotal() {
+        $stmt = $this->conn->query("
+            SELECT COALESCE(SUM(unread_count), 0)
+            FROM (
+                SELECT SUM(CASE WHEN sender_role = 'student' AND is_read = 0 THEN 1 ELSE 0 END) AS unread_count
+                FROM finance_messages
+                GROUP BY thread_key
+            ) t
         ");
-        return $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+        return $stmt ? (int)$stmt->fetchColumn() : 0;
     }
 
     public function getFinanceThreadMessages($studentId, $prnReference = '', $transactionRef = '', $limit = 80) {
