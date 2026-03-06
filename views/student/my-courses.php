@@ -379,7 +379,7 @@ html[data-theme='dark'] .badge-provisional {
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
         <li><a href="<?php echo e($linkEnroll); ?>">ENROLLMENT & REGISTRATION</a></li>
         <li><a href="<?php echo e($linkPayments); ?>">PAYMENTS</a></li>
-        <li class="active"><a href="<?php echo e($linkProgramme); ?>">MY PROGRAMME</a></li>
+        <li class="active"><a href="<?php echo e($linkProgramme); ?>">MY COURSES & RESULTS</a></li>
         <ul class="programme-submenu">
             <li class="<?php echo $resultView === 'results' ? 'active' : ''; ?>"><a href="my-courses.php?view=results">MY RESULTS</a></li>
             <li class="<?php echo $resultView === 'provisional' ? 'active' : ''; ?>"><a href="my-courses.php?view=provisional">MY PROVISIONAL RESULTS</a></li>

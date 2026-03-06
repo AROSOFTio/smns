@@ -27,6 +27,9 @@ if ($studentId <= 0) {
 
 $db = new Database();
 $conn = $db->getConnection();
+$transcriptIssuanceService = new TranscriptIssuanceService($conn);
+$transcriptIssuanceService->ensureSchema();
+$currentIssuedTranscript = null;
 
 // Transcript download rights are controlled by admin verification.
 try {
@@ -308,6 +311,87 @@ if (!$graduationAward && (!empty($student['graduation_date']) || !empty($student
     ];
 }
 
+$buildTranscriptSnapshot = function () use ($student, $terms, $finalCgpa, $cgpaClassification, $totalCreditsAttempted, $totalCreditsEarned, $graduationAward) {
+    $canonicalTerms = [];
+    foreach ($terms as $term) {
+        $termRows = [];
+        foreach ((array)($term['rows'] ?? []) as $courseRow) {
+            $termRows[] = [
+                'course_code' => (string)($courseRow['course_code'] ?? ''),
+                'course_name' => (string)($courseRow['course_name'] ?? ''),
+                'credit_hours' => number_format((float)($courseRow['credit_hours'] ?? 0), 2, '.', ''),
+                'grade' => (string)($courseRow['grade'] ?? ''),
+                'grade_points' => $courseRow['grade_points'] !== null && $courseRow['grade_points'] !== '' ? number_format((float)$courseRow['grade_points'], 2, '.', '') : '',
+                'result_status' => (string)($courseRow['result_status'] ?? ''),
+            ];
+        }
+        $canonicalTerms[] = [
+            'academic_year' => (string)($term['academic_year'] ?? ''),
+            'semester_name' => (string)($term['semester_name'] ?? ''),
+            'semester_number' => (int)($term['semester_number'] ?? 0),
+            'year_of_study' => (int)($term['year_of_study'] ?? 0),
+            'attempted_credits' => number_format((float)($term['attempted_credits'] ?? 0), 2, '.', ''),
+            'earned_credits' => number_format((float)($term['earned_credits'] ?? 0), 2, '.', ''),
+            'sgpa' => $term['sgpa'] !== null ? number_format((float)$term['sgpa'], 2, '.', '') : '',
+            'rows' => $termRows,
+        ];
+    }
+
+    return [
+        'institution' => [
+            'name' => (string)getSetting('institution_name', INSTITUTION_NAME),
+            'base_url' => (string)BASE_URL,
+        ],
+        'student' => [
+            'student_id' => (string)($student['student_id'] ?? ''),
+            'name' => trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? '')),
+            'program_code' => (string)($student['program_code'] ?? ''),
+            'program_name' => (string)($student['program_name'] ?? ''),
+        ],
+        'summary' => [
+            'final_cgpa' => $finalCgpa !== null ? number_format((float)$finalCgpa, 2, '.', '') : '',
+            'classification' => (string)$cgpaClassification,
+            'total_attempted_credits' => number_format((float)$totalCreditsAttempted, 2, '.', ''),
+            'total_earned_credits' => number_format((float)$totalCreditsEarned, 2, '.', ''),
+            'award_title' => (string)($graduationAward['award_title'] ?? ''),
+            'award_classification' => (string)($graduationAward['classification'] ?? ''),
+            'award_date' => (string)($graduationAward['award_date'] ?? ''),
+        ],
+        'terms' => $canonicalTerms,
+    ];
+};
+
+$issueTranscriptSnapshot = function (string $format) use ($transcriptIssuanceService, $studentId, $buildTranscriptSnapshot, $currentUser) {
+    $snapshot = $buildTranscriptSnapshot();
+
+    return $transcriptIssuanceService->issueTranscript(
+        $studentId,
+        $snapshot,
+        $format,
+        isset($currentUser['id']) ? (int)$currentUser['id'] : null,
+        'student_export'
+    );
+};
+
+if ($transcriptViewGranted && !empty($student)) {
+    try {
+        $currentSnapshot = $buildTranscriptSnapshot();
+        $currentSnapshotHash = $transcriptIssuanceService->computeSnapshotHash($currentSnapshot);
+        $currentIssuedTranscript = $transcriptIssuanceService->findLatestActiveIssuanceForHash($studentId, $currentSnapshotHash);
+        if (!$currentIssuedTranscript) {
+            $currentIssuedTranscript = $transcriptIssuanceService->issueTranscript(
+                $studentId,
+                $currentSnapshot,
+                'print',
+                isset($currentUser['id']) ? (int)$currentUser['id'] : null,
+                'student_view'
+            );
+        }
+    } catch (Exception $e) {
+        $currentIssuedTranscript = null;
+    }
+}
+
 // Export transcript dataset.
 $export = strtolower(trim((string)($_GET['export'] ?? '')));
 if ($export !== '' && !$transcriptDownloadAvailable) {
@@ -354,6 +438,7 @@ if ($export === 'xml') {
         header('Location: ' . BASE_URL . '/views/student/transcript.php');
         exit;
     }
+    $issuance = $issueTranscriptSnapshot('xml');
     $filename = 'transcript_' . preg_replace('/[^A-Za-z0-9_-]/', '', (string)($student['student_id'] ?? ('student_' . $studentId))) . '_' . date('Ymd_His') . '.xml';
     header('Content-Type: application/xml; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -409,6 +494,14 @@ if ($export === 'xml') {
     $summaryNode->appendChild($dom->createElement('award_date', (string)($graduationAward['award_date'] ?? '')));
     $root->appendChild($summaryNode);
 
+    $issuanceNode = $dom->createElement('verification');
+    $issuanceNode->appendChild($dom->createElement('verification_code', (string)($issuance['verification_code'] ?? '')));
+    $issuanceNode->appendChild($dom->createElement('verification_token', (string)($issuance['verification_token'] ?? '')));
+    $issuanceNode->appendChild($dom->createElement('verification_url', (string)($issuance['verification_url'] ?? '')));
+    $issuanceNode->appendChild($dom->createElement('transcript_hash', (string)($issuance['transcript_hash'] ?? '')));
+    $issuanceNode->appendChild($dom->createElement('issued_at', (string)($issuance['issued_at'] ?? '')));
+    $root->appendChild($issuanceNode);
+
     echo $dom->saveXML();
     exit;
 }
@@ -419,6 +512,7 @@ if ($export === 'csv' || $export === 'excel') {
         header('Location: ' . BASE_URL . '/views/student/transcript.php');
         exit;
     }
+    $issuance = $issueTranscriptSnapshot($export);
     $isExcel = ($export === 'excel');
     $filename = 'transcript_' . preg_replace('/[^A-Za-z0-9_-]/', '', (string)($student['student_id'] ?? ('student_' . $studentId))) . '_' . date('Ymd_His') . ($isExcel ? '.xls' : '.csv');
     if ($isExcel) {
@@ -432,6 +526,10 @@ if ($export === 'csv' || $export === 'excel') {
     fputcsv($out, ['Student Name', trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''))]);
     fputcsv($out, ['Student ID', (string)($student['student_id'] ?? '')]);
     fputcsv($out, ['Program', trim((string)($student['program_code'] ?? '') . ' - ' . (string)($student['program_name'] ?? ''))]);
+    fputcsv($out, ['Verification Code', (string)($issuance['verification_code'] ?? '')]);
+    fputcsv($out, ['Verification Token', (string)($issuance['verification_token'] ?? '')]);
+    fputcsv($out, ['Verification URL', (string)($issuance['verification_url'] ?? '')]);
+    fputcsv($out, ['Transcript Hash', (string)($issuance['transcript_hash'] ?? '')]);
     fputcsv($out, []);
     fputcsv($out, ['Academic Year', 'Semester', 'Year of Study', 'Course Code', 'Course Name', 'Credit Hours', 'Grade', 'Grade Points', 'Result Status']);
 
@@ -498,7 +596,7 @@ include '../../includes/header.php';
         <li><a href="<?php echo BASE_URL; ?>/views/student/generate_prn.php">GENERATE PRN</a></li>
         <li><a href="<?php echo BASE_URL; ?>/views/student/course-registration.php">ENROLLMENT & REGISTRATION</a></li>
         <li><a href="<?php echo BASE_URL; ?>/views/student/payments.php">PAYMENTS</a></li>
-        <li><a href="<?php echo BASE_URL; ?>/views/student/my-courses.php">MY PROGRAMME</a></li>
+        <li><a href="<?php echo BASE_URL; ?>/views/student/my-courses.php">MY COURSES & RESULTS</a></li>
         <li><a href="<?php echo BASE_URL; ?>/views/student/services.php?tab=apply">SERVICES</a></li>
         <ul class="services-submenu">
             <li><a href="<?php echo BASE_URL; ?>/views/student/services.php?tab=apply">APPLY FOR SERVICES</a></li>
@@ -506,7 +604,6 @@ include '../../includes/header.php';
             <li><a href="<?php echo BASE_URL; ?>/views/student/services.php?tab=new_id">NEW ID CARDS</a></li>
         </ul>
         <li><a href="<?php echo BASE_URL; ?>/views/student/dashboard.php">BIO DATA</a></li>
-        <li><a href="<?php echo BASE_URL; ?>/views/student/provisional-results.php">MY PROVISIONAL RESULTS</a></li>
         <li class="active"><a href="<?php echo BASE_URL; ?>/views/student/transcript.php">VIEW TRANSCRIPT</a></li>
         <li><a href="<?php echo BASE_URL; ?>/views/student/notifications.php">MY MAILBOX</a></li>
         <li><a href="<?php echo BASE_URL; ?>/views/student/academic-calendar.php">ACADEMIC CALENDAR</a></li>
@@ -629,6 +726,15 @@ body { background: #f8fafc; }
 .final-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.6rem 0.75rem; }
 .final-item .label { color: #64748b; font-size: 0.76rem; text-transform: uppercase; }
 .final-item .value { color: #0f172a; font-size: 1rem; font-weight: 700; }
+.verification-panel { display:grid; grid-template-columns:minmax(180px,220px) 1fr; gap:1rem; padding:1rem 1.25rem; background:#fff; border-top:1px solid #e2e8f0; border-bottom:1px solid #e2e8f0; }
+.verification-qr-wrap { display:flex; align-items:center; justify-content:center; min-height:180px; border:1px dashed #cbd5e1; border-radius:12px; background:#f8fafc; }
+.verification-qr { width:160px; height:160px; }
+.verification-meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:.75rem; }
+.verification-card { border:1px solid #e2e8f0; border-radius:10px; padding:.75rem .85rem; background:#f8fafc; }
+.verification-card .label { color:#64748b; font-size:.73rem; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
+.verification-card .value { color:#0f172a; font-size:.88rem; font-weight:600; word-break:break-word; }
+.verification-link { font-size:.8rem; color:#1d4ed8; word-break:break-all; }
+.verification-note { margin-top:.5rem; color:#475569; font-size:.82rem; }
 html[data-theme='dark'] .transcript-card { border-color: #243047; box-shadow: 0 10px 26px rgba(2, 6, 23, 0.5); }
 html[data-theme='dark'] .profile-grid,
 html[data-theme='dark'] .final-summary { background: #0f172a; border-color: #243047; }
@@ -643,6 +749,13 @@ html[data-theme='dark'] .final-item .value { color: #e2e8f0; }
 html[data-theme='dark'] .transcript-table th { background: #152238; color: #cbd5e1; border-color: #233147; }
 html[data-theme='dark'] .transcript-table td { border-color: #233147; color: #dbeafe; }
 html[data-theme='dark'] .summary-badge { background: #111827; border-color: #334155; color: #dbeafe; }
+html[data-theme='dark'] .verification-panel { background:#0f172a; border-color:#243047; }
+html[data-theme='dark'] .verification-qr-wrap,
+html[data-theme='dark'] .verification-card { background:#111a2b; border-color:#243047; }
+html[data-theme='dark'] .verification-card .label,
+html[data-theme='dark'] .verification-note { color:#93c5fd; }
+html[data-theme='dark'] .verification-card .value { color:#e2e8f0; }
+html[data-theme='dark'] .verification-link { color:#93c5fd; }
 html[data-theme='dark'] .student-sidebar {
     background: #0f172a;
     border-right-color: #233147;
@@ -662,6 +775,19 @@ html[data-theme='dark'] .student-sidebar li.active {
 }
 html[data-theme='dark'] .services-submenu {
     border-left-color: #334155;
+}
+@media (max-width: 900px) {
+    .verification-panel { grid-template-columns: 1fr; }
+}
+@media print {
+    .topbar,
+    .student-sidebar,
+    .notification-bell,
+    .sidebar-toggle { display:none !important; }
+    .main-content { margin-left:0 !important; width:100% !important; max-width:100% !important; }
+    .content-area { padding:0 !important; }
+    .transcript-card { box-shadow:none; border:1px solid #cbd5e1; }
+    .verification-panel { page-break-inside:avoid; }
 }
 </style>
 
@@ -757,6 +883,36 @@ html[data-theme='dark'] .services-submenu {
                     </div>
                 </div>
 
+                <?php if (!empty($currentIssuedTranscript)): ?>
+                    <div class="verification-panel">
+                        <div class="verification-qr-wrap">
+                            <div id="transcriptQrCode" class="verification-qr" data-qr-url="<?php echo e((string)($currentIssuedTranscript['verification_url'] ?? '')); ?>"></div>
+                        </div>
+                        <div>
+                            <div class="verification-meta">
+                                <div class="verification-card">
+                                    <div class="label">Verification Code</div>
+                                    <div class="value"><?php echo e(implode('-', str_split((string)($currentIssuedTranscript['verification_code'] ?? ''), 4))); ?></div>
+                                </div>
+                                <div class="verification-card">
+                                    <div class="label">Issued At</div>
+                                    <div class="value"><?php echo e(Helper::formatDateTime((string)($currentIssuedTranscript['issued_at'] ?? ''), 'M d, Y g:i A')); ?></div>
+                                </div>
+                                <div class="verification-card">
+                                    <div class="label">Transcript Hash</div>
+                                    <div class="value"><?php echo e((string)($currentIssuedTranscript['transcript_hash'] ?? '')); ?></div>
+                                </div>
+                                <div class="verification-card">
+                                    <div class="label">Verification Token</div>
+                                    <div class="value"><?php echo e((string)($currentIssuedTranscript['verification_token'] ?? '')); ?></div>
+                                </div>
+                            </div>
+                            <div class="verification-note">This transcript has a permanent verification record for student-led sharing and printed copies.</div>
+                            <div class="verification-link mt-2"><?php echo e((string)($currentIssuedTranscript['verification_url'] ?? '')); ?></div>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
                 <?php foreach ($terms as $term): ?>
                     <div class="term-section">
                         <div class="term-header">
@@ -832,6 +988,7 @@ html[data-theme='dark'] .services-submenu {
     </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     var toggle = document.getElementById('sidebarToggle');
@@ -842,6 +999,19 @@ document.addEventListener('DOMContentLoaded', function() {
         sidebar.classList.toggle('sidebar-collapsed');
         main.classList.toggle('full-width');
     });
+
+    var qrHost = document.getElementById('transcriptQrCode');
+    if (qrHost && typeof QRCode !== 'undefined') {
+        var qrUrl = qrHost.getAttribute('data-qr-url') || '';
+        if (qrUrl !== '') {
+            new QRCode(qrHost, {
+                text: qrUrl,
+                width: 160,
+                height: 160,
+                correctLevel: QRCode.CorrectLevel.M
+            });
+        }
+    }
 });
 </script>
 

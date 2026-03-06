@@ -1742,7 +1742,7 @@ html[data-theme='dark'] .ledger-amount-negative {
             <li class="<?php echo $section === 'ledger' ? 'active' : ''; ?>"><a href="payments.php?section=ledger">MY STUDENT LEDGER</a></li>
             <li class="<?php echo $section === 'fees' ? 'active' : ''; ?>"><a href="payments.php?section=fees">MY FEES STRUCTURE</a></li>
         </ul>
-        <li><a href="<?php echo e($linkProgramme); ?>">MY PROGRAMME</a></li>
+        <li><a href="<?php echo e($linkProgramme); ?>">MY COURSES & RESULTS</a></li>
         <li><a href="services.php?tab=apply">SERVICES</a></li>
         <ul class="services-submenu">
             <li><a href="services.php?tab=apply">APPLY FOR SERVICES</a></li>
@@ -1826,7 +1826,6 @@ html[data-theme='dark'] .ledger-amount-negative {
                     echo e($titleMap[$section] ?? 'PAYMENTS');
                     ?>
                 </div>
-                <button type="button" class="refs-reload-btn" onclick="window.location.reload();">RELOAD</button>
             </div>
             <?php if (!empty($flashSuccess)): ?>
                 <div class="alert alert-success"><?php echo e($flashSuccess); ?></div>
@@ -2112,7 +2111,6 @@ html[data-theme='dark'] .ledger-amount-negative {
                         <div class="ledger-head">
                             <div class="ledger-title">MY LEDGER</div>
                             <div class="ledger-actions">
-                                <button type="button" class="refs-reload-btn" onclick="window.location.reload();">RELOAD</button>
                                 <a class="tx-check-btn" style="text-decoration:none;" href="payments.php?section=ledger&download=csv">DOWNLOAD</a>
                             </div>
                         </div>
@@ -2174,7 +2172,7 @@ html[data-theme='dark'] .ledger-amount-negative {
                         <button type="button" class="refs-reload-btn" onclick="window.location.reload();">RELOAD</button>
                         <button type="button" class="tx-check-btn" onclick="window.print();">PRINT</button>
                     </div>
-                    <div class="alert alert-info" style="margin-bottom:10px;">
+                    <div class="alert alert-info fee-structure-info-banner" style="margin-bottom:10px;">
                         <strong>Mode:</strong> Read-only active fee structure
                         <?php if (!empty($activeFeeVersionLabel)): ?>
                             <span class="ml-2"><strong>Version:</strong> <?php echo e($activeFeeVersionLabel); ?></span>
@@ -2289,6 +2287,21 @@ document.querySelectorAll('.fees-year-head').forEach(function(btn) {
         }
     });
 });
+
+// Keep fee-structure context visible briefly, then auto-hide to reduce sticky clutter.
+(function autoHideFeeStructureBanner() {
+    var banner = document.querySelector('.fee-structure-info-banner');
+    if (!banner) return;
+    window.setTimeout(function () {
+        banner.style.transition = 'opacity 0.4s ease';
+        banner.style.opacity = '0';
+        window.setTimeout(function () {
+            if (banner && banner.parentNode) {
+                banner.parentNode.removeChild(banner);
+            }
+        }, 420);
+    }, 10000);
+})();
 
 (function initStudentFinanceChatPolling() {
     var chatCard = document.getElementById('student-finance-chat');

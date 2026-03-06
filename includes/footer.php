@@ -183,17 +183,8 @@
         }
 
         function getModuleLoginUrl() {
-            var path = window.location.pathname;
-            var modules = ['admin', 'student', 'lecturer', 'finance'];
-            for (var i = 0; i < modules.length; i++) {
-                if (
-                    path.indexOf('/views/' + modules[i] + '/') !== -1 ||
-                    path.indexOf('/' + modules[i] + '/') !== -1
-                ) {
-                    return '<?php echo BASE_URL; ?>/views/' + modules[i] + '/login.php?error=session_expired';
-                }
-            }
-            return '<?php echo BASE_URL; ?>/views/auth/login.php?error=session_expired';
+            var qs = ACTIVE_MODULE ? ('&module=' + encodeURIComponent(ACTIVE_MODULE)) : '';
+            return '<?php echo BASE_URL; ?>/views/auth/login.php?error=session_expired' + qs;
         }
 
         function resetTimer() {
@@ -297,6 +288,50 @@
                 cd.textContent = Math.ceil(remaining / 1000);
             }
         }, 5000);
+    })();
+    </script>
+    <script>
+    (function() {
+        var AUTO_DISMISS_MS = 10000;
+
+        function shouldAutoDismiss(alertEl) {
+            if (!alertEl) return false;
+            if (alertEl.hasAttribute('data-persistent') || alertEl.classList.contains('alert-persistent')) {
+                return false;
+            }
+            // Keep embedded/in-content status alerts visible.
+            if (alertEl.closest('.card-body, .table-responsive, .modal-body, .mail-body, .history-body')) {
+                return false;
+            }
+            return true;
+        }
+
+        function hideAlert(alertEl) {
+            if (!alertEl || !alertEl.parentNode) return;
+            alertEl.style.transition = 'opacity 0.25s ease';
+            alertEl.style.opacity = '0';
+            window.setTimeout(function() {
+                if (window.jQuery && window.jQuery.fn && typeof window.jQuery.fn.alert === 'function') {
+                    try {
+                        window.jQuery(alertEl).alert('close');
+                        return;
+                    } catch (e) {}
+                }
+                if (alertEl.parentNode) {
+                    alertEl.parentNode.removeChild(alertEl);
+                }
+            }, 260);
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            var alerts = document.querySelectorAll('.alert');
+            alerts.forEach(function(alertEl) {
+                if (!shouldAutoDismiss(alertEl)) return;
+                window.setTimeout(function() {
+                    hideAlert(alertEl);
+                }, AUTO_DISMISS_MS);
+            });
+        });
     })();
     </script>
 

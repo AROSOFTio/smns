@@ -173,7 +173,7 @@
 
     // Notification handling
     function initNotificationHandling() {
-        const AUTO_DISMISS_MS = 20000;
+        const AUTO_DISMISS_MS = 10000;
         const dismissAlert = (alert) => {
             if (!(alert instanceof HTMLElement) || alert.dataset.alertRemoving === '1') {
                 return;

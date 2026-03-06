@@ -104,6 +104,9 @@ smns/
 
 ## Key Features
 
+Stakeholder overview:
+- See [docs/Stakeholder-System-Overview.md](/r:/xxxamp/htdocs/smns/docs/Stakeholder-System-Overview.md) for a presentation-ready summary of modules, lifecycle flow, and transcript release/verification.
+
 ### For Administrators
 - Manage students, lecturers, and staff
 - Configure academic years and semesters

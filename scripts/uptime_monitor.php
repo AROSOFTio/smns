@@ -4,6 +4,7 @@
  * Records probe outcomes and alerts admins on repeated downtime or SLO breach.
  */
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../core/AfricasTalkingSmsService.php';
 
 function ensureUptimeTables(PDO $conn): void
 {
@@ -29,10 +30,23 @@ function ensureUptimeTables(PDO $conn): void
         consecutive_failures INT NULL,
         recipient_count INT NOT NULL DEFAULT 0,
         email_sent TINYINT(1) NOT NULL DEFAULT 0,
+        sms_recipient_count INT NOT NULL DEFAULT 0,
+        sms_sent TINYINT(1) NOT NULL DEFAULT 0,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_created_at (created_at),
         INDEX idx_alert_type (alert_type)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+    try {
+        $conn->exec("ALTER TABLE system_uptime_alerts ADD COLUMN sms_recipient_count INT NOT NULL DEFAULT 0 AFTER email_sent");
+    } catch (Exception $e) {
+        // Column already exists or table engine does not support this alter path.
+    }
+    try {
+        $conn->exec("ALTER TABLE system_uptime_alerts ADD COLUMN sms_sent TINYINT(1) NOT NULL DEFAULT 0 AFTER sms_recipient_count");
+    } catch (Exception $e) {
+        // Column already exists or table engine does not support this alter path.
+    }
 }
 
 function probeUptimeEndpoint(string $url, int $timeoutSeconds = 8): array
@@ -95,26 +109,75 @@ function probeUptimeEndpoint(string $url, int $timeoutSeconds = 8): array
     ];
 }
 
+function normalizeAlertPhone(string $phone): ?string
+{
+    $phone = trim($phone);
+    if ($phone === '') {
+        return null;
+    }
+
+    $phone = preg_replace('/[^\d+]/', '', $phone);
+    if (!is_string($phone) || $phone === '') {
+        return null;
+    }
+
+    if (strpos($phone, '+') === 0) {
+        $digits = '+' . preg_replace('/\D/', '', substr($phone, 1));
+        return strlen($digits) >= 11 ? $digits : null;
+    }
+
+    $digits = preg_replace('/\D/', '', $phone);
+    if ($digits === '') {
+        return null;
+    }
+
+    if (strpos($digits, '256') === 0) {
+        return '+' . $digits;
+    }
+    if (strpos($digits, '0') === 0 && strlen($digits) >= 10) {
+        return '+256' . ltrim($digits, '0');
+    }
+    if (strlen($digits) >= 9) {
+        return '+' . $digits;
+    }
+
+    return null;
+}
+
 function fetchAlertRecipients(PDO $conn): array
 {
     $emails = [];
-    $stmt = $conn->query("SELECT email FROM users WHERE role = 'admin' AND status = 'active' AND email IS NOT NULL AND email <> ''");
+    $phones = [];
+    $stmt = $conn->query("
+        SELECT u.email, a.phone
+        FROM users u
+        LEFT JOIN admins a ON a.user_id = u.id
+        WHERE u.role = 'admin'
+          AND u.status = 'active'
+    ");
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
         $email = trim((string)($row['email'] ?? ''));
         if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $emails[] = $email;
         }
+        $phone = normalizeAlertPhone((string)($row['phone'] ?? ''));
+        if ($phone !== null) {
+            $phones[] = $phone;
+        }
     }
-    return array_values(array_unique($emails));
+    return [
+        'emails' => array_values(array_unique($emails)),
+        'phones' => array_values(array_unique($phones)),
+    ];
 }
 
-function logUptimeAlert(PDO $conn, string $type, string $message, ?float $availability, ?int $consecutiveFailures, bool $emailSent, int $recipientCount): void
+function logUptimeAlert(PDO $conn, string $type, string $message, ?float $availability, ?int $consecutiveFailures, bool $emailSent, int $recipientCount, bool $smsSent = false, int $smsRecipientCount = 0): void
 {
     $stmt = $conn->prepare("
         INSERT INTO system_uptime_alerts
-            (alert_type, message, availability_percent, consecutive_failures, recipient_count, email_sent, created_at)
+            (alert_type, message, availability_percent, consecutive_failures, recipient_count, email_sent, sms_recipient_count, sms_sent, created_at)
         VALUES
-            (:alert_type, :message, :availability_percent, :consecutive_failures, :recipient_count, :email_sent, NOW())
+            (:alert_type, :message, :availability_percent, :consecutive_failures, :recipient_count, :email_sent, :sms_recipient_count, :sms_sent, NOW())
     ");
     $stmt->execute([
         'alert_type' => $type,
@@ -123,6 +186,8 @@ function logUptimeAlert(PDO $conn, string $type, string $message, ?float $availa
         'consecutive_failures' => $consecutiveFailures,
         'recipient_count' => $recipientCount,
         'email_sent' => $emailSent ? 1 : 0,
+        'sms_recipient_count' => max(0, $smsRecipientCount),
+        'sms_sent' => $smsSent ? 1 : 0,
     ]);
 }
 
@@ -200,6 +265,8 @@ try {
 
     $alertSent = false;
     $recipientCount = 0;
+    $smsSent = false;
+    $smsRecipientCount = 0;
     if ($triggerType !== null) {
         $cooldownMinutes = (int)getSetting('uptime_alert_cooldown_minutes', 60);
         if ($cooldownMinutes <= 0) {
@@ -224,8 +291,11 @@ try {
         }
 
         if (!$cooldownActive) {
-            $emails = fetchAlertRecipients($conn);
+            $recipients = fetchAlertRecipients($conn);
+            $emails = $recipients['emails'] ?? [];
+            $phones = $recipients['phones'] ?? [];
             $recipientCount = count($emails);
+            $smsRecipientCount = count($phones);
             if (!empty($emails)) {
                 $subject = APP_NAME . ' - Uptime Alert (' . strtoupper($triggerType) . ')';
                 $body = implode("\n", [
@@ -254,7 +324,39 @@ try {
                 );
             }
 
-            logUptimeAlert($conn, $triggerType, $triggerMessage, $availability, $consecutiveFailures, $alertSent, $recipientCount);
+            if (!empty($phones)) {
+                $smsMessage = sprintf(
+                    '%s uptime alert: %s. HTTP %s, %sms, availability %s%%. %s',
+                    APP_SHORT_NAME,
+                    $triggerMessage,
+                    (string)($result['http_status'] ?? 'n/a'),
+                    (string)($result['response_ms'] ?? 'n/a'),
+                    (string)$availability,
+                    BASE_URL . '/views/admin/system/health.php'
+                );
+                $sms = new AfricasTalkingSmsService();
+                $smsResult = $sms->sendBulkMessage($smsMessage, $phones, [
+                    'senderId' => defined('AFRICASTALKING_DEFAULT_SENDER_ID') ? AFRICASTALKING_DEFAULT_SENDER_ID : '',
+                    'maskedNumber' => defined('AFRICASTALKING_DEFAULT_MASKED_NUMBER') ? AFRICASTALKING_DEFAULT_MASKED_NUMBER : '',
+                    'telco' => defined('AFRICASTALKING_DEFAULT_TELCO') ? AFRICASTALKING_DEFAULT_TELCO : '',
+                ]);
+                $smsSent = !empty($smsResult['success']);
+                if (!$smsSent && !empty($smsResult['message'])) {
+                    error_log('Uptime SMS alert failed: ' . (string)$smsResult['message']);
+                }
+            }
+
+            logUptimeAlert(
+                $conn,
+                $triggerType,
+                $triggerMessage,
+                $availability,
+                $consecutiveFailures,
+                $alertSent,
+                $recipientCount,
+                $smsSent,
+                $smsRecipientCount
+            );
         }
     }
 

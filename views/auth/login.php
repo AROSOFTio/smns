@@ -22,6 +22,11 @@ if (isset($_SESSION['flash_success'])) {
     unset($_SESSION['flash_success']);
 }
 
+$incomingError = strtolower(trim((string)($_GET['error'] ?? '')));
+if ($incomingError === 'session_expired') {
+    $error = 'Your session expired due to inactivity. Please login again.';
+}
+
 if (!empty($_GET['action']) && $_GET['action'] === 'logout') {
     if (isset($moduleLabels[$logoutModule])) {
         $_SESSION['flash_success'] = 'You logged out from ' . $moduleLabels[$logoutModule] . '.';

@@ -247,7 +247,7 @@ body{background:#f2f4f7}.student-sidebar{width:230px;background:linear-gradient(
     <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
     <li><a href="<?php echo e($linkEnroll); ?>">ENROLLMENT & REGISTRATION</a></li>
     <li><a href="<?php echo e($linkPayments); ?>">PAYMENTS</a></li>
-    <li><a href="<?php echo e($linkProgramme); ?>">MY PROGRAMME</a></li>
+    <li><a href="<?php echo e($linkProgramme); ?>">MY COURSES & RESULTS</a></li>
     <li><a href="services.php?tab=apply">SERVICES</a></li>
     <ul class="services-submenu">
       <li><a href="services.php?tab=apply">APPLY FOR SERVICES</a></li>

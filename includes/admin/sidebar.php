@@ -123,6 +123,11 @@ if (!isset($currentUser) || !is_array($currentUser)) {
                 </a>
             </li>
             <li>
+                <a href="<?php echo BASE_URL; ?>/views/admin/students/issued-transcripts.php" class="<?php echo $currentPage == 'issued-transcripts.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-shield-alt"></i><span>Issued Transcripts</span>
+                </a>
+            </li>
+            <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/lecturers/list.php" class="<?php echo ($currentDir == 'lecturers' && $currentPage !== 'schedule.php') ? 'active' : ''; ?>">
                     <i class="fas fa-chalkboard-teacher"></i><span>Lecturers</span>
                 </a>
