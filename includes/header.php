@@ -39,8 +39,12 @@ $isStudentPortalPage = (strpos($requestPath, '/views/student/') !== false);
     <script>
         (function () {
             try {
-                localStorage.setItem('smns_theme_mode', 'dark');
-                document.documentElement.setAttribute('data-theme', 'dark');
+                var mode = localStorage.getItem('smns_theme_mode');
+                if (mode === 'dark') {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                }
             } catch (e) {}
         })();
     </script>

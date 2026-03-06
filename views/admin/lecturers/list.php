@@ -84,6 +84,7 @@ $search = $_GET['search'] ?? '';
 $department = $_GET['department'] ?? '';
 $status = $_GET['status'] ?? '';
 $designation = $_GET['designation'] ?? '';
+$assignmentStatus = $_GET['assignment_status'] ?? '';
 $allowedPageSizes = [25, 50, 100];
 $rowsPerPage = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 25;
 if (!in_array($rowsPerPage, $allowedPageSizes, true)) {
@@ -124,6 +125,11 @@ if ($designation) {
     $fromWhereSql .= " AND l.specialization LIKE :designation";
     $params['designation'] = "%$designation%";
 }
+if ($assignmentStatus === 'assigned') {
+    $fromWhereSql .= " AND EXISTS (SELECT 1 FROM course_assignments ca WHERE ca.lecturer_id = l.id)";
+} elseif ($assignmentStatus === 'unassigned') {
+    $fromWhereSql .= " AND NOT EXISTS (SELECT 1 FROM course_assignments ca WHERE ca.lecturer_id = l.id)";
+}
 
 $totalLecturers = 0;
 try {
@@ -144,7 +150,23 @@ $offset = ($currentPage - 1) * $rowsPerPage;
 
 $lecturers = [];
 try {
-    $sql = "SELECT l.*, u.status as user_status"
+    $sql = "SELECT l.*, u.status as user_status,
+            (
+                SELECT COUNT(*)
+                FROM course_assignments ca
+                WHERE ca.lecturer_id = l.id
+            ) AS assignment_count,
+            (
+                SELECT GROUP_CONCAT(
+                    DISTINCT CONCAT(
+                        COALESCE(c.course_code, 'COURSE'), ' - ', COALESCE(c.course_name, 'Unnamed Course')
+                    )
+                    ORDER BY c.course_code ASC SEPARATOR '||'
+                )
+                FROM course_assignments ca2
+                INNER JOIN courses c ON c.id = ca2.course_id
+                WHERE ca2.lecturer_id = l.id
+            ) AS assigned_courses"
         . $fromWhereSql
         . " ORDER BY l.created_at DESC LIMIT :limit_rows OFFSET :offset_rows";
     $stmt = $conn->prepare($sql);
@@ -160,7 +182,7 @@ try {
 }
 $displayStart = $totalLecturers > 0 ? ($offset + 1) : 0;
 $displayEnd = $totalLecturers > 0 ? min($offset + count($lecturers), $totalLecturers) : 0;
-$buildListUrl = static function (int $page, int $perPage, string $search, string $department, string $status, string $designation): string {
+$buildListUrl = static function (int $page, int $perPage, string $search, string $department, string $status, string $designation, string $assignmentStatus): string {
     $query = [];
     if ($search !== '') {
         $query['search'] = $search;
@@ -173,6 +195,9 @@ $buildListUrl = static function (int $page, int $perPage, string $search, string
     }
     if ($designation !== '') {
         $query['designation'] = $designation;
+    }
+    if ($assignmentStatus !== '') {
+        $query['assignment_status'] = $assignmentStatus;
     }
     if ($page > 1) {
         $query['page'] = $page;
@@ -275,8 +300,8 @@ include dirname(__DIR__, 3) . '/includes/header.php';
     }
     
     .table-responsive table {
-        min-width: 100%;
-        width: max-content;
+        width: 100%;
+        table-layout: fixed;
     }
     
     .table td,
@@ -414,22 +439,46 @@ include dirname(__DIR__, 3) . '/includes/header.php';
     .lecturers-toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .lecturers-meta { color: #64748b; font-size: 12px; font-weight: 600; }
     .lecturers-per-page label { margin-bottom: 0; font-size: 12px; font-weight: 600; color: #475569; }
+    .lecturer-filter-actions { display:flex; gap:8px; align-items:stretch; flex-wrap:wrap; }
+    .lecturer-filter-actions .btn { min-width: 96px; }
     .lecturers-table { width: 100%; table-layout: fixed; }
     .lecturers-table th, .lecturers-table td { white-space: normal; word-break: break-word; vertical-align: top; }
-    .lecturers-table .col-id { width: 120px; }
-    .lecturers-table .col-name { width: 190px; }
-    .lecturers-table .col-email { width: 180px; }
-    .lecturers-table .col-dept { width: 130px; }
-    .lecturers-table .col-spec { width: 150px; }
-    .lecturers-table .col-status { width: 115px; }
-    .lecturers-table .col-actions { width: 220px; }
-    .lecturer-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+    .lecturers-table .col-id { width: 9%; }
+    .lecturers-table .col-name { width: 15%; }
+    .lecturers-table .col-dept { width: 13%; }
+    .lecturers-table .col-spec { width: 14%; }
+    .lecturers-table .col-assignment { width: 24%; }
+    .lecturers-table .col-status { width: 12%; }
+    .lecturers-table .col-actions { width: 13%; }
+    .lecturer-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+    .assignment-pill { display:inline-block; padding:4px 8px; border-radius:999px; font-size:11px; font-weight:700; }
+    .assignment-pill.assigned { background:#dcfce7; color:#166534; }
+    .assignment-pill.unassigned { background:#fee2e2; color:#991b1b; }
+    .assigned-course-list { margin-top:6px; display:block; }
+    .assigned-course-tag { display:block; background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8; border-radius:8px; padding:3px 6px; font-size:11px; margin-bottom:4px; }
+    .status-stack { display:flex; flex-direction:column; gap:4px; align-items:flex-start; }
+    html[data-theme='dark'] .assignment-pill.assigned { background:#14532d; color:#dcfce7; }
+    html[data-theme='dark'] .assignment-pill.unassigned { background:#7f1d1d; color:#fee2e2; }
+    html[data-theme='dark'] .assigned-course-tag { background:#172554; border-color:#1d4ed8; color:#bfdbfe; }
     .lecturers-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
     .lecturers-pagination .pagination { margin-bottom: 0; }
     @media (max-width: 992px) {
-        .lecturers-table .col-email,
-        .lecturers-table .col-spec { width: 140px; }
-        .lecturers-table .col-actions { width: 190px; }
+        .lecturers-table { font-size: 0.8rem; }
+        .lecturers-table .col-spec,
+        .lecturers-table .col-assignment { width: auto; }
+        .lecturer-actions { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 768px) {
+        .lecturers-table .col-dept,
+        .lecturers-table .col-spec { display: none; }
+        .lecturers-table .col-id { width: 16%; }
+        .lecturers-table .col-name { width: 24%; }
+        .lecturers-table .col-assignment { width: 36%; }
+        .lecturers-table .col-status { width: 12%; }
+        .lecturers-table .col-actions { width: 12%; }
+        .lecturer-actions { grid-template-columns: 1fr; }
+        .lecturer-filter-actions { width:100%; }
+        .lecturer-filter-actions .btn { flex:1 1 auto; }
     }
 </style>
 
@@ -518,9 +567,18 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                                 <?php endforeach; ?>
                             </select>
                         </div>
+                        <div class="col-md-2 col-sm-6 mb-2">
+                            <select name="assignment_status" class="form-control">
+                                <option value="">All Assignment States</option>
+                                <option value="assigned" <?php echo $assignmentStatus == 'assigned' ? 'selected' : ''; ?>>Assigned</option>
+                                <option value="unassigned" <?php echo $assignmentStatus == 'unassigned' ? 'selected' : ''; ?>>Unassigned</option>
+                            </select>
+                        </div>
                         <div class="col-md-3 col-sm-12 mb-2">
-                            <button type="submit" class="btn btn-primary">Filter</button>
-                            <a href="<?php echo e($buildListUrl(1, $rowsPerPage, '', '', '', '')); ?>" class="btn btn-secondary">Reset</a>
+                            <div class="lecturer-filter-actions">
+                                <button type="submit" class="btn btn-primary">Filter</button>
+                                <a href="<?php echo e($buildListUrl(1, $rowsPerPage, '', '', '', '', '')); ?>" class="btn btn-secondary">Reset</a>
+                            </div>
                         </div>
                     </div>
                 </form>
@@ -539,6 +597,7 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                             <?php if ($department !== ''): ?><input type="hidden" name="department" value="<?php echo e($department); ?>"><?php endif; ?>
                             <?php if ($status !== ''): ?><input type="hidden" name="status" value="<?php echo e($status); ?>"><?php endif; ?>
                             <?php if ($designation !== ''): ?><input type="hidden" name="designation" value="<?php echo e($designation); ?>"><?php endif; ?>
+                            <?php if ($assignmentStatus !== ''): ?><input type="hidden" name="assignment_status" value="<?php echo e($assignmentStatus); ?>"><?php endif; ?>
                             <label for="lecturersPerPage" class="mr-2">Rows</label>
                             <select id="lecturersPerPage" name="per_page" class="form-control form-control-sm" onchange="this.form.submit()">
                                 <?php foreach ($allowedPageSizes as $size): ?>
@@ -557,9 +616,9 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                                 <tr>
                                     <th class="col-id">Lecturer ID</th>
                                     <th class="col-name">Name</th>
-                                    <th class="col-email">Email</th>
                                     <th class="col-dept">Department</th>
                                     <th class="col-spec">Designation</th>
+                                    <th class="col-assignment">Assignments</th>
                                     <th class="col-status">Status</th>
                                     <th class="col-actions">Actions</th>
                                 </tr>
@@ -572,11 +631,24 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                                             <?php echo e($lecturer['first_name'] . ' ' . $lecturer['last_name']); ?>
                                             <br><small class="text-muted" style="font-size: 0.75rem;"><?php echo e($lecturer['qualifications'] ?? 'N/A'); ?></small>
                                         </td>
-                                        <td style="font-size: 0.8rem;">
-                                            <?php echo e($lecturer['email']); ?>
-                                        </td>
                                         <td><?php echo e($lecturer['department'] ?? 'N/A'); ?></td>
                                         <td><?php echo e($lecturer['specialization'] ?? 'N/A'); ?></td>
+                                        <td style="font-size: 0.8rem;">
+                                            <?php $assignmentCount = (int)($lecturer['assignment_count'] ?? 0); ?>
+                                            <span class="assignment-pill <?php echo $assignmentCount > 0 ? 'assigned' : 'unassigned'; ?>">
+                                                <?php echo $assignmentCount > 0 ? ('ASSIGNED (' . $assignmentCount . ')') : 'UNASSIGNED'; ?>
+                                            </span>
+                                            <?php if ($assignmentCount > 0): ?>
+                                                <?php
+                                                $assignedCourseLabels = array_values(array_filter(array_map('trim', explode('||', (string)($lecturer['assigned_courses'] ?? '')))));
+                                                ?>
+                                                <div class="assigned-course-list">
+                                                    <?php foreach ($assignedCourseLabels as $courseLabel): ?>
+                                                        <span class="assigned-course-tag"><?php echo e($courseLabel); ?></span>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            <?php endif; ?>
+                                        </td>
                                         <td style="font-size: 0.8rem;">
                                             <?php
                                             $statusClass = 'secondary';
@@ -600,10 +672,12 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                                                     break;
                                             }
                                             ?>
-                                            <span style="color:<?php echo $statusColor; ?>">●</span>
-                                            <span class="badge badge-<?php echo $statusClass; ?>" style="font-size: 0.7rem; margin-left: 0.25rem;">
-                                                <?php echo e(ucfirst($lecturer['status'])); ?>
-                                            </span>
+                                            <div class="status-stack">
+                                                <span style="color:<?php echo $statusColor; ?>">●</span>
+                                                <span class="badge badge-<?php echo $statusClass; ?>" style="font-size: 0.7rem;">
+                                                    <?php echo e(ucfirst($lecturer['status'])); ?>
+                                                </span>
+                                            </div>
                                         </td>
                                         <td style="padding: 0.25rem;">
                                             <div class="lecturer-actions">
@@ -624,7 +698,7 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                         <div class="lecturers-pagination">
                             <ul class="pagination pagination-sm">
                                 <li class="page-item <?php echo $currentPage <= 1 ? 'disabled' : ''; ?>">
-                                    <a class="page-link" href="<?php echo e($buildListUrl(max(1, $currentPage - 1), $rowsPerPage, $search, $department, $status, $designation)); ?>">Previous</a>
+                                    <a class="page-link" href="<?php echo e($buildListUrl(max(1, $currentPage - 1), $rowsPerPage, $search, $department, $status, $designation, $assignmentStatus)); ?>">Previous</a>
                                 </li>
                                 <?php
                                     $startPage = max(1, $currentPage - 2);
@@ -632,11 +706,11 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                                     for ($p = $startPage; $p <= $endPage; $p++):
                                 ?>
                                     <li class="page-item <?php echo $p === $currentPage ? 'active' : ''; ?>">
-                                        <a class="page-link" href="<?php echo e($buildListUrl($p, $rowsPerPage, $search, $department, $status, $designation)); ?>"><?php echo (int)$p; ?></a>
+                                        <a class="page-link" href="<?php echo e($buildListUrl($p, $rowsPerPage, $search, $department, $status, $designation, $assignmentStatus)); ?>"><?php echo (int)$p; ?></a>
                                     </li>
                                 <?php endfor; ?>
                                 <li class="page-item <?php echo $currentPage >= $totalPages ? 'disabled' : ''; ?>">
-                                    <a class="page-link" href="<?php echo e($buildListUrl(min($totalPages, $currentPage + 1), $rowsPerPage, $search, $department, $status, $designation)); ?>">Next</a>
+                                    <a class="page-link" href="<?php echo e($buildListUrl(min($totalPages, $currentPage + 1), $rowsPerPage, $search, $department, $status, $designation, $assignmentStatus)); ?>">Next</a>
                                 </li>
                             </ul>
                         </div>

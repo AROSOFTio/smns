@@ -1457,13 +1457,22 @@ img, video, iframe, svg {
     width: 38px;
     height: 38px;
     border-radius: 10px;
-    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-    color: white;
+    background: transparent !important;
+    color: #0d6efd !important;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 16px;
     margin-bottom: 10px;
+    box-shadow: none;
+}
+
+.action-card .action-icon i {
+    color: #0d6efd !important;
+}
+
+.action-card .action-icon i::before {
+    color: #0d6efd !important;
 }
 
 .action-card h4 {

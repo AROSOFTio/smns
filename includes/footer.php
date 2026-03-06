@@ -1401,9 +1401,6 @@
         var STORAGE_KEY = 'smns_theme_mode';
         var root = document.documentElement;
         var btn = document.getElementById('themeToggleBtn');
-        if (btn) {
-            btn.style.display = 'none';
-        }
 
         function applyTheme(mode) {
             if (mode === 'dark') {
@@ -1423,9 +1420,25 @@
             }
         }
 
-        var initial = 'dark';
-        localStorage.setItem(STORAGE_KEY, 'dark');
+        var initial = 'light';
+        try {
+            var savedMode = localStorage.getItem(STORAGE_KEY);
+            if (savedMode === 'dark' || savedMode === 'light') {
+                initial = savedMode;
+            }
+        } catch (e) {}
         applyTheme(initial);
+
+        if (btn) {
+            btn.addEventListener('click', function() {
+                var currentMode = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+                var nextMode = currentMode === 'dark' ? 'light' : 'dark';
+                try {
+                    localStorage.setItem(STORAGE_KEY, nextMode);
+                } catch (e) {}
+                applyTheme(nextMode);
+            });
+        }
     })();
     </script>
 </body>
