@@ -20,6 +20,6 @@ $_SESSION['flash_success'] = 'You have been logged out successfully.';
 // Force session write to ensure changes are committed
 session_write_close();
 
-// Redirect to unified login page (flash message already set)
+// Redirect to page (flash message already set)
 header('Location: ' . BASE_URL . '/views/auth/login.php?action=logout&module=student');
 exit;

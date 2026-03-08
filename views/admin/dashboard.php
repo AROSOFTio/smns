@@ -130,7 +130,8 @@ $logger = new Logger();
 $recentActivities = $logger->getRecentActivities(10);
 
 // Login sessions with duration
-$loginSessions = $logger->getLoginSessions(15);
+$dashboardLoginSessionLimit = 50;
+$loginSessions = $logger->getLoginSessions($dashboardLoginSessionLimit);
 
 // Handle semester activation (admin-only)
 // Also support undo (revert activation) via `undo_semester_id` (AJAX-friendly)
@@ -3189,7 +3190,7 @@ function renderAdminNotificationBell() {
         const sessionsBody = document.getElementById('sessionsTableBody');
         if (!sessionsBody) return;
 
-        fetch('<?php echo BASE_URL; ?>/api/login-sessions.php?limit=15')
+        fetch('<?php echo BASE_URL; ?>/api/login-sessions.php?limit=<?php echo (int)$dashboardLoginSessionLimit; ?>')
             .then(response => {
                 if (!response.ok) {
                     throw new Error('Network response was not ok');

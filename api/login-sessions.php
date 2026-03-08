@@ -17,12 +17,12 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
 
 header('Content-Type: application/json');
 
-$limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 15;
+$limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
 if ($limit <= 0) {
-    $limit = 15;
+    $limit = 50;
 }
-if ($limit > 100) {
-    $limit = 100;
+if ($limit > 250) {
+    $limit = 250;
 }
 
 $logger = new Logger();
