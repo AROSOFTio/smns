@@ -176,6 +176,24 @@
         color: var(--app-text) !important;
         border-color: var(--app-border) !important;
     }
+    html[data-theme='dark'] input:-webkit-autofill,
+    html[data-theme='dark'] input:-webkit-autofill:hover,
+    html[data-theme='dark'] input:-webkit-autofill:focus,
+    html[data-theme='dark'] input:-webkit-autofill:active {
+        -webkit-text-fill-color: var(--app-text) !important;
+        caret-color: var(--app-text) !important;
+        box-shadow: 0 0 0 1000px var(--app-surface-2) inset !important;
+        border-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] #keyDropMenu input:-webkit-autofill,
+    html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:hover,
+    html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:focus,
+    html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:active {
+        box-shadow: 0 0 0 1000px #0b1220 inset !important;
+        -webkit-text-fill-color: #e2e8f0 !important;
+        caret-color: #e2e8f0 !important;
+        border-color: #334155 !important;
+    }
     html[data-theme='dark'] .form-control-plaintext {
         color: var(--app-text) !important;
     }

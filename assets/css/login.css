@@ -483,6 +483,16 @@ html[data-theme='dark'] .login-form .form-control:focus {
     background: #0f172a;
 }
 
+html[data-theme='dark'] .login-form input:-webkit-autofill,
+html[data-theme='dark'] .login-form input:-webkit-autofill:hover,
+html[data-theme='dark'] .login-form input:-webkit-autofill:focus,
+html[data-theme='dark'] .login-form input:-webkit-autofill:active {
+    -webkit-text-fill-color: #f9fafb !important;
+    caret-color: #f9fafb !important;
+    box-shadow: 0 0 0 1000px #111827 inset !important;
+    border-color: #334155 !important;
+}
+
 html[data-theme='dark'] .login-footer {
     border-top-color: rgba(255,255,255,0.12);
 }
