@@ -396,6 +396,11 @@ if (!empty($loggedModules)) {
                 <button type="submit" class="btn btn-primary btn-block">
                     <i class="fas fa-sign-in-alt"></i> Sign In
                 </button>
+                <div class="text-center mt-2">
+                    <a href="<?php echo e(BASE_URL . '/views/auth/forgot-password.php' . ($matchedModule !== '' ? ('?role=' . urlencode($matchedModule)) : '')); ?>" class="btn btn-link btn-sm">
+                        Forgot password?
+                    </a>
+                </div>
                 <div class="text-center mt-3">
                     <a href="<?php echo e(BASE_URL . '/views/auth/login.php'); ?>" class="btn btn-link btn-sm">
                         <i class="fas fa-arrow-left"></i> Not you? Use different account

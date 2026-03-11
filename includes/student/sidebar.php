@@ -73,6 +73,14 @@ $studentProfile = $currentUser['profile'] ?? [];
                     <i class="fas fa-bell"></i> <span>Notification Center</span>
                 </a>
             </li>
+
+            <li class="menu-section">Account</li>
+
+            <li>
+                <a href="<?php echo BASE_URL; ?>/views/student/change-password.php" class="<?php echo $currentPage == 'change-password.php' ? 'active' : ''; ?>" title="Change Password">
+                    <i class="fas fa-key"></i> <span>Change Password</span>
+                </a>
+            </li>
             
             <li class="logout-item">
                 <a href="<?php echo BASE_URL; ?>/views/student/logout.php" class="logout-link" title="Logout">

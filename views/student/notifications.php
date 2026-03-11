@@ -216,7 +216,12 @@ body { background:#f2f4f7; }
 .sidebar-portal-title { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: #cbd5e1; margin-bottom: 0.4rem; font-weight: 700; }
 .main-content { margin-left:230px; width:calc(100vw - 230px); max-width:calc(100vw - 230px); min-height:100vh; transition:margin-left .25s ease, width .25s ease; }
 .main-content.full-width { margin-left:0; width:100vw; max-width:100vw; }
-.student-topbar { display:flex; align-items:center; justify-content:space-between; background:#fff; border-bottom:1px solid #e5e7eb; padding:.5rem 1.2rem; position:sticky; top:0; z-index:10; }
+.student-topbar { display:flex; align-items:center; justify-content:space-between; background:#fff; border-bottom:1px solid #e5e7eb; padding:.5rem 1.2rem; position:sticky; top:0; z-index:10; --key-btn-bg:#fff; --key-btn-border:#e5e7eb; --key-btn-color:#0f172a; }
+html[data-theme='dark'] .student-topbar { --key-btn-bg:rgba(15,23,42,0.9); --key-btn-border:rgba(148,163,184,0.5); --key-btn-color:#f8fafc; }
+html[data-theme='dark'] #keyDropMenu { background:#0f172a; color:#e2e8f0; border-color:#334155; box-shadow:0 2px 12px rgba(2,6,23,0.65); }
+html[data-theme='dark'] #keyDropMenu label { color:#e2e8f0; }
+html[data-theme='dark'] #keyDropMenu input.form-control { background:#0b1220; color:#e2e8f0; border-color:#334155; }
+html[data-theme='dark'] #keyDropMenu input.form-control::placeholder { color:#94a3b8; }
 .student-profile-pic { width:48px; height:48px; border-radius:50%; object-fit:cover; border:2px solid #e5e7eb; }
 .chip-row { padding:.45rem 1.2rem .2rem; display:flex; align-items:center; gap:.35rem; white-space:nowrap; }
 .chip { border-radius:6px; padding:4px 8px; font-weight:600; font-size:.78rem; line-height:1; white-space:nowrap; }
@@ -409,6 +414,33 @@ html[data-theme='dark'] .mail-empty {
                     <a href="logout.php" style="display:block; padding:8px 14px; color:#dc2626; text-decoration:none; font-weight:600; font-size:0.92rem;">Logout</a>
                 </div>
             </div>
+            <div class="profile-dropdown" style="position:relative;">
+                <button id="keyDropBtn" style="background:var(--key-btn-bg,#fff);border:1px solid var(--key-btn-border,#e5e7eb);border-radius:50%;width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:var(--key-btn-color,#0f172a);">
+                    <i class="fas fa-key"></i>
+                </button>
+                <div id="keyDropMenu" style="display:none;position:absolute;top:120%;right:0;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.12);min-width:260px;padding:12px;z-index:100;">
+                    <div style="font-weight:700;font-size:0.92rem;margin-bottom:8px;color:#0f172a;">
+                        <i class="fas fa-key" style="margin-right:6px;"></i> Change Password
+                    </div>
+                    <form id="keyChangePasswordForm" method="POST" action="change-password.php">
+                        <?php echo csrfField(); ?>
+                        <div class="form-group" style="margin-bottom:8px;">
+                            <label style="font-size:0.82rem;margin-bottom:4px;">Current Password</label>
+                            <input type="password" name="current_password" class="form-control" required>
+                        </div>
+                        <div class="form-group" style="margin-bottom:8px;">
+                            <label style="font-size:0.82rem;margin-bottom:4px;">New Password</label>
+                            <input type="password" name="new_password" class="form-control" required>
+                        </div>
+                        <div class="form-group" style="margin-bottom:10px;">
+                            <label style="font-size:0.82rem;margin-bottom:4px;">Confirm New Password</label>
+                            <input type="password" name="confirm_password" class="form-control" required>
+                        </div>
+                        <div id="keyChangePasswordMsg" style="display:none;font-size:0.82rem;margin-bottom:8px;"></div>
+                        <button type="submit" class="btn btn-sm btn-primary btn-block">Update Password</button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -537,9 +569,58 @@ document.getElementById('profileDropBtn').addEventListener('click', function(e) 
     var menu = document.getElementById('profileDropMenu');
     menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
 });
+document.getElementById('keyDropBtn').addEventListener('click', function(e) {
+    e.stopPropagation();
+    var menu = document.getElementById('keyDropMenu');
+    menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+});
+var keyForm = document.getElementById('keyChangePasswordForm');
+if (keyForm) {
+    keyForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        var msg = document.getElementById('keyChangePasswordMsg');
+        var submitBtn = keyForm.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+        if (msg) {
+            msg.style.display = 'none';
+            msg.textContent = '';
+        }
+        fetch('change-password.php', {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: new FormData(keyForm)
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (msg) {
+                msg.style.display = 'block';
+                if (data && data.success) {
+                    msg.style.color = '#166534';
+                    msg.textContent = data.message || 'Password updated.';
+                    keyForm.reset();
+                } else {
+                    msg.style.color = '#b91c1c';
+                    msg.textContent = (data && (data.error || data.message)) ? (data.error || data.message) : 'Unable to update password.';
+                }
+            }
+        })
+        .catch(function() {
+            if (msg) {
+                msg.style.display = 'block';
+                msg.style.color = '#b91c1c';
+                msg.textContent = 'Unable to update password.';
+            }
+        })
+        .finally(function() {
+            if (submitBtn) submitBtn.disabled = false;
+        });
+    });
+}
 document.addEventListener('click', function() {
     var menu = document.getElementById('profileDropMenu');
     if (menu) menu.style.display = 'none';
+    var keyMenu = document.getElementById('keyDropMenu');
+    if (keyMenu) keyMenu.style.display = 'none';
 });
 
 var search = document.getElementById('mailSearch');
