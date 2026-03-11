@@ -588,21 +588,30 @@ body { background: #f8fafc; }
         --key-btn-color: #f8fafc;
     }
     html[data-theme='dark'] #keyDropMenu {
-        background: #0f172a;
-        color: #e2e8f0;
-        border-color: #334155;
-        box-shadow: 0 2px 12px rgba(2, 6, 23, 0.65);
+        background: #0f172a !important;
+        color: #e2e8f0 !important;
+        border-color: #334155 !important;
+        box-shadow: 0 2px 12px rgba(2, 6, 23, 0.65) !important;
     }
     html[data-theme='dark'] #keyDropMenu label {
-        color: #e2e8f0;
+        color: #e2e8f0 !important;
     }
     html[data-theme='dark'] #keyDropMenu input.form-control {
-        background: #0b1220;
-        color: #e2e8f0;
-        border-color: #334155;
+        background: #0b1220 !important;
+        color: #e2e8f0 !important;
+        border-color: #334155 !important;
     }
     html[data-theme='dark'] #keyDropMenu input.form-control::placeholder {
-        color: #94a3b8;
+        color: #94a3b8 !important;
+    }
+    html[data-theme='dark'] #keyDropMenu input:-webkit-autofill,
+    html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:hover,
+    html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:focus,
+    html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:active {
+        -webkit-text-fill-color: #e2e8f0 !important;
+        caret-color: #e2e8f0 !important;
+        box-shadow: 0 0 0 1000px #0b1220 inset !important;
+        border-color: #334155 !important;
     }
 .student-sidebar li:hover {
     background: #f1f5f9;

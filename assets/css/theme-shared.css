@@ -205,7 +205,8 @@
     }
     html[data-theme='dark'] .user-dropdown-menu,
     html[data-theme='dark'] #userDropdownMenu,
-    html[data-theme='dark'] #profileDropMenu {
+    html[data-theme='dark'] #profileDropMenu,
+    html[data-theme='dark'] #keyDropMenu {
         background: var(--app-surface-1) !important;
         background-color: var(--app-surface-1) !important;
         border: 1px solid var(--app-border) !important;
@@ -223,6 +224,20 @@
         background: var(--app-surface-1) !important;
         color: var(--app-text) !important;
         border-bottom-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] #keyDropMenu > div:first-child {
+        color: var(--app-text) !important;
+    }
+    html[data-theme='dark'] #keyDropMenu label {
+        color: var(--app-text) !important;
+    }
+    html[data-theme='dark'] #keyDropMenu .form-control {
+        background: var(--app-surface-2) !important;
+        color: var(--app-text) !important;
+        border-color: var(--app-border) !important;
+    }
+    html[data-theme='dark'] #keyDropMenu .form-control::placeholder {
+        color: var(--app-muted) !important;
     }
     html[data-theme='dark'] .user-dropdown-menu .dropdown-item:hover,
     html[data-theme='dark'] .user-dropdown-menu .dropdown-item:focus,
