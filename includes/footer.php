@@ -18,12 +18,29 @@
     <?php
         $autoLogoutModule = '';
         $autoLogoutToken = '';
+        $requestPath = $_SERVER['REQUEST_URI'] ?? '';
+        $moduleFromPath = '';
+        if (strpos($requestPath, '/views/admin/') !== false) {
+            $moduleFromPath = 'admin';
+        } elseif (strpos($requestPath, '/views/student/') !== false) {
+            $moduleFromPath = 'student';
+        } elseif (strpos($requestPath, '/views/lecturer/') !== false) {
+            $moduleFromPath = 'lecturer';
+        } elseif (strpos($requestPath, '/views/finance/') !== false) {
+            $moduleFromPath = 'finance';
+        }
+
         if (session_status() === PHP_SESSION_ACTIVE) {
-            foreach (['admin', 'student', 'lecturer', 'finance'] as $role) {
-                if (!empty($_SESSION[$role . '_logged_in']) && (($_SESSION[$role . '_role'] ?? '') === $role)) {
-                    $autoLogoutModule = $role;
-                    $autoLogoutToken = (string)($_SESSION[$role . '_session_token'] ?? '');
-                    break;
+            if ($moduleFromPath !== '' && !empty($_SESSION[$moduleFromPath . '_logged_in']) && (($_SESSION[$moduleFromPath . '_role'] ?? '') === $moduleFromPath)) {
+                $autoLogoutModule = $moduleFromPath;
+                $autoLogoutToken = (string)($_SESSION[$moduleFromPath . '_session_token'] ?? '');
+            } else {
+                foreach (['admin', 'student', 'lecturer', 'finance'] as $role) {
+                    if (!empty($_SESSION[$role . '_logged_in']) && (($_SESSION[$role . '_role'] ?? '') === $role)) {
+                        $autoLogoutModule = $role;
+                        $autoLogoutToken = (string)($_SESSION[$role . '_session_token'] ?? '');
+                        break;
+                    }
                 }
             }
         }
@@ -42,7 +59,7 @@
         var AUTO_LOGOUT_ENABLED = !!ACTIVE_MODULE;
         var AUTO_LOGOUT_ENDPOINT = '<?php echo BASE_URL; ?>/api/auto-logout.php';
         var TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
-        var WARNING_MS = 60 * 1000; // warn 1 minute before
+        var WARNING_MS = 5 * 60 * 1000; // warn 5 minutes before
         var lastActivity = Date.now();
         var warned = false;
         var warningModal = null;

@@ -82,6 +82,9 @@ class Session {
                 if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity'] > $timeout)) {
                     // Session expired - clear this module's data
                     $this->clearModule();
+                    if (!isset($_SESSION['flash_error']) || $_SESSION['flash_error'] === '') {
+                        $_SESSION['flash_error'] = 'Your session expired due to inactivity. Please login again.';
+                    }
                 }
             }
         }
