@@ -311,15 +311,15 @@ include '../../../includes/header.php';
         max-width: 100%;
     }
     
-    .table {
+    .audit-table {
         margin-bottom: 0;
         font-size: 0.875rem;
         width: 100%;
         table-layout: fixed;
     }
     
-    .table th, 
-    .table td {
+    .audit-table th, 
+    .audit-table td {
         vertical-align: middle;
         padding: 0.5rem;
         white-space: normal;
@@ -328,25 +328,24 @@ include '../../../includes/header.php';
     }
     
     /* Override inline min-width styles generated in table headers/cells */
-    .table th[style*='min-width'],
-    .table td[style*='min-width'] {
+    .audit-table th[style*='min-width'],
+    .audit-table td[style*='min-width'] {
         min-width: 0 !important;
         width: auto !important;
         max-width: none !important;
     }
 
     /* Column widths tuned to fit viewport */
-    .table th:nth-child(1), .table td:nth-child(1) { width: 10%; } /* Date/Time */
-    .table th:nth-child(2), .table td:nth-child(2) { width: 13%; } /* Student */
-    .table th:nth-child(3), .table td:nth-child(3) { width: 14%; } /* Course */
-    .table th:nth-child(4), .table td:nth-child(4) { width: 7%; }  /* Type */
-    .table th:nth-child(5), .table td:nth-child(5) { width: 11%; } /* Old Marks */
-    .table th:nth-child(6), .table td:nth-child(6) { width: 11%; } /* New Marks */
-    .table th:nth-child(7), .table td:nth-child(7) { width: 10%; } /* Changed By */
-    .table th:nth-child(8), .table td:nth-child(8) { width: 14%; } /* Reason */
-    .table th:nth-child(9), .table td:nth-child(9) { width: 10%; } /* Actions */
+    .audit-table th:nth-child(1), .audit-table td:nth-child(1) { width: 5%; }  /* # */
+    .audit-table th:nth-child(2), .audit-table td:nth-child(2) { width: 28%; } /* Student + Meta */
+    .audit-table th:nth-child(3), .audit-table td:nth-child(3) { width: 12%; } /* Reg No */
+    .audit-table th:nth-child(4), .audit-table td:nth-child(4) { width: 9%; }  /* CW */
+    .audit-table th:nth-child(5), .audit-table td:nth-child(5) { width: 9%; }  /* Exam */
+    .audit-table th:nth-child(6), .audit-table td:nth-child(6) { width: 9%; }  /* Total */
+    .audit-table th:nth-child(7), .audit-table td:nth-child(7) { width: 9%; }  /* Grade */
+    .audit-table th:nth-child(8), .audit-table td:nth-child(8) { width: 12%; } /* Actions */
 
-    .table td small {
+    .audit-table td small {
         display: inline-block;
         max-width: 100%;
         word-break: break-word;
@@ -361,8 +360,8 @@ include '../../../includes/header.php';
     }
     
     /* Actions column */
-    .table td:last-child,
-    .table td[style*='white-space: nowrap'] {
+    .audit-table td:last-child,
+    .audit-table td[style*='white-space: nowrap'] {
         white-space: normal !important;
         text-align: center;
     }
@@ -423,12 +422,12 @@ include '../../../includes/header.php';
             margin-bottom: 0.5rem;
         }
         
-        .table {
+        .audit-table {
             font-size: 0.75rem;
         }
         
-        .table th,
-        .table td {
+        .audit-table th,
+        .audit-table td {
             padding: 0.3rem;
         }
     }
@@ -444,7 +443,7 @@ include '../../../includes/header.php';
             padding: 0.4rem 0.8rem;
         }
         
-        .table {
+        .audit-table {
             font-size: 0.7rem;
         }
         
@@ -463,8 +462,8 @@ include '../../../includes/header.php';
             padding: 0.5rem;
         }
         
-        .table th,
-        .table td {
+        .audit-table th,
+        .audit-table td {
             padding: 0.25rem;
             font-size: 0.65rem;
         }
@@ -498,6 +497,26 @@ include '../../../includes/header.php';
     font-size: 1rem;
     font-weight: 700;
     color: #0f172a;
+}
+.marks-table thead th {
+    background: #eaf2ff;
+    border-color: #cfe0ff;
+    font-weight: 700;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+.marks-table td,
+.marks-table th {
+    vertical-align: middle !important;
+    padding: 0.7rem 0.65rem;
+}
+.marks-table tbody tr:nth-child(even) {
+    background: #f9fbff;
+}
+.marks-table tbody tr:hover {
+    background: #eef6ff;
 }
 @media (max-width: 992px) {
     .results-quick-stats {
@@ -645,34 +664,34 @@ include '../../../includes/header.php';
                     <p class="text-center text-muted">No published results found matching your search criteria.</p>
                 <?php else: ?>
                     <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
-                        <table class="table table-sm table-hover" style="margin-bottom: 0;">
+                        <table class="table table-sm table-hover marks-table" style="margin-bottom: 0;">
                             <thead class="thead-light">
                                 <tr>
-                                    <th style="min-width: 120px;">Student</th>
-                                    <th style="min-width: 120px;">Course</th>
-                                    <th style="min-width: 100px;">Semester</th>
-                                    <th style="min-width: 70px;" class="text-center">CW (40%)</th>
-                                    <th style="min-width: 70px;" class="text-center">Exam (60%)</th>
+                                    <th style="min-width: 40px;">#</th>
+                                    <th style="min-width: 200px;">Student Name</th>
+                                    <th style="min-width: 120px;">Reg. No.</th>
+                                    <th style="min-width: 70px;" class="text-center">CW /40</th>
+                                    <th style="min-width: 70px;" class="text-center">Exam /60</th>
                                     <th style="min-width: 60px;" class="text-center">Total</th>
                                     <th style="min-width: 60px;" class="text-center">Grade</th>
-                                    <th style="min-width: 100px;">Actions</th>
+                                    <th style="min-width: 110px;">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($publishedResults as $pr): ?>
+                                <?php $rowIndex = 1; foreach ($publishedResults as $pr): ?>
+                                    <?php
+                                        $studentName = trim((string)(($pr['student_first'] ?? '') . ' ' . ($pr['student_last'] ?? '')));
+                                        $courseLabel = trim((string)(($pr['course_code'] ?? '') . ' ' . ($pr['course_name'] ?? '')));
+                                        $semesterLabel = trim((string)(($pr['academic_year_name'] ?? '') . ' - Sem ' . ($pr['semester_number'] ?? '')));
+                                    ?>
                                     <tr>
+                                        <td class="text-center"><?php echo $rowIndex++; ?></td>
                                         <td>
-                                            <strong><?php echo e($pr['reg_no']); ?></strong><br>
-                                            <small><?php echo e($pr['student_first'] . ' ' . $pr['student_last']); ?></small>
+                                            <strong><?php echo e($studentName); ?></strong><br>
+                                            <small class="text-muted">Course: <?php echo e($courseLabel); ?></small><br>
+                                            <small class="text-muted"><?php echo e($semesterLabel); ?></small>
                                         </td>
-                                        <td>
-                                            <strong><?php echo e($pr['course_code']); ?></strong><br>
-                                            <small><?php echo e($pr['course_name']); ?></small>
-                                        </td>
-                                        <td>
-                                            <?php echo e($pr['academic_year_name']); ?><br>
-                                            <small>Semester <?php echo e($pr['semester_number']); ?></small>
-                                        </td>
+                                        <td><?php echo e($pr['reg_no']); ?></td>
                                         <td class="text-center"><?php echo $pr['assignment_marks'] !== null ? round($pr['assignment_marks'], 1) : '-'; ?></td>
                                         <td class="text-center"><?php echo $pr['final_exam_marks'] !== null ? round($pr['final_exam_marks'], 1) : '-'; ?></td>
                                         <td class="text-center"><strong><?php echo $pr['total_marks'] !== null ? round($pr['total_marks']) : '-'; ?></strong></td>
@@ -783,68 +802,77 @@ include '../../../includes/header.php';
                     <p class="text-center text-muted">No audit records found.</p>
                 <?php else: ?>
                     <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
-                        <table class="table table-sm table-hover" style="margin-bottom: 0;">
+                        <table class="table table-sm table-hover marks-table audit-table" style="margin-bottom: 0;">
                             <thead class="thead-light">
                                 <tr>
-                                    <th style="min-width: 120px;">Date/Time</th>
-                                    <th style="min-width: 150px;">Student</th>
-                                    <th style="min-width: 150px;">Course</th>
-                                    <th style="min-width: 80px;">Type</th>
-                                    <th style="min-width: 100px;">Old Marks</th>
-                                    <th style="min-width: 100px;">New Marks</th>
-                                    <th style="min-width: 120px;">Changed By</th>
-                                    <th style="min-width: 150px;">Reason</th>
-                                    <th style="min-width: 100px;">Actions</th>
+                                    <th style="min-width: 40px;">#</th>
+                                    <th style="min-width: 240px;">Student Name</th>
+                                    <th style="min-width: 120px;">Reg. No.</th>
+                                    <th style="min-width: 80px;" class="text-center">CW /40</th>
+                                    <th style="min-width: 80px;" class="text-center">Exam /60</th>
+                                    <th style="min-width: 70px;" class="text-center">Total</th>
+                                    <th style="min-width: 70px;" class="text-center">Grade</th>
+                                    <th style="min-width: 110px;">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($auditRecords as $record): 
-                                    $oldMarks = json_decode($record['old_marks'], true) ?: [];
-                                    $newMarks = json_decode($record['new_marks'], true) ?: [];
+                                <?php
+                                    $formatMark = static function ($value) {
+                                        if ($value === null || $value === '') {
+                                            return '-';
+                                        }
+                                        if (is_numeric($value)) {
+                                            $val = (float)$value;
+                                            $intVal = (int)$val;
+                                            if (abs($val - $intVal) < 0.0001) {
+                                                return (string)$intVal;
+                                            }
+                                            return number_format($val, 1);
+                                        }
+                                        return (string)$value;
+                                    };
+                                    $rowIndex = 1;
+                                    foreach ($auditRecords as $record):
+                                        $oldMarks = json_decode($record['old_marks'], true) ?: [];
+                                        $newMarks = json_decode($record['new_marks'], true) ?: [];
+                                        $changedBy = trim((string)($record['admin_first'] . ' ' . $record['admin_last']));
+                                        if ($changedBy === '') {
+                                            $changedBy = (string)($record['changed_by_username'] ?? 'Unknown');
+                                        }
+                                        $studentName = trim((string)(($record['student_first'] ?? '') . ' ' . ($record['student_last'] ?? '')));
+                                        $courseLabel = trim((string)(($record['course_code'] ?? '') . ' ' . ($record['course_name'] ?? '')));
+                                        $changeType = (string)($record['change_type'] ?? '');
                                 ?>
                                     <tr>
-                                        <td><?php echo date('M d, Y H:i', strtotime($record['changed_at'])); ?></td>
+                                        <td class="text-center"><?php echo $rowIndex++; ?></td>
                                         <td>
-                                            <strong><?php echo e($record['reg_no']); ?></strong><br>
-                                            <small><?php echo e($record['student_first'] . ' ' . $record['student_last']); ?></small>
-                                        </td>
-                                        <td>
-                                            <strong><?php echo e($record['course_code']); ?></strong><br>
-                                            <small><?php echo e($record['course_name']); ?></small>
-                                        </td>
-                                        <td>
-                                            <span class="badge badge-<?php echo $record['change_type'] === 'publish' ? 'success' : 'warning'; ?>">
-                                                <?php echo ucfirst($record['change_type']); ?>
-                                            </span>
-                                        </td>
-                                        <td style="font-size: 0.8rem;">
-                                            <?php if (!empty($oldMarks)): ?>
-                                                CW: <?php echo $oldMarks['assignment_marks'] ?? '-'; ?><br>
-                                                Exam: <?php echo $oldMarks['final_exam_marks'] ?? '-'; ?><br>
-                                                Total: <?php echo $oldMarks['total_marks'] ?? '-'; ?><br>
-                                                Grade: <?php echo $oldMarks['grade'] ?? '-'; ?>
-                                            <?php else: ?>
-                                                -
-                                            <?php endif; ?>
-                                        </td>
-                                        <td style="font-size: 0.8rem;">
-                                            <?php if (!empty($newMarks)): ?>
-                                                CW: <?php echo $newMarks['assignment_marks'] ?? '-'; ?><br>
-                                                Exam: <?php echo $newMarks['final_exam_marks'] ?? '-'; ?><br>
-                                                Total: <?php echo $newMarks['total_marks'] ?? '-'; ?><br>
-                                                Grade: <?php echo $newMarks['grade'] ?? '-'; ?>
-                                            <?php else: ?>
-                                                -
+                                            <strong><?php echo e($studentName); ?></strong><br>
+                                            <small class="text-muted">Course: <?php echo e($courseLabel); ?></small><br>
+                                            <small class="text-muted">Date: <?php echo date('M d, Y H:i', strtotime($record['changed_at'])); ?></small><br>
+                                            <small class="text-muted">Type: <span class="badge badge-<?php echo $changeType === 'publish' ? 'success' : 'warning'; ?>"><?php echo ucfirst($changeType); ?></span></small><br>
+                                            <small class="text-muted">By: <?php echo e($changedBy); ?></small>
+                                            <?php if (!empty($record['reason'])): ?>
+                                                <br><small class="text-muted">Reason: <?php echo e($record['reason']); ?></small>
                                             <?php endif; ?>
                                         </td>
                                         <td>
-                                            <?php 
-                                            $changedBy = trim($record['admin_first'] . ' ' . $record['admin_last']);
-                                            echo $changedBy ?: e($record['changed_by_username'] ?? 'Unknown');
-                                            ?>
+                                            <?php echo e($record['reg_no']); ?>
                                         </td>
-                                        <td style="max-width: 150px; font-size: 0.85rem;">
-                                            <?php echo e($record['reason'] ?? '-'); ?>
+                                        <td class="text-center">
+                                            <div><small class="text-muted">Old:</small> <?php echo e($formatMark($oldMarks['assignment_marks'] ?? null)); ?></div>
+                                            <div><small class="text-muted">New:</small> <?php echo e($formatMark($newMarks['assignment_marks'] ?? null)); ?></div>
+                                        </td>
+                                        <td class="text-center">
+                                            <div><small class="text-muted">Old:</small> <?php echo e($formatMark($oldMarks['final_exam_marks'] ?? null)); ?></div>
+                                            <div><small class="text-muted">New:</small> <?php echo e($formatMark($newMarks['final_exam_marks'] ?? null)); ?></div>
+                                        </td>
+                                        <td class="text-center">
+                                            <div><small class="text-muted">Old:</small> <?php echo e($formatMark($oldMarks['total_marks'] ?? null)); ?></div>
+                                            <div><small class="text-muted">New:</small> <?php echo e($formatMark($newMarks['total_marks'] ?? null)); ?></div>
+                                        </td>
+                                        <td class="text-center">
+                                            <div><small class="text-muted">Old:</small> <?php echo e($formatMark($oldMarks['grade'] ?? null)); ?></div>
+                                            <div><small class="text-muted">New:</small> <?php echo e($formatMark($newMarks['grade'] ?? null)); ?></div>
                                         </td>
                                         <td style="white-space: nowrap; min-width: 100px;">
                                             <a href="submitted.php?academic_year_id=<?php echo $record['academic_year_id']; ?>&semester_number=<?php echo $record['semester_number']; ?>&level_year=<?php echo (int)($record['course_level_year'] ?? 0); ?>&program_id=<?php echo (int)($record['course_program_id'] ?? 0); ?>&course_id=<?php echo $record['course_id']; ?>" class="btn btn-sm btn-primary" title="Edit Marks for this Course">

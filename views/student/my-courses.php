@@ -258,14 +258,7 @@ body { background: #f8fafc; }
     text-align: center;
     padding: 0.6rem 0.55rem 0.6rem;
 }
-.sidebar-user-card img {
-    width: 62px;
-    height: 72px;
-    object-fit: cover;
-    border-radius: 6px;
-    border: 1px solid rgba(255,255,255,0.35);
-    margin-bottom: 0.3rem;
-}
+.sidebar-user-card img { width: 110px; height: 110px; border-radius: 18px; object-fit: cover; border: 2px solid rgba(255,255,255,0.65); box-shadow: 0 6px 18px rgba(0,0,0,0.25); }
 .sidebar-user-name { font-size: 0.82rem; line-height: 1.2; }
 .sidebar-user-no { font-size: 0.9rem; font-weight: 700; }
 
@@ -276,7 +269,7 @@ body { background: #f8fafc; }
 .main-content { margin-left:230px; width:calc(100vw - 230px); max-width:calc(100vw - 230px); min-height:100vh; background:#f8fafc; transition:margin-left .25s ease, width .25s ease; }
 .main-content.full-width { margin-left:0; width:100vw; max-width:100vw; }
 .student-topbar { display:flex; align-items:center; justify-content:space-between; background:#fff; border-bottom:1px solid #e5e7eb; padding:.5rem 1.2rem; position:sticky; top:0; z-index:10; }
-.student-profile-pic { width:48px; height:48px; border-radius:50%; object-fit:cover; border:2px solid #e5e7eb; }
+.student-profile-pic { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; border: 2px solid #e5e7eb; }
 .top-logout-link { color:#dc2626; font-size:.82rem; font-weight:700; text-decoration:none; border:1px solid #fecaca; background:#fff1f2; border-radius:6px; padding:5px 9px; line-height:1; }
 .top-logout-link:hover { color:#b91c1c; background:#ffe4e6; text-decoration:none; }
 .chip-row { padding:.45rem 1.2rem .2rem; display:flex; align-items:center; gap:.35rem; white-space:nowrap; }
@@ -373,7 +366,7 @@ html[data-theme='dark'] .badge-provisional {
             <img src="/assets/img/student_sample.jpg" alt="Profile">
         <?php endif; ?>
         <div class="sidebar-user-name"><?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?></div>
-        <div class="sidebar-user-no">STUDENT NO.: <?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
     </div>
     <ul>
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
@@ -491,5 +484,6 @@ document.getElementById('menuBtn').addEventListener('click', function() {
 </script>
 
 <?php include '../../includes/footer.php'; ?>
+
 
 

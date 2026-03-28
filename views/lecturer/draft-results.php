@@ -502,7 +502,7 @@ include '../../includes/header.php';
                         </div>
                         <div class="card-body p-0">
                             <div class="table-responsive">
-                                <table class="table table-sm table-hover mb-0" style="font-size: 14px;">
+                                <table class="table table-sm table-hover mb-0 marks-table" style="font-size: 14px;">
                                     <thead style="background-color: #f8f9fa;">
                                         <tr>
                                             <th style="width: 18%; padding: 12px 8px; border-top: none;">Student ID</th>
@@ -600,6 +600,29 @@ include '../../includes/header.php';
 
 .font-weight-medium {
     font-weight: 500 !important;
+}
+
+.marks-table thead th {
+    background: #eaf2ff !important;
+    border-color: #cfe0ff;
+    font-weight: 700;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+.marks-table td,
+.marks-table th {
+    vertical-align: middle !important;
+    padding: 0.7rem 0.65rem;
+}
+.marks-table tbody tr:nth-child(even) {
+    background: #f9fbff;
+}
+.marks-table tbody tr:hover {
+    background: #eef6ff !important;
+    border-left: 3px solid #007bff !important;
+    transition: all 0.2s ease;
 }
 
 .table tbody tr:hover {

@@ -637,14 +637,7 @@ body { background: #f8fafc; }
     text-align: center;
     padding: 0.6rem 0.55rem 0.6rem;
 }
-.sidebar-user-card img {
-    width: 62px;
-    height: 72px;
-    object-fit: cover;
-    border-radius: 6px;
-    border: 1px solid rgba(255,255,255,0.35);
-    margin-bottom: 0.3rem;
-}
+.sidebar-user-card img { width: 110px; height: 110px; border-radius: 18px; object-fit: cover; border: 2px solid rgba(255,255,255,0.65); box-shadow: 0 6px 18px rgba(0,0,0,0.25); }
 .sidebar-user-name { font-size: 0.82rem; line-height: 1.2; }
 .sidebar-user-no { font-size: 0.9rem; font-weight: 700; }
 
@@ -657,7 +650,7 @@ body { background: #f8fafc; }
 .student-topbar {
     display: flex; align-items: center; justify-content: space-between; background: #fff; border-bottom: 1px solid #e5e7eb; padding: 0.7rem 2.5rem 0.7rem 2.5rem; position: sticky; top: 0; z-index: 10;
 }
-.student-profile-pic { width: 70px; height: 70px; border-radius: 50%; object-fit: cover; border: 2px solid #e5e7eb; }
+.student-profile-pic { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; border: 2px solid #e5e7eb; }
 .bio-card { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); padding: 2rem 2.5rem; margin-top: 2rem; }
 .bio-header { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.5rem; }
 .bio-header .status-badge { font-size: 0.95rem; padding: 4px 14px; border-radius: 12px; margin-left: 0.7rem; }
@@ -851,7 +844,7 @@ html[data-theme='dark'] .profile-lock-modal .text-muted {
         <div class="sidebar-user-name">
             <?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?>
         </div>
-        <div class="sidebar-user-no">STUDENT NO.: <?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
     </div>
     <ul>
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
@@ -1151,7 +1144,7 @@ document.addEventListener('click', function() {
                     <div style="font-size:1.2rem; font-weight:700; color:#2563eb;">
                         <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?>
                     </div>
-                    <div style="font-size:1.05rem; color:#222;">STUDENT NO.: <?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+                    <div style="font-size:1.05rem; color:#222;"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
                     <span class="status-badge <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'status-active' : 'status-notreg'; ?>" style="margin-top:0.5rem;">
                         <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?>
                     </span>
@@ -1267,5 +1260,6 @@ if (reloadBtn) {
 </script>
 
 <?php include '../../includes/footer.php'; ?>
+
 
 

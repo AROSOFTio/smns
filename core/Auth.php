@@ -429,14 +429,31 @@ class Auth {
         }
         
         $prefix = $this->module . '_';
-        
+
+        $userId = $_SESSION[$prefix . 'user_id'] ?? null;
+        $role = $_SESSION[$prefix . 'role'] ?? null;
+        $profile = $_SESSION[$prefix . 'profile'] ?? null;
+
+        // Refresh profile from DB to avoid stale session data (e.g., updated photo/name)
+        if ($userId && $role) {
+            try {
+                $freshProfile = $this->getUserProfile($userId, $role);
+                if ($freshProfile) {
+                    $profile = $freshProfile;
+                    $_SESSION[$prefix . 'profile'] = $freshProfile;
+                }
+            } catch (Exception $e) {
+                // Fall back to existing session profile if DB refresh fails
+            }
+        }
+
         return [
-            'id' => $_SESSION[$prefix . 'user_id'] ?? null,
+            'id' => $userId,
             'username' => $_SESSION[$prefix . 'username'] ?? null,
             'email' => $_SESSION[$prefix . 'email'] ?? null,
-            'role' => $_SESSION[$prefix . 'role'] ?? null,
+            'role' => $role,
             'primary_role' => $_SESSION[$prefix . 'primary_role'] ?? ($_SESSION['sso_primary_role'] ?? null),
-            'profile' => $_SESSION[$prefix . 'profile'] ?? null
+            'profile' => $profile
         ];
     }
     

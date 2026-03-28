@@ -432,11 +432,81 @@ function getFinanceMessageNotificationBridge(PDO $conn, $userId) {
 }
 
 /**
+ * Ensure core notifications table schema is compatible with unread logic.
+ */
+function ensureNotificationsTable(PDO $conn) {
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    // Create base table if missing (include legacy columns for compatibility).
+    $conn->exec("
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            user_type VARCHAR(20) NULL DEFAULT NULL,
+            type VARCHAR(50) NOT NULL DEFAULT 'info',
+            title VARCHAR(255) NOT NULL,
+            message TEXT NOT NULL,
+            link VARCHAR(500) NULL,
+            read_status VARCHAR(20) NOT NULL DEFAULT 'unread',
+            is_read TINYINT(1) NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            read_at TIMESTAMP NULL,
+            INDEX idx_user (user_id),
+            INDEX idx_read_status (read_status),
+            INDEX idx_created (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $columns = [];
+    try {
+        $colStmt = $conn->query("SHOW COLUMNS FROM notifications");
+        if ($colStmt) {
+            foreach ($colStmt->fetchAll(PDO::FETCH_ASSOC) as $col) {
+                $columns[strtolower((string)$col['Field'])] = true;
+            }
+        }
+    } catch (Exception $e) {
+        $columns = [];
+    }
+
+    if (!isset($columns['read_status'])) {
+        $conn->exec("ALTER TABLE notifications ADD COLUMN read_status VARCHAR(20) NOT NULL DEFAULT 'unread'");
+        $columns['read_status'] = true;
+    }
+    if (!isset($columns['read_at'])) {
+        $conn->exec("ALTER TABLE notifications ADD COLUMN read_at TIMESTAMP NULL");
+        $columns['read_at'] = true;
+    }
+    if (!isset($columns['created_at'])) {
+        $conn->exec("ALTER TABLE notifications ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+        $columns['created_at'] = true;
+    }
+    if (!isset($columns['user_type'])) {
+        $conn->exec("ALTER TABLE notifications ADD COLUMN user_type VARCHAR(20) NULL DEFAULT NULL");
+        $columns['user_type'] = true;
+    }
+    if (!isset($columns['is_read'])) {
+        $conn->exec("ALTER TABLE notifications ADD COLUMN is_read TINYINT(1) NULL DEFAULT 0");
+        $columns['is_read'] = true;
+    }
+
+    // Backfill read_status from legacy is_read flags when present.
+    if (isset($columns['is_read']) && isset($columns['read_status'])) {
+        $conn->exec("UPDATE notifications SET read_status = 'read' WHERE is_read = 1 AND (read_status IS NULL OR read_status = '' OR read_status = 'unread')");
+    }
+}
+
+/**
  * Fetch unread notifications for a given user (handles personal + broadcast + per-user read state)
  */
 function fetchUnreadNotificationsForUser($userId, $limit = 50) {
     $db = new Database();
     $conn = $db->getConnection();
+    ensureNotificationsTable($conn);
 
     // Ensure helper tables exist (notifications_read and notification_archive)
     $conn->exec("CREATE TABLE IF NOT EXISTS notifications_read (
@@ -533,6 +603,7 @@ function getUnreadNotificationCountForUser($userId) {
     try {
         $db = new Database();
         $conn = $db->getConnection();
+        ensureNotificationsTable($conn);
 
         $sql = "
             SELECT COUNT(*)

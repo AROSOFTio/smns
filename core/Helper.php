@@ -659,12 +659,13 @@ class Helper {
      * Get GPA color
      */
     public static function getGPAColor($gpa) {
-        if ($gpa >= 4.5) return 'success';  // A+/A (4.5-5.0)
-        if ($gpa >= 4.0) return 'info';     // B+ (4.0-4.5)
-        if ($gpa >= 3.0) return 'primary';  // B/C+/C (3.0-4.0)
-        if ($gpa >= 2.0) return 'success';  // D+/D (2.0-3.0) - passing
-        if ($gpa >= 1.0) return 'warning';  // E/E- (1.0-2.0) - marginal
-        return 'danger';                    // F (0.0)
+        if ($gpa >= 4.5) return 'success';  // A+ (4.5-5.0)
+        if ($gpa >= 4.0) return 'info';     // A (4.0-4.49)
+        if ($gpa >= 3.5) return 'primary';  // B+ (3.5-3.99)
+        if ($gpa >= 3.0) return 'primary';  // B (3.0-3.49)
+        if ($gpa >= 2.5) return 'success';  // C+ (2.5-2.99)
+        if ($gpa >= 2.0) return 'success';  // C (2.0-2.49) - passing
+        return 'danger';                    // F (<2.0)
     }
     
     /**
@@ -677,19 +678,13 @@ class Helper {
         switch($gradeLetter) {
             case 'A+':
             case 'A':
-                return 'success'; // green (5.0 GP)
+                return 'success'; // green (A+/A range)
             case 'B+':
             case 'B':
-                return 'info'; // blue (4.0-4.5 GP)
+                return 'info'; // blue (B+/B range)
             case 'C+':
             case 'C':
-                return 'primary'; // darker blue (3.0-3.5 GP)
-            case 'D+':
-            case 'D':
-                return 'success'; // green (2.0-2.5 GP - passing)
-            case 'E':
-            case 'E-':
-                return 'warning'; // yellow/orange (1.0-1.5 GP - marginal pass)
+                return 'primary'; // darker blue (C+/C range)
             case 'F':
                 return 'danger'; // red (0.0 GP - fail)
             default:

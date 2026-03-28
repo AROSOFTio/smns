@@ -449,32 +449,48 @@ include '../../includes/header.php';
             <div class="alert alert-info"><?php echo e($flashInfo); ?></div>
         <?php endif; ?>
 
-        <div class="card mb-3">
+        <div class="card mb-3 marks-page-card">
             <div class="card-body">
-                <form method="GET" class="form-inline mb-3">
-                    <label class="mr-2">Academic Year:</label>
-                    <select name="academic_year_id" class="form-control mr-2" onchange="this.form.submit();">
-                        <?php foreach ($academicYears as $ay): ?>
-                            <option value="<?php echo $ay['id']; ?>" <?php echo $selectedAcademicYearId == $ay['id'] ? 'selected' : ''; ?>><?php echo e($ay['year_name']); ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                <div class="d-flex align-items-center justify-content-between flex-wrap mb-2">
+                    <div>
+                        <div class="h5 mb-1">Upload Coursework Marks</div>
+                        <div class="text-muted" style="font-size:13px;">
+                            Lecturer: <?php echo e($lecturerProfile['full_name'] ?? ($lecturerProfile['first_name'] ?? '')); ?>
+                            <?php if (!empty($lecturerProfile['department'])): ?>
+                                | Dept: <?php echo e($lecturerProfile['department']); ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
 
-                    <label class="mr-2">Semester:</label>
-                    <select name="semester_number" class="form-control mr-2" onchange="this.form.submit();">
-                        <?php for ($i = 1; $i <= 2; $i++): ?>
-                            <option value="<?php echo $i; ?>" <?php echo $selectedSemesterNumber == $i ? 'selected' : ''; ?>>Semester <?php echo $i; ?></option>
-                        <?php endfor; ?>
-                    </select>
-
-                    <label class="ml-3 mr-2">Course:</label>
-                    <select name="course_id" class="form-control mr-2" onchange="this.form.submit();">
-                        <option value="">-- Select Course --</option>
-                        <?php foreach ($assignedCourses as $c): ?>
-                            <option value="<?php echo $c['id']; ?>" <?php echo $selectedCourseId == $c['id'] ? 'selected' : ''; ?>>
-                                <?php echo e($c['course_code'] . ' - ' . $c['course_name']); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
+                <form method="GET" class="row marks-filter mb-3">
+                    <div class="col-lg-3 col-md-4 col-sm-6 mb-2">
+                        <label class="mb-1">Academic Year</label>
+                        <select name="academic_year_id" class="form-control" onchange="this.form.submit();">
+                            <?php foreach ($academicYears as $ay): ?>
+                                <option value="<?php echo $ay['id']; ?>" <?php echo $selectedAcademicYearId == $ay['id'] ? 'selected' : ''; ?>><?php echo e($ay['year_name']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-lg-2 col-md-3 col-sm-6 mb-2">
+                        <label class="mb-1">Semester</label>
+                        <select name="semester_number" class="form-control" onchange="this.form.submit();">
+                            <?php for ($i = 1; $i <= 2; $i++): ?>
+                                <option value="<?php echo $i; ?>" <?php echo $selectedSemesterNumber == $i ? 'selected' : ''; ?>>Semester <?php echo $i; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                    <div class="col-lg-7 col-md-5 col-sm-12 mb-2">
+                        <label class="mb-1">Course</label>
+                        <select name="course_id" class="form-control" onchange="this.form.submit();">
+                            <option value="">-- Select Course --</option>
+                            <?php foreach ($assignedCourses as $c): ?>
+                                <option value="<?php echo $c['id']; ?>" <?php echo $selectedCourseId == $c['id'] ? 'selected' : ''; ?>>
+                                    <?php echo e($c['course_code'] . ' - ' . $c['course_name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
                 </form>
 
                 <?php if (!$semesterId): ?>
@@ -484,7 +500,7 @@ include '../../includes/header.php';
                 <?php elseif (!$selectedCourseId): ?>
                     <p class="text-muted mb-0">Please select a course to enter coursework marks.</p>
                 <?php else: ?>
-                    <h5 class="mb-3">Coursework (out of 40) - <?php echo e($semesterName); ?></h5>
+                    <h6 class="mb-3 text-muted">Coursework (out of 40) - <?php echo e($semesterName); ?></h6>
                     <div class="alert alert-light border mb-3" style="font-size:13px;">
                         <strong>Draft Flow:</strong> You can save partial marks and continue later. Drafts remain visible here and in
                         <a href="<?php echo BASE_URL; ?>/views/lecturer/draft-results.php">Draft Results</a>.
@@ -492,14 +508,14 @@ include '../../includes/header.php';
                             <span class="ml-2 text-muted">Last saved: <?php echo e(date('M d, Y H:i:s', strtotime($lastSavedAt))); ?></span>
                         <?php endif; ?>
                     </div>
-                    <div class="d-flex flex-wrap mb-3" style="gap:8px;">
-                        <span class="badge badge-secondary" style="font-size:12px;">Draft: <?php echo (int)$statusSummary['draft']; ?></span>
-                        <span class="badge badge-info" style="font-size:12px;">Submitted: <?php echo (int)$statusSummary['submitted']; ?></span>
-                        <span class="badge badge-success" style="font-size:12px;">Approved: <?php echo (int)$statusSummary['approved']; ?></span>
-                        <span class="badge badge-primary" style="font-size:12px;">Published: <?php echo (int)$statusSummary['published']; ?></span>
-                        <span class="badge badge-light border" style="font-size:12px;">No Mark: <?php echo (int)$statusSummary['no_mark']; ?></span>
-                        <span class="badge badge-dark" style="font-size:12px;">Filled CW: <?php echo (int)$filledMarksCount; ?></span>
-                        <span class="badge badge-warning" style="font-size:12px;">Locked: <?php echo (int)$lockedRowsCount; ?></span>
+                    <div class="d-flex flex-wrap mb-3 status-badges">
+                        <span class="badge badge-secondary">Draft: <?php echo (int)$statusSummary['draft']; ?></span>
+                        <span class="badge badge-info">Submitted: <?php echo (int)$statusSummary['submitted']; ?></span>
+                        <span class="badge badge-success">Approved: <?php echo (int)$statusSummary['approved']; ?></span>
+                        <span class="badge badge-primary">Published: <?php echo (int)$statusSummary['published']; ?></span>
+                        <span class="badge badge-light border">No Mark: <?php echo (int)$statusSummary['no_mark']; ?></span>
+                        <span class="badge badge-dark">Filled CW: <?php echo (int)$filledMarksCount; ?></span>
+                        <span class="badge badge-warning text-dark">Locked: <?php echo (int)$lockedRowsCount; ?></span>
                     </div>
 
                     <?php if (empty($students)): ?>
@@ -515,17 +531,14 @@ include '../../includes/header.php';
                             <input type="hidden" name="course_id" value="<?php echo $selectedCourseId; ?>">
 
                             <div class="table-responsive">
-                                <table class="table table-sm table-hover">
+                                <table class="table table-sm table-hover marks-table">
                                     <thead>
                                         <tr>
                                             <th>#</th>
-                                            <th>Name</th>
-                                            <th>Reg #</th>
-                                            <th>Program</th>
-                                            <th>Year</th>
-                                            <th>CW (0-40)</th>
-                                            <th>Status</th>
-                                            <th>Exam / Final (Read-Only)</th>
+                                            <th>Student Name</th>
+                                            <th>Reg. No.</th>
+                                            <th class="text-center">CW Mark /40</th>
+                                            <th class="text-center">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -534,12 +547,10 @@ include '../../includes/header.php';
                                                 <td><?php echo $i++; ?></td>
                                                 <td><?php echo e($s['first_name'] . ' ' . $s['last_name']); ?></td>
                                                 <td><?php echo e($s['reg_no']); ?></td>
-                                                <td><?php echo e($s['program_name'] ?? '-'); ?></td>
-                                                <td><?php echo 'Year ' . e($s['level_year'] ?? '-'); ?></td>
-                                                <td style="max-width:120px;">
-                                                    <input type="number" name="cw[<?php echo $s['id']; ?>]" class="form-control form-control-sm" min="0" max="40" step="0.01" value="<?php echo $s['cw_marks'] !== null ? htmlspecialchars($s['cw_marks']) : ''; ?>" <?php echo in_array((string)($s['status'] ?? ''), ['approved','published'], true) ? 'readonly' : ''; ?> />
+                                                <td class="text-center" style="max-width:140px;">
+                                                    <input type="number" name="cw[<?php echo $s['id']; ?>]" class="form-control form-control-sm text-center" min="0" max="40" step="0.01" value="<?php echo $s['cw_marks'] !== null ? htmlspecialchars($s['cw_marks']) : ''; ?>" <?php echo in_array((string)($s['status'] ?? ''), ['approved','published'], true) ? 'readonly' : ''; ?> />
                                                 </td>
-                                                <td>
+                                                <td class="text-center">
                                                     <?php if ($s['status'] === 'submitted'): ?>
                                                         <span class="badge badge-info">Submitted</span>
                                                     <?php elseif ($s['status'] === 'approved'): ?>
@@ -551,11 +562,6 @@ include '../../includes/header.php';
                                                     <?php else: ?>
                                                         <span class="text-muted">-</span>
                                                     <?php endif; ?>
-                                                </td>
-                                                <td style="font-size:12px;">
-                                                    CW: <?php echo $s['cw_marks'] !== null ? number_format($s['cw_marks'], 2) : '-'; ?><br>
-                                                    Exam: <?php echo $s['exam_marks'] !== null ? number_format($s['exam_marks'], 2) : '-'; ?><br>
-                                                    Total: <?php echo $s['total_marks'] !== null ? number_format($s['total_marks'], 2) : '-'; ?>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
@@ -593,8 +599,68 @@ include '../../includes/header.php';
 </div>
 
 <style>
+.marks-page-card {
+    border-radius: 14px;
+    border-color: #e5e7eb;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+}
+.marks-page-card .card-body {
+    padding: 22px 22px 18px;
+}
+.marks-filter label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #475569;
+}
+.marks-filter .form-control {
+    border-radius: 10px;
+    border-color: #d7e0ea;
+    height: 40px;
+}
+.status-badges {
+    gap: 8px;
+}
+.status-badges .badge {
+    font-size: 0.72rem;
+    padding: 0.45rem 0.7rem;
+    border-radius: 8px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
 .has-cw-row {
     background: #f7fbff;
+}
+
+.marks-table thead th {
+    background: #eaf2ff;
+    border-color: #cfe0ff;
+    font-weight: 700;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.marks-table td,
+.marks-table th {
+    vertical-align: middle !important;
+    padding: 0.7rem 0.65rem;
+}
+
+.marks-table input.form-control {
+    border-radius: 8px;
+    font-weight: 700;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    height: 36px;
+    max-width: 120px;
+    margin: 0 auto;
+}
+.marks-table tbody tr:nth-child(even) {
+    background: #f9fbff;
+}
+.marks-table tbody tr:hover {
+    background: #eef6ff;
 }
 
 .result-actions {
@@ -626,6 +692,11 @@ html[data-theme='dark'] .has-cw-row {
     background: #132235;
 }
 
+html[data-theme='dark'] .marks-page-card {
+    border-color: #1f2937;
+    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.45);
+}
+
 html[data-theme='dark'] .table.table-sm .text-muted {
     color: #cbd5e1 !important;
 }
@@ -647,6 +718,14 @@ html[data-theme='dark'] .result-actions {
     background: #0f172a;
     border-color: #334155;
     box-shadow: 0 2px 10px rgba(2, 6, 23, 0.45);
+}
+html[data-theme='dark'] .marks-filter label {
+    color: #cbd5e1;
+}
+html[data-theme='dark'] .marks-filter .form-control {
+    background: #0b1220;
+    border-color: #334155;
+    color: #e2e8f0;
 }
 </style>
 

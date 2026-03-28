@@ -291,14 +291,7 @@ body { background: #f8fafc; }
     text-align: center;
     padding: 0.6rem 0.55rem 0.6rem;
 }
-.sidebar-user-card img {
-    width: 62px;
-    height: 72px;
-    object-fit: cover;
-    border-radius: 6px;
-    border: 1px solid rgba(255,255,255,0.35);
-    margin-bottom: 0.3rem;
-}
+.sidebar-user-card img { width: 110px; height: 110px; border-radius: 18px; object-fit: cover; border: 2px solid rgba(255,255,255,0.65); box-shadow: 0 6px 18px rgba(0,0,0,0.25); }
 .sidebar-user-name { font-size: 0.82rem; line-height: 1.2; }
 .sidebar-user-no { font-size: 0.9rem; font-weight: 700; }
 
@@ -328,7 +321,7 @@ html[data-theme='dark'] #keyDropMenu { background: #0f172a; color: #e2e8f0; bord
 html[data-theme='dark'] #keyDropMenu label { color: #e2e8f0; }
 html[data-theme='dark'] #keyDropMenu input.form-control { background: #0b1220; color: #e2e8f0; border-color: #334155; }
 html[data-theme='dark'] #keyDropMenu input.form-control::placeholder { color: #94a3b8; }
-.student-profile-pic { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid #e5e7eb; }
+.student-profile-pic { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; border: 2px solid #e5e7eb; }
 .results-wrap { padding: 1rem 1.2rem; }
 .results-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04); }
 .results-header { padding: 1rem 1.2rem; border-bottom: 1px solid #eef2f7; display: flex; align-items: center; justify-content: space-between; }
@@ -337,14 +330,35 @@ html[data-theme='dark'] #keyDropMenu input.form-control::placeholder { color: #9
 .year-block { margin: 1rem 0; }
 .year-title { font-size: 1.02rem; font-weight: 700; color: #1e293b; margin: 0 0 0.6rem 0; }
 .semester-title { background: #f8fafc; border: 1px solid #e2e8f0; border-bottom: none; padding: 0.65rem 0.9rem; font-size: 0.94rem; font-weight: 600; color: #334155; }
-.results-table { width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; }
-.results-table th, .results-table td { padding: 8px 10px; border-bottom: 1px solid #edf2f7; font-size: 0.83rem; }
-.results-table th { background: #f8fafc; color: #1f2937; font-weight: 700; }
+.marks-table { width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; }
+.marks-table th, .marks-table td { padding: 10px 12px; border-bottom: 1px solid #edf2f7; font-size: 0.83rem; }
+.marks-table th {
+    background: #eaf2ff;
+    color: #0f172a;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    font-size: 0.78rem;
+}
+.marks-table tbody tr:nth-child(even) { background: #f9fbff; }
+.marks-table tbody tr:hover { background: #eef6ff; }
 .text-center { text-align: center; }
 .summary-row td { background: #f8fafc; font-weight: 700; }
 .cgpa-row td { background: #ecfdf3; color: #166534; font-weight: 700; }
 .badge-published { background: #dcfce7; border: 1px solid #86efac; color: #166534; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; }
 .badge-pending { background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; }
+html[data-theme='dark'] .marks-table { border-color: #334155; }
+html[data-theme='dark'] .marks-table th {
+    background: #1e293b;
+    color: #f8fafc;
+    border-color: #334155;
+}
+html[data-theme='dark'] .marks-table td {
+    border-color: #334155;
+    color: #e2e8f0;
+}
+html[data-theme='dark'] .marks-table tbody tr:nth-child(even) { background: #0f172a; }
+html[data-theme='dark'] .marks-table tbody tr:hover { background: #132235; }
 </style>
 
 <div class="student-sidebar">
@@ -358,7 +372,7 @@ html[data-theme='dark'] #keyDropMenu input.form-control::placeholder { color: #9
         <div class="sidebar-user-name">
             <?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?>
         </div>
-        <div class="sidebar-user-no">STUDENT NO.: <?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
     </div>
     <ul>
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
@@ -493,7 +507,7 @@ html[data-theme='dark'] #keyDropMenu input.form-control::placeholder { color: #9
                                     <?php echo e($data['academic_year']); ?> - Semester <?php echo (int)$semNum; ?>
                                 </div>
                                 <div class="table-responsive">
-                                    <table class="results-table">
+                                    <table class="results-table marks-table">
                                         <thead>
                                             <tr>
                                                 <th>Course Code</th>
@@ -653,5 +667,6 @@ document.addEventListener('click', function() {
 </script>
 
 <?php include '../../includes/footer.php'; ?>
+
 
 

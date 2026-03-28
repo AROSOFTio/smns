@@ -415,12 +415,6 @@ if (!empty($loggedModules)) {
             <?php endif; ?>
         </form>
 
-        <div class="module-chip-grid">
-            <div class="module-chip"><span class="dot" style="background:#dc3545;"></span><span class="label">Admin</span></div>
-            <div class="module-chip"><span class="dot" style="background:#007bff;"></span><span class="label">Student</span></div>
-            <div class="module-chip"><span class="dot" style="background:#28a745;"></span><span class="label">Lecturer</span></div>
-            <div class="module-chip"><span class="dot" style="background:#ffc107;"></span><span class="label">Finance</span></div>
-        </div>
     </div>
 </div>
 <script src="../../assets/js/login-theme.js?v=<?php echo urlencode((string)APP_VERSION); ?>"></script>

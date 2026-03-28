@@ -204,16 +204,12 @@ CREATE TABLE grades (
 -- Insert default grading system
 INSERT INTO grades (grade_letter, min_mark, max_mark, grade_point, description, pass_status) VALUES
 ('A+', 90.00, 100.00, 5.00, 'Outstanding', 'pass'),
-('A', 80.00, 89.99, 5.00, 'Excellent', 'pass'),
-('B+', 75.00, 79.99, 4.50, 'Very Good', 'pass'),
-('B', 70.00, 74.99, 4.00, 'Good', 'pass'),
-('C+', 65.00, 69.99, 3.50, 'Above Average', 'pass'),
-('C', 60.00, 64.99, 3.00, 'Average', 'pass'),
-('D+', 55.00, 59.99, 2.50, 'Satisfactory', 'pass'),
-('D', 50.00, 54.99, 2.00, 'Pass', 'pass'),
-('E', 45.00, 49.99, 1.50, 'Marginal Pass', 'pass'),
-('E-', 40.00, 44.99, 1.00, 'Low Pass', 'pass'),
-('F', 0.00, 39.99, 0.00, 'Fail', 'fail');
+('A', 80.00, 89.99, 4.00, 'Excellent', 'pass'),
+('B+', 75.00, 79.99, 3.50, 'Very Good', 'pass'),
+('B', 70.00, 74.99, 3.00, 'Good', 'pass'),
+('C+', 65.00, 69.99, 2.50, 'Above Average', 'pass'),
+('C', 60.00, 64.99, 2.00, 'Average', 'pass'),
+('F', 0.00, 59.99, 0.00, 'Fail', 'fail');
 
 -- ============================================================================
 -- STUDENT TABLES

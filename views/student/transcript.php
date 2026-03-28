@@ -590,7 +590,7 @@ include '../../includes/header.php';
         <div class="sidebar-user-name">
             <?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?>
         </div>
-        <div class="sidebar-user-no">STUDENT NO.: <?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
     </div>
     <ul>
         <li><a href="<?php echo BASE_URL; ?>/views/student/generate_prn.php">GENERATE PRN</a></li>
@@ -667,14 +667,7 @@ body { background: #f8fafc; }
     text-align: center;
     padding: 0.6rem 0.55rem 0.6rem;
 }
-.sidebar-user-card img {
-    width: 62px;
-    height: 72px;
-    object-fit: cover;
-    border-radius: 6px;
-    border: 1px solid rgba(255,255,255,0.35);
-    margin-bottom: 0.3rem;
-}
+.sidebar-user-card img { width: 110px; height: 110px; border-radius: 18px; object-fit: cover; border: 2px solid rgba(255,255,255,0.65); box-shadow: 0 6px 18px rgba(0,0,0,0.25); }
 .sidebar-user-name { font-size: 0.82rem; line-height: 1.2; }
 .sidebar-user-no { font-size: 0.9rem; font-weight: 700; }
 .sidebar-portal-title { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: #cbd5e1; margin-bottom: 0.4rem; font-weight: 700; }
@@ -1106,3 +1099,4 @@ document.addEventListener('DOMContentLoaded', function() {
 <?php include '../../includes/footer.php'; ?>
 </body>
 </html>
+

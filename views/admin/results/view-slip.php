@@ -545,30 +545,56 @@ include '../../../includes/header.php';
                     <p class="text-center text-muted mt-4">No aligned courses found for the selected semester/year context.</p>
                 <?php else: ?>
                     <div class="table-responsive">
-                        <table class="table table-sm table-bordered results-table">
+                        <table class="table table-sm table-bordered marks-table results-table">
                             <thead class="thead-light">
                                 <tr>
-                                    <th>COURSE CODE</th>
-                                    <th>COURSE TITLE</th>
-                                    <th>CW</th>
-                                    <th>EXM</th>
-                                    <th>TT</th>
-                                    <th>CU</th>
-                                    <th>LG</th>
-                                    <th>GP</th>
+                                    <th style="min-width: 40px;">#</th>
+                                    <th style="min-width: 220px;">Course</th>
+                                    <th class="text-center" style="min-width: 70px;">CW /40</th>
+                                    <th class="text-center" style="min-width: 70px;">Exam /60</th>
+                                    <th class="text-center" style="min-width: 70px;">Total</th>
+                                    <th class="text-center" style="min-width: 70px;">Grade</th>
+                                    <th class="text-center" style="min-width: 90px;">Status</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($results as $result): ?>
+                                <?php
+                                    $rowIndex = 1;
+                                    $statusBadge = static function ($status) {
+                                        $status = strtolower(trim((string)$status));
+                                        if ($status === 'published') {
+                                            return 'success';
+                                        }
+                                        if ($status === 'approved') {
+                                            return 'info';
+                                        }
+                                        if ($status === 'submitted') {
+                                            return 'warning';
+                                        }
+                                        if ($status === 'draft') {
+                                            return 'secondary';
+                                        }
+                                        return 'light';
+                                    };
+                                    foreach ($results as $result):
+                                        $status = (string)($result['result_status'] ?? '');
+                                ?>
                                     <tr>
-                                        <td><?php echo e($result['course_code']); ?></td>
-                                        <td><?php echo e($result['course_name']); ?></td>
+                                        <td class="text-center"><?php echo $rowIndex++; ?></td>
+                                        <td>
+                                            <strong><?php echo e($result['course_code']); ?></strong><br>
+                                            <small class="text-muted"><?php echo e($result['course_name']); ?></small><br>
+                                            <small class="text-muted">CU: <?php echo e($result['credit_hours']); ?></small>
+                                        </td>
                                         <td class="text-center"><?php echo $result['assignment_marks'] !== null ? round($result['assignment_marks']) : '-'; ?></td>
                                         <td class="text-center"><?php echo $result['final_exam_marks'] !== null ? round($result['final_exam_marks']) : '-'; ?></td>
-                                        <td class="text-center"><?php echo $result['total_marks'] !== null ? round($result['total_marks']) : '-'; ?></td>
-                                        <td class="text-center"><?php echo e($result['credit_hours']); ?></td>
+                                        <td class="text-center"><strong><?php echo $result['total_marks'] !== null ? round($result['total_marks']) : '-'; ?></strong></td>
                                         <td class="text-center"><?php echo !empty($result['grade']) ? e($result['grade']) : '-'; ?></td>
-                                        <td class="text-center"><?php echo is_numeric($result['grade_points']) ? e(number_format((float)$result['grade_points'], 2)) : '-'; ?></td>
+                                        <td class="text-center">
+                                            <span class="badge badge-<?php echo $statusBadge($status); ?>">
+                                                <?php echo $status !== '' ? ucfirst($status) : 'N/A'; ?>
+                                            </span>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
@@ -607,15 +633,13 @@ include '../../../includes/header.php';
                         <strong>GP</strong> = Grade Points
                     </p>
                     <p style="font-size: 0.8rem;">
-                        <strong>A</strong> (80-100, GP 5.0), 
-                        <strong>B+</strong> (75-79, GP 4.5), 
-                        <strong>B</strong> (70-74, GP 4.0), 
-                        <strong>C+</strong> (65-69, GP 3.5), 
-                        <strong>C</strong> (60-64, GP 3.0), 
-                        <strong>D+</strong> (55-59, GP 2.5), 
-                        <strong>D</strong> (50-54, GP 2.0), 
-                        <strong>E</strong> (40-49, GP 1.0, Retake), 
-                        <strong>F</strong> (0-39, GP 0.0, Retake)
+                        <strong>A+</strong> (90-100, GP 5.0),
+                        <strong>A</strong> (80-89, GP 4.0),
+                        <strong>B+</strong> (75-79, GP 3.5),
+                        <strong>B</strong> (70-74, GP 3.0),
+                        <strong>C+</strong> (65-69, GP 2.5),
+                        <strong>C</strong> (60-64, GP 2.0),
+                        <strong>F</strong> (0-59, GP 0.0, Fail)
                     </p>
                 </div>
             </div>
@@ -640,14 +664,33 @@ body, html {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
 }
+.marks-table thead th {
+    background: #eaf2ff;
+    border-color: #cfe0ff;
+    font-weight: 700;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+.marks-table td,
+.marks-table th {
+    vertical-align: middle !important;
+    padding: 0.7rem 0.65rem;
+}
+.marks-table tbody tr:nth-child(even) {
+    background: #f9fbff;
+}
+.marks-table tbody tr:hover {
+    background: #eef6ff;
+}
 .results-table {
     width: 100%;
     table-layout: auto;
     font-size: 0.85rem;
 }
 .results-table th, .results-table td {
-    white-space: nowrap;
-    padding: 0.5rem 0.3rem;
+    padding: 0.5rem 0.35rem;
 }
 @media print {
     .no-print, .no-print * { display: none !important; }
@@ -665,7 +708,7 @@ body, html {
 }
 .student-details-table th { width: 15%; }
 .results-table th, .results-table td { text-align: center; }
-.results-table th:nth-child(2), .results-table td:nth-child(2) { text-align: left; word-wrap: break-word; white-space: normal; max-width: 200px; }
+.results-table th:nth-child(2), .results-table td:nth-child(2) { text-align: left; word-wrap: break-word; white-space: normal; max-width: 220px; }
 </style>
 
 <?php include '../../../includes/footer.php'; ?>

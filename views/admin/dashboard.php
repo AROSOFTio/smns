@@ -2613,24 +2613,28 @@ function setupNotificationsTable() {
     try {
         $db = Database::getInstance();
         $conn = $db->getConnection();
-        
-        $conn->exec("
-            CREATE TABLE IF NOT EXISTS notifications (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT NOT NULL,
-                user_type VARCHAR(20) NOT NULL DEFAULT 'admin',
-                type VARCHAR(50) NOT NULL DEFAULT 'info',
-                title VARCHAR(255) NOT NULL,
-                message TEXT NOT NULL,
-                link VARCHAR(500) NULL,
-                is_read TINYINT(1) DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                read_at TIMESTAMP NULL,
-                INDEX idx_user (user_id, user_type),
-                INDEX idx_read (is_read),
-                INDEX idx_created (created_at)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        ");
+        if (function_exists('ensureNotificationsTable')) {
+            ensureNotificationsTable($conn);
+        } else {
+            $conn->exec("
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    user_type VARCHAR(20) NULL DEFAULT NULL,
+                    type VARCHAR(50) NOT NULL DEFAULT 'info',
+                    title VARCHAR(255) NOT NULL,
+                    message TEXT NOT NULL,
+                    link VARCHAR(500) NULL,
+                    read_status VARCHAR(20) NOT NULL DEFAULT 'unread',
+                    is_read TINYINT(1) NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    read_at TIMESTAMP NULL,
+                    INDEX idx_user (user_id),
+                    INDEX idx_read_status (read_status),
+                    INDEX idx_created (created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            ");
+        }
         
         return true;
     } catch (Exception $e) {
@@ -2658,8 +2662,7 @@ function fetchAdminNotifications($adminId = null) {
         $stmt = $conn->prepare("
             SELECT * FROM notifications 
             WHERE user_id = :user_id 
-            AND user_type = 'admin' 
-            AND is_read = 0 
+            AND COALESCE(read_status, '') <> 'read'
             ORDER BY created_at DESC 
             LIMIT 10
         ");
@@ -2688,8 +2691,8 @@ function createAdminNotification($adminId, $type, $title, $message, $link = null
         $conn = $db->getConnection();
         
         $stmt = $conn->prepare("
-            INSERT INTO notifications (user_id, user_type, type, title, message, link, created_at) 
-            VALUES (:user_id, 'admin', :type, :title, :message, :link, NOW())
+            INSERT INTO notifications (user_id, type, title, message, link, created_at, read_status) 
+            VALUES (:user_id, :type, :title, :message, :link, NOW(), 'unread')
         ");
         
         return $stmt->execute([
@@ -2724,8 +2727,8 @@ function notifyAllAdmins($type, $title, $message, $link = null) {
         }
         
         $insertStmt = $conn->prepare("
-            INSERT INTO notifications (user_id, user_type, type, title, message, link, created_at) 
-            VALUES (:user_id, 'admin', :type, :title, :message, :link, NOW())
+            INSERT INTO notifications (user_id, type, title, message, link, created_at, read_status) 
+            VALUES (:user_id, :type, :title, :message, :link, NOW(), 'unread')
         ");
         
         foreach ($admins as $adminId) {
@@ -2773,8 +2776,8 @@ function handleNotificationAPI() {
                 if ($notifId > 0) {
                     $stmt = $conn->prepare("
                         UPDATE notifications 
-                        SET is_read = 1, read_at = NOW() 
-                        WHERE id = :id AND user_id = :user_id AND user_type = 'admin'
+                        SET read_status = 'read', read_at = NOW(), is_read = 1 
+                        WHERE id = :id AND user_id = :user_id
                     ");
                     $stmt->execute(['id' => $notifId, 'user_id' => $adminId]);
                     
@@ -2787,8 +2790,8 @@ function handleNotificationAPI() {
             case 'mark_all_read':
                 $stmt = $conn->prepare("
                     UPDATE notifications 
-                    SET is_read = 1, read_at = NOW() 
-                    WHERE user_id = :user_id AND user_type = 'admin' AND is_read = 0
+                    SET read_status = 'read', read_at = NOW(), is_read = 1 
+                    WHERE user_id = :user_id AND COALESCE(read_status, '') <> 'read'
                 ");
                 $stmt->execute(['user_id' => $adminId]);
                 

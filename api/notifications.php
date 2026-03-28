@@ -90,6 +90,9 @@ header('Content-Type: application/json');
 $action = $_GET['action'] ?? '';
 $db = new Database();
 $conn = $db->getConnection();
+if (function_exists('ensureNotificationsTable')) {
+    ensureNotificationsTable($conn);
+}
 
 // Ensure per-user read and archive tables exist
 $conn->exec("CREATE TABLE IF NOT EXISTS notifications_read (

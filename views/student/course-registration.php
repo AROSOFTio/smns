@@ -1902,14 +1902,7 @@ include '../../includes/header.php';
     text-align: center;
     padding: 0.6rem 0.55rem 0.6rem;
 }
-    .sidebar-user-card img {
-    width: 62px;
-    height: 72px;
-    object-fit: cover;
-    border-radius: 6px;
-    border: 1px solid rgba(255,255,255,0.35);
-    margin-bottom: 0.3rem;
-}
+    .sidebar-user-card img { width: 110px; height: 110px; border-radius: 18px; object-fit: cover; border: 2px solid rgba(255,255,255,0.65); box-shadow: 0 6px 18px rgba(0,0,0,0.25); }
     .sidebar-user-name { font-size: 0.82rem; line-height: 1.2; }
     .sidebar-user-no { font-size: 0.9rem; font-weight: 700; }
     
@@ -1945,9 +1938,7 @@ include '../../includes/header.php';
         border-color: #334155;
     }
     html[data-theme='dark'] #keyDropMenu input.form-control::placeholder { color: #94a3b8; }
-    .student-profile-pic {
-        width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid #e5e7eb;
-    }
+    .student-profile-pic { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; border: 2px solid #e5e7eb; }
     
     .content-area.container {
         max-width: 100% !important;
@@ -2342,7 +2333,7 @@ include '../../includes/header.php';
         <div class="sidebar-user-name">
             <?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?>
         </div>
-        <div class="sidebar-user-no">STUDENT NO.: <?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
     </div>
     <ul>
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
@@ -2893,4 +2884,5 @@ if (enrollmentForm && enrollNowBtn) {
 </script>
 
 <?php include '../../includes/footer.php'; ?>
+
 

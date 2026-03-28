@@ -21,5 +21,5 @@ $_SESSION['flash_success'] = 'You have been logged out successfully.';
 session_write_close();
 
 // Redirect to unified login page (flash message already set)
-header('Location: ' . BASE_URL . '/views/auth/login.php?action=logout&module=admin');
+header('Location: ' . BASE_URL . '/views/auth/login.php?action=logout');
 exit;

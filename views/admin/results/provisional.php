@@ -57,16 +57,57 @@ if (!empty($programs)) {
 
 $availableLevelYears = [];
 try {
-    $levelSql = "SELECT DISTINCT level_year
-                 FROM courses
-                 WHERE status = 'active'
-                   AND (semester_offered = :semester_number OR semester_offered = 3)";
-    $levelParams = ['semester_number' => (int)$selectedSemesterNumber];
+    $levelSql = "SELECT DISTINCT c.level_year
+                 FROM courses c
+                 WHERE (
+                        (c.status = 'active' AND (c.semester_offered = :semester_number OR c.semester_offered = 3))
+                        OR EXISTS (
+                            SELECT 1
+                            FROM course_registrations cr
+                            WHERE cr.course_id = c.id
+                              AND cr.semester_id = :semester_id_cr
+                              AND cr.status IN ('approved','registered','pending','submitted')
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM course_registrations crp
+                            INNER JOIN students sp ON sp.id = crp.student_id
+                            WHERE crp.course_id = c.id
+                              AND crp.semester_id = :semester_id_crp
+                              AND crp.status IN ('approved','registered','pending','submitted')
+                              AND sp.program_id = :program_id_crp
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM results r
+                            WHERE r.course_id = c.id
+                              AND r.semester_id = :semester_id_r
+                              AND r.status IN ('approved','published')
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM results rp
+                            INNER JOIN students sp2 ON sp2.id = rp.student_id
+                            WHERE rp.course_id = c.id
+                              AND rp.semester_id = :semester_id_rp
+                              AND rp.status IN ('approved','published')
+                              AND sp2.program_id = :program_id_rp
+                        )
+                 )";
+    $levelParams = [
+        'semester_number' => (int)$selectedSemesterNumber,
+        'semester_id_cr' => (int)$semesterId,
+        'semester_id_r' => (int)$semesterId,
+        'semester_id_crp' => (int)$semesterId,
+        'semester_id_rp' => (int)$semesterId,
+        'program_id_crp' => (int)$selectedProgramId,
+        'program_id_rp' => (int)$selectedProgramId,
+    ];
     if ($selectedProgramId > 0) {
-        $levelSql .= " AND program_id = :program_id";
+        $levelSql .= " AND c.program_id = :program_id";
         $levelParams['program_id'] = (int)$selectedProgramId;
     }
-    $levelSql .= " ORDER BY level_year ASC";
+    $levelSql .= " ORDER BY c.level_year ASC";
     $levelStmt = $conn->prepare($levelSql);
     $levelStmt->execute($levelParams);
     $availableLevelYears = array_map('intval', $levelStmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
@@ -103,13 +144,52 @@ if ($semesterId) {
                    ON r.course_id = c.id
                   AND r.semester_id = :semester_id
                   AND r.status IN ('approved', 'published')
-            WHERE c.status = 'active'
-              AND (c.semester_offered = :semester_number OR c.semester_offered = 3)
-              AND c.level_year = :level_year";
+            WHERE c.level_year = :level_year
+              AND (
+                   (c.status = 'active' AND (c.semester_offered = :semester_number OR c.semester_offered = 3))
+                   OR EXISTS (
+                       SELECT 1
+                       FROM course_registrations cr
+                       WHERE cr.course_id = c.id
+                         AND cr.semester_id = :semester_id_cr
+                         AND cr.status IN ('approved','registered','pending','submitted')
+                   )
+                   OR EXISTS (
+                       SELECT 1
+                       FROM course_registrations crp
+                       INNER JOIN students sp ON sp.id = crp.student_id
+                       WHERE crp.course_id = c.id
+                         AND crp.semester_id = :semester_id_crp
+                         AND crp.status IN ('approved','registered','pending','submitted')
+                         AND sp.program_id = :program_id_crp
+                   )
+                   OR EXISTS (
+                       SELECT 1
+                       FROM results r2
+                       WHERE r2.course_id = c.id
+                         AND r2.semester_id = :semester_id_r
+                         AND r2.status IN ('approved','published')
+                   )
+                   OR EXISTS (
+                       SELECT 1
+                       FROM results rp
+                       INNER JOIN students sp2 ON sp2.id = rp.student_id
+                       WHERE rp.course_id = c.id
+                         AND rp.semester_id = :semester_id_rp
+                         AND rp.status IN ('approved','published')
+                         AND sp2.program_id = :program_id_rp
+                   )
+              )";
     $params = [
         'semester_id' => (int)$semesterId,
+        'semester_id_cr' => (int)$semesterId,
+        'semester_id_r' => (int)$semesterId,
+        'semester_id_crp' => (int)$semesterId,
+        'semester_id_rp' => (int)$semesterId,
         'semester_number' => (int)$selectedSemesterNumber,
         'level_year' => (int)$selectedLevelYear,
+        'program_id_crp' => (int)$selectedProgramId,
+        'program_id_rp' => (int)$selectedProgramId,
     ];
     if ($selectedProgramId > 0) {
         $sql .= " AND c.program_id = :program_id";
@@ -121,6 +201,37 @@ if ($semesterId) {
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
     $coursesWithResults = $stmt->fetchAll();
+
+    // Fallback: if nothing returned, pull courses via registrations for this program/year/semester.
+    if (empty($coursesWithResults)) {
+        $fallbackSql = "SELECT
+                c.id,
+                c.course_code,
+                c.course_name,
+                SUM(CASE WHEN r.status = 'approved' THEN 1 ELSE 0 END) AS approved_count,
+                SUM(CASE WHEN r.status = 'approved' AND r.final_exam_marks IS NOT NULL THEN 1 ELSE 0 END) AS ready_count
+            FROM course_registrations cr
+            INNER JOIN students s ON s.id = cr.student_id
+            INNER JOIN courses c ON c.id = cr.course_id
+            LEFT JOIN results r
+                   ON r.course_id = c.id
+                  AND r.semester_id = :semester_id
+                  AND r.status IN ('approved','published')
+            WHERE cr.semester_id = :semester_id_cr
+              AND cr.status IN ('approved','registered','pending','submitted')
+              AND s.program_id = :program_id
+              AND c.level_year = :level_year
+            GROUP BY c.id, c.course_code, c.course_name
+            ORDER BY c.course_code";
+        $fallbackStmt = $conn->prepare($fallbackSql);
+        $fallbackStmt->execute([
+            'semester_id' => (int)$semesterId,
+            'semester_id_cr' => (int)$semesterId,
+            'program_id' => (int)$selectedProgramId,
+            'level_year' => (int)$selectedLevelYear,
+        ]);
+        $coursesWithResults = $fallbackStmt->fetchAll() ?: [];
+    }
 }
 
 $selectedCourseId = $requestedCourseId;
@@ -402,13 +513,14 @@ include '../../../includes/header.php';
     display: grid;
     grid-template-columns: repeat(4, minmax(140px, 1fr));
     gap: 10px;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
 }
 .results-stat-card {
     background: #fff;
     border: 1px solid #dbe2ea;
     border-radius: 10px;
-    padding: 10px;
+    padding: 8px 10px;
+    min-height: 64px;
 }
 .results-stat-label {
     font-size: 0.72rem;
@@ -421,6 +533,71 @@ include '../../../includes/header.php';
     font-weight: 700;
     color: #0f172a;
 }
+.results-filter {
+    margin-bottom: 0.25rem;
+}
+.results-filter label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 2px;
+}
+.results-filter .form-control {
+    height: 36px;
+    border-radius: 10px;
+    border-color: #d7e0ea;
+}
+.results-actions-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 6px;
+}
+.results-actions-bar .text-muted {
+    font-size: 0.82rem;
+}
+.publish-note {
+    font-size: 0.82rem;
+    color: #64748b;
+}
+.publish-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.publish-title h5 {
+    margin: 0;
+    font-weight: 700;
+}
+.marks-table thead th {
+    background: #eaf2ff;
+    border-color: #cfe0ff;
+    font-weight: 700;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+.marks-table td,
+.marks-table th {
+    vertical-align: middle !important;
+    padding: 0.5rem 0.5rem;
+}
+.marks-table tbody tr:nth-child(even) {
+    background: #f9fbff;
+}
+.marks-table tbody tr:hover {
+    background: #eef6ff;
+}
+.marks-table {
+    font-size: 0.84rem;
+}
+.marks-table th {
+    font-size: 0.75rem;
+}
 @media (max-width: 992px) {
     .results-quick-stats {
         grid-template-columns: repeat(2, minmax(130px, 1fr));
@@ -428,8 +605,16 @@ include '../../../includes/header.php';
 }
 @media (max-width: 576px) {
     .results-quick-stats {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(130px, 1fr));
     }
+}
+html[data-theme='dark'] .results-filter label {
+    color: #cbd5e1;
+}
+html[data-theme='dark'] .results-filter .form-control {
+    background: #0b1220;
+    border-color: #334155;
+    color: #e2e8f0;
 }
 </style>
 
@@ -465,10 +650,6 @@ include '../../../includes/header.php';
 
         <div class="results-quick-stats">
             <div class="results-stat-card">
-                <div class="results-stat-label">Submitted</div>
-                <div class="results-stat-value"><?php echo (int)$provisionalUiSummary['submitted']; ?></div>
-            </div>
-            <div class="results-stat-card">
                 <div class="results-stat-label">Approved</div>
                 <div class="results-stat-value"><?php echo (int)$provisionalUiSummary['approved']; ?></div>
             </div>
@@ -477,111 +658,77 @@ include '../../../includes/header.php';
                 <div class="results-stat-value"><?php echo (int)$provisionalUiSummary['ready_for_publish']; ?></div>
             </div>
             <div class="results-stat-card">
-                <div class="results-stat-label">Already Published</div>
+                <div class="results-stat-label">Published</div>
                 <div class="results-stat-value"><?php echo (int)$provisionalUiSummary['published']; ?></div>
             </div>
         </div>
-        <div class="results-helper-note mb-3">
-            <strong>Workflow:</strong> Filter by Academic Year, Semester, Program, and Year of Study. Only <strong>Approved</strong> and complete rows in that scope appear for publishing.
-        </div>
 
         <div class="card mb-3">
-            <div class="card-body" style="overflow-x:hidden;">
-                <form method="GET" class="form-inline mb-3">
-                    <label class="mr-2">Academic Year:</label>
-                    <select name="academic_year_id" class="form-control mr-2" onchange="this.form.submit();">
-                        <?php foreach ($academicYears as $ay): ?>
-                            <option value="<?php echo $ay['id']; ?>" <?php echo $selectedAcademicYearId == $ay['id'] ? 'selected' : ''; ?>><?php echo e($ay['year_name']); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-
-                    <label class="mr-2">Semester:</label>
-                    <select name="semester_number" class="form-control mr-2" onchange="this.form.submit();">
-                        <?php for ($i = 1; $i <= 4; $i++): ?>
-                            <option value="<?php echo $i; ?>" <?php echo $selectedSemesterNumber == $i ? 'selected' : ''; ?>>Semester <?php echo $i; ?></option>
-                        <?php endfor; ?>
-                    </select>
-
-                    <label class="mr-2">Program:</label>
-                    <select name="program_id" class="form-control mr-2" onchange="this.form.submit();">
-                        <?php foreach ($programs as $program): ?>
-                            <option value="<?php echo (int)$program['id']; ?>" <?php echo ((int)$selectedProgramId === (int)$program['id']) ? 'selected' : ''; ?>>
-                                <?php echo e($program['program_name']); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-
-                    <label class="mr-2">Year:</label>
-                    <select name="level_year" class="form-control mr-2" onchange="this.form.submit();">
-                        <?php foreach ($availableLevelYears as $yearOption): ?>
-                            <option value="<?php echo (int)$yearOption; ?>" <?php echo ((int)$selectedLevelYear === (int)$yearOption) ? 'selected' : ''; ?>>
-                                Year <?php echo (int)$yearOption; ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-
-                    <label class="ml-3 mr-2">Course:</label>
-                    <select name="course_id" class="form-control mr-2" onchange="this.form.submit();">
-                        <option value="">-- Select Course --</option>
-                        <?php foreach ($coursesWithResults as $c): ?>
-                            <option value="<?php echo $c['id']; ?>" <?php echo $selectedCourseId == $c['id'] ? 'selected' : ''; ?>>
-                                <?php echo e($c['course_code'] . ' - ' . $c['course_name']); ?>
-                                <?php echo e(' [Ready ' . (int)($c['ready_count'] ?? 0) . ']'); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
+            <div class="card-body" style="overflow-x:hidden; padding: 14px 16px;">
+                <form method="GET" class="row results-filter">
+                    <div class="col-lg-3 col-md-4 col-sm-6 mb-2">
+                        <label>Academic Year</label>
+                        <select name="academic_year_id" class="form-control" onchange="this.form.submit();">
+                            <?php foreach ($academicYears as $ay): ?>
+                                <option value="<?php echo $ay['id']; ?>" <?php echo $selectedAcademicYearId == $ay['id'] ? 'selected' : ''; ?>><?php echo e($ay['year_name']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-lg-2 col-md-3 col-sm-6 mb-2">
+                        <label>Semester</label>
+                        <select name="semester_number" class="form-control" onchange="this.form.submit();">
+                            <?php for ($i = 1; $i <= 4; $i++): ?>
+                                <option value="<?php echo $i; ?>" <?php echo $selectedSemesterNumber == $i ? 'selected' : ''; ?>>Semester <?php echo $i; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                    <div class="col-lg-3 col-md-5 col-sm-12 mb-2">
+                        <label>Program</label>
+                        <select name="program_id" class="form-control" onchange="this.form.submit();">
+                            <?php foreach ($programs as $program): ?>
+                                <option value="<?php echo (int)$program['id']; ?>" <?php echo ((int)$selectedProgramId === (int)$program['id']) ? 'selected' : ''; ?>>
+                                    <?php echo e($program['program_name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-lg-2 col-md-3 col-sm-6 mb-2">
+                        <label>Year</label>
+                        <select name="level_year" class="form-control" onchange="this.form.submit();">
+                            <?php foreach ($availableLevelYears as $yearOption): ?>
+                                <option value="<?php echo (int)$yearOption; ?>" <?php echo ((int)$selectedLevelYear === (int)$yearOption) ? 'selected' : ''; ?>>
+                                    Year <?php echo (int)$yearOption; ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-lg-4 col-md-9 col-sm-12 mb-2">
+                        <label>Course</label>
+                        <select name="course_id" class="form-control" onchange="this.form.submit();">
+                            <option value="">-- Select Course --</option>
+                            <?php foreach ($coursesWithResults as $c): ?>
+                                <option value="<?php echo $c['id']; ?>" <?php echo $selectedCourseId == $c['id'] ? 'selected' : ''; ?>>
+                                    <?php echo e($c['course_code'] . ' - ' . $c['course_name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
                 </form>
-                <?php if ($autoSelectedCourse): ?>
-                    <div class="alert alert-info mb-3">
-                        Course auto-selected for convenience. You can switch to another publish-ready course below.
-                    </div>
-                <?php endif; ?>
-                <?php if (!empty($coursesWithResults)): ?>
-                    <div class="table-responsive mb-3">
-                        <table class="table table-sm table-bordered mb-0 results-course-table">
-                            <thead class="thead-light">
-                                <tr>
-                                    <th>Course</th>
-                                    <th class="text-center">Approved</th>
-                                    <th class="text-center">Ready To Publish</th>
-                                    <th class="text-center">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($coursesWithResults as $courseRow): ?>
-                                    <tr class="<?php echo ((int)$selectedCourseId === (int)$courseRow['id']) ? 'table-primary' : ''; ?>">
-                                        <td>
-                                            <strong><?php echo e($courseRow['course_code']); ?></strong>
-                                            <small class="text-muted d-block"><?php echo e($courseRow['course_name']); ?></small>
-                                        </td>
-                                        <td class="text-center"><?php echo (int)($courseRow['approved_count'] ?? 0); ?></td>
-                                        <td class="text-center"><?php echo (int)($courseRow['ready_count'] ?? 0); ?></td>
-                                        <td class="text-center">
-                                            <a href="provisional.php?academic_year_id=<?php echo (int)$selectedAcademicYearId; ?>&semester_number=<?php echo (int)$selectedSemesterNumber; ?>&program_id=<?php echo (int)$selectedProgramId; ?>&level_year=<?php echo (int)$selectedLevelYear; ?>&course_id=<?php echo (int)$courseRow['id']; ?>" class="btn btn-outline-primary btn-sm">
-                                                Open
-                                            </a>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                <?php endif; ?>
 
                 <?php if ($semesterId && $hasPublishReadyCourses): ?>
-                    <form method="POST" class="mb-3">
+                    <form method="POST" class="results-actions-bar">
                         <input type="hidden" name="academic_year_id" value="<?php echo (int)$selectedAcademicYearId; ?>">
                         <input type="hidden" name="semester_number" value="<?php echo (int)$selectedSemesterNumber; ?>">
                         <input type="hidden" name="program_id" value="<?php echo (int)$selectedProgramId; ?>">
                         <input type="hidden" name="level_year" value="<?php echo (int)$selectedLevelYear; ?>">
-                        <label class="d-block mb-2">
+                        <label class="mb-0">
                             <input type="checkbox" name="audit_confirm" value="1" required>
-                            I confirm semester audit is complete and approved for publication.
+                            Audit complete
                         </label>
-                        <button type="submit" name="bulk_publish" value="1" class="btn btn-outline-primary btn-sm" onclick="return confirm('Publish ALL approved results for this semester to student portals?');">
-                            <i class="fas fa-bullhorn"></i> Bulk Publish Semester
+                        <button type="submit" name="bulk_publish" value="1" class="btn btn-outline-primary btn-sm" onclick="return confirm('Publish all approved results for this semester?');">
+                            <i class="fas fa-bullhorn"></i> Publish Semester
                         </button>
-                        <small class="text-muted ml-2">Publishes all approved and complete results in the current semester across courses.</small>
+                        <span class="text-muted">Pushes all ready rows.</span>
                     </form>
                 <?php endif; ?>
 
@@ -594,7 +741,10 @@ include '../../../includes/header.php';
                 <?php elseif (!$selectedCourseId): ?>
                     <p class="text-muted mb-0">Please select a course to review provisional results.</p>
                 <?php else: ?>
-                    <h5 class="mb-3">Provisional Results - <?php echo e($semesterName); ?></h5>
+                    <div class="publish-title">
+                        <h5>Provisional Results</h5>
+                        <span class="publish-note"><?php echo e($semesterName); ?></span>
+                    </div>
 
                     <?php if (empty($results)): ?>
                         <p class="text-muted mb-0">No approved results found for the selected course.</p>
@@ -607,19 +757,17 @@ include '../../../includes/header.php';
                             <input type="hidden" name="course_id" value="<?php echo $selectedCourseId; ?>">
 
                             <div class="table-responsive" style="overflow-x:auto;">
-                                <table class="table table-sm table-hover" style="table-layout:fixed; width:100%; word-wrap:break-word;">
+                                <table class="table table-sm table-hover marks-table" style="table-layout:fixed; width:100%; word-wrap:break-word;">
                                     <thead>
                                         <tr>
-                                            <th style="width:40px;">#</th>
-                                            <th style="min-width:120px;">Name</th>
-                                            <th style="min-width:90px;">Reg #</th>
-                                            <th style="min-width:110px;">Program</th>
-                                            <th style="width:70px;">Year</th>
-                                            <th style="width:110px;">Coursework (40%)</th>
-                                            <th style="width:100px;">Exam (60%)</th>
-                                            <th style="width:90px;">Total</th>
-                                            <th style="width:80px;">Grade</th>
-                                            <th style="width:80px;">Status</th>
+                                            <th style="width:32px;">#</th>
+                                            <th style="min-width:140px;">Student</th>
+                                            <th style="min-width:90px;">Reg No</th>
+                                            <th style="width:85px;" class="text-center">CW</th>
+                                            <th style="width:85px;" class="text-center">Exam</th>
+                                            <th style="width:75px;" class="text-center">Total</th>
+                                            <th style="width:70px;" class="text-center">Grade</th>
+                                            <th style="width:80px;" class="text-center">Status</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -628,28 +776,24 @@ include '../../../includes/header.php';
                                                 <td><?php echo $i++; ?></td>
                                                 <td><?php echo e($r['first_name'] . ' ' . $r['last_name']); ?></td>
                                                 <td><?php echo e($r['reg_no']); ?></td>
-                                                <td><?php echo e($r['program_name'] ?? '-'); ?></td>
-                                                <td><?php echo 'Year ' . e($r['level_year'] ?? '-'); ?></td>
-                                                <td><?php echo $r['assignment_marks'] !== null ? number_format($r['assignment_marks'], 2) : '-'; ?></td>
-                                                <td><?php echo $r['final_exam_marks'] !== null ? number_format($r['final_exam_marks'], 2) : '-'; ?></td>
-                                                <td><?php echo $r['total_marks'] !== null ? number_format($r['total_marks'], 2) : '-'; ?></td>
-                                                <td><?php echo $r['grade'] !== null ? e($r['grade']) : '-'; ?></td>
-                                                <td><span class="badge badge-success">Approved</span></td>
+                                                <td class="text-center"><?php echo $r['assignment_marks'] !== null ? number_format($r['assignment_marks'], 2) : '-'; ?></td>
+                                                <td class="text-center"><?php echo $r['final_exam_marks'] !== null ? number_format($r['final_exam_marks'], 2) : '-'; ?></td>
+                                                <td class="text-center"><?php echo $r['total_marks'] !== null ? number_format($r['total_marks'], 2) : '-'; ?></td>
+                                                <td class="text-center"><?php echo $r['grade'] !== null ? e($r['grade']) : '-'; ?></td>
+                                                <td class="text-center"><span class="badge badge-success">Approved</span></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
                                 </table>
                             </div>
 
-                            <div class="mt-3">
-                                <label class="d-block mb-2">
+                            <div class="mt-3 results-actions-bar">
+                                <label class="mb-0">
                                     <input type="checkbox" name="audit_confirm" value="1" required>
-                                    I confirm this course audit is complete and approved for publication.
+                                    Audit complete
                                 </label>
-                                <button type="submit" name="publish" value="1" class="btn btn-primary btn-sm" onclick="return confirm('Publish these approved results to the student portals?');">Publish to Student Portal</button>
-                                <p class="text-muted mt-2" style="font-size:12px;">
-                                    Publishing will make these results visible on student dashboards. Only use this after audit confirmation.
-                                </p>
+                                <button type="submit" name="publish" value="1" class="btn btn-primary btn-sm" onclick="return confirm('Publish these results to student portals?');">Publish</button>
+                                <span class="text-muted">Live on student dashboards.</span>
                             </div>
                         </form>
                     <?php endif; ?>
