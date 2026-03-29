@@ -10,14 +10,14 @@ $auth = new Auth('student');
 
 // Verify student access using Auth helper (module-specific session keys)
 if (!$auth->isLoggedIn() || $auth->getRole() !== 'student') {
-    header('Location: ' . BASE_URL . '/views/student/login.php?error=unauthorized');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=unauthorized&role=student');
     exit;
 }
 
 $currentUser = $auth->getCurrentUser();
 if (!$currentUser || empty($currentUser['profile'])) {
     // Fallback safety: if profile missing, force re-login
-    header('Location: ' . BASE_URL . '/views/student/login.php?error=unauthorized');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=unauthorized&role=student');
     exit;
 }
 
@@ -384,6 +384,7 @@ function getRepeatSemesterDecision(PDO $conn, int $studentId, int $targetAcademi
             'cumulative_gpa' => $row['cumulative_gpa_value'] !== null ? (float)$row['cumulative_gpa_value'] : null,
             'year_of_study' => $repeatYear > 0 ? $repeatYear : null,
             'outstanding_retakes' => $outstandingRetakes,
+            'outstanding_retake_courses' => array_values($retakeSummary['courses'] ?? []),
             'lock_reason' => $triggerByRetakes ? 'retakes' : 'gpa',
         ];
     } catch (Exception $e) {
@@ -406,19 +407,21 @@ function getOutstandingRetakeSummary(PDO $conn, int $studentId): array
             SELECT COUNT(*)
             FROM results r
             INNER JOIN semesters s ON s.id = r.semester_id
+            INNER JOIN academic_years ay ON ay.id = s.academic_year_id
             WHERE r.student_id = :student_id
               AND r.status = 'published'
               AND NOT EXISTS (
                     SELECT 1
                     FROM results r2
                     INNER JOIN semesters s2 ON s2.id = r2.semester_id
+                    INNER JOIN academic_years ay2 ON ay2.id = s2.academic_year_id
                     WHERE r2.student_id = r.student_id
                       AND r2.course_id = r.course_id
-                      AND r2.status = 'published'
+                      AND r2.status IN ('submitted', 'approved', 'published')
                       AND (
-                            s2.end_date > s.end_date
-                            OR (s2.end_date = s.end_date AND s2.start_date > s.start_date)
-                            OR (s2.end_date = s.end_date AND s2.start_date = s.start_date AND r2.id > r.id)
+                            ay2.start_date > ay.start_date
+                            OR (ay2.start_date = ay.start_date AND s2.semester_number > s.semester_number)
+                            OR (ay2.start_date = ay.start_date AND s2.semester_number = s.semester_number AND r2.id > r.id)
                       )
               )
               AND (
@@ -434,6 +437,7 @@ function getOutstandingRetakeSummary(PDO $conn, int $studentId): array
                 SELECT c.course_code
                 FROM results r
                 INNER JOIN semesters s ON s.id = r.semester_id
+                INNER JOIN academic_years ay ON ay.id = s.academic_year_id
                 INNER JOIN courses c ON c.id = r.course_id
                 WHERE r.student_id = :student_id
                   AND r.status = 'published'
@@ -441,13 +445,14 @@ function getOutstandingRetakeSummary(PDO $conn, int $studentId): array
                         SELECT 1
                         FROM results r2
                         INNER JOIN semesters s2 ON s2.id = r2.semester_id
+                        INNER JOIN academic_years ay2 ON ay2.id = s2.academic_year_id
                         WHERE r2.student_id = r.student_id
                           AND r2.course_id = r.course_id
-                          AND r2.status = 'published'
+                          AND r2.status IN ('submitted', 'approved', 'published')
                           AND (
-                                s2.end_date > s.end_date
-                                OR (s2.end_date = s.end_date AND s2.start_date > s.start_date)
-                                OR (s2.end_date = s.end_date AND s2.start_date = s.start_date AND r2.id > r.id)
+                                ay2.start_date > ay.start_date
+                                OR (ay2.start_date = ay.start_date AND s2.semester_number > s.semester_number)
+                                OR (ay2.start_date = ay.start_date AND s2.semester_number = s.semester_number AND r2.id > r.id)
                           )
                   )
                   AND (
@@ -497,6 +502,7 @@ if ($forcedRepeatDecision) {
         : null;
     $lockReason = (string)($forcedRepeatDecision['lock_reason'] ?? 'gpa');
     $retakeCount = (int)($forcedRepeatDecision['outstanding_retakes'] ?? 0);
+    $retakeCourses = array_values($forcedRepeatDecision['outstanding_retake_courses'] ?? []);
 
     if ($lockReason === 'retakes') {
         $repeatEnforcedNotice =
@@ -504,6 +510,10 @@ if ($forcedRepeatDecision) {
             ' (limit to proceed is 2). You are locked to repeat ' .
             (($forcedRepeatDecision['year_name'] ?? '') ?: 'the previous academic year') . ' - ' .
             (($forcedRepeatDecision['semester_name'] ?? '') ?: 'the previous semester') . '.';
+        if (!empty($retakeCourses)) {
+            $repeatEnforcedNotice .= ' Counted retakes: ' . implode(', ', $retakeCourses)
+                . ($retakeCount > count($retakeCourses) ? ' ...' : '') . '.';
+        }
     } else {
         $repeatEnforcedNotice =
             'Promotion requires GPA 2.00 or above. You are locked to repeat ' .
@@ -1895,18 +1905,22 @@ include '../../includes/header.php';
     }
     .student-sidebar li:hover { background: #f1f5f9; color: #0f172a; }
     .sidebar-user-card {
-    margin: 0.45rem 0.45rem 0.2rem;
-    background: #2b3c4f;
-    border-radius: 8px;
+    margin: 0.4rem 0.45rem 0.15rem;
+    background: linear-gradient(180deg, #31465d 0%, #243547 100%);
+    border-radius: 10px;
     color: #fff;
     text-align: center;
-    padding: 0.6rem 0.55rem 0.6rem;
+    padding: 0.4rem 0.45rem 0.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.28rem;
 }
-    .sidebar-user-card img { width: 110px; height: 110px; border-radius: 18px; object-fit: cover; border: 2px solid rgba(255,255,255,0.65); box-shadow: 0 6px 18px rgba(0,0,0,0.25); }
-    .sidebar-user-name { font-size: 0.82rem; line-height: 1.2; }
-    .sidebar-user-no { font-size: 0.9rem; font-weight: 700; }
+    .sidebar-user-card img { width: 126px; height: 126px; border-radius: 16px; object-fit: cover; border: 2px solid rgba(255,255,255,0.82); box-shadow: 0 8px 18px rgba(0,0,0,0.2); }
+    .sidebar-user-name { font-size: 0.8rem; line-height: 1.12; margin: 0; }
+    .sidebar-user-no { font-size: 1rem; font-weight: 700; line-height: 1.08; margin: 0; }
     
-.sidebar-portal-title { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: #cbd5e1; margin-bottom: 0.4rem; font-weight: 700; }
+.sidebar-portal-title { font-size: 0.6rem; letter-spacing: 0.07em; text-transform: uppercase; color: #d7e3f3; margin-bottom: 0.12rem; font-weight: 700; }
 .enroll-submenu { list-style:none; padding:0 0 0 10px; margin:0 0 6px 0; }
 .enroll-submenu li { font-size:.79rem; margin-bottom:3px; }
 .enroll-submenu li.active { background:#dceaf3; color:#0e7490; border-color:#bfddeb; }

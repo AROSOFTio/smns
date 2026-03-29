@@ -194,12 +194,13 @@ if (!isset($currentUser) || !is_array($currentUser)) {
                 <ul class="submenu">
                     <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=executive" class="<?php echo ($currentDir == 'reports' && ($currentReportType === 'executive' || $currentPage === 'index.php')) ? 'active' : ''; ?>">Executive Summary</a></li>
                     <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=enrollment" class="<?php echo ($currentDir == 'reports' && $currentReportType === 'enrollment') ? 'active' : ''; ?>">Enrollment Trends</a></li>
-                    <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=financial" class="<?php echo ($currentDir == 'reports' && $currentReportType === 'financial') ? 'active' : ''; ?>">Financial Summary</a></li>
-                    <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=staff" class="<?php echo ($currentDir == 'reports' && $currentReportType === 'staff') ? 'active' : ''; ?>">Staff Workload</a></li>
-                    <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=system" class="<?php echo ($currentDir == 'reports' && $currentReportType === 'system') ? 'active' : ''; ?>">System Overview</a></li>
-                    <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/schedules.php" class="<?php echo ($currentDir == 'reports' && $currentPage === 'schedules.php') ? 'active' : ''; ?>">Scheduled Reports</a></li>
-                </ul>
-            </li>
+                     <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=financial" class="<?php echo ($currentDir == 'reports' && $currentReportType === 'financial') ? 'active' : ''; ?>">Financial Summary</a></li>
+                     <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=staff" class="<?php echo ($currentDir == 'reports' && $currentReportType === 'staff') ? 'active' : ''; ?>">Staff Workload</a></li>
+                     <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=system" class="<?php echo ($currentDir == 'reports' && $currentReportType === 'system') ? 'active' : ''; ?>">System Overview</a></li>
+                     <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/unit-testing.php" class="<?php echo ($currentDir == 'reports' && $currentPage === 'unit-testing.php') ? 'active' : ''; ?>">Unit Testing Summary</a></li>
+                     <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/schedules.php" class="<?php echo ($currentDir == 'reports' && $currentPage === 'schedules.php') ? 'active' : ''; ?>">Scheduled Reports</a></li>
+                 </ul>
+             </li>
 
             <li class="menu-section">System & Settings</li>
             <li>

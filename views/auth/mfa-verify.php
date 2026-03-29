@@ -4,6 +4,34 @@
  */
 require_once '../../config.php';
 
+if (!function_exists('sharedAuthResolveReturnTo')) {
+    function sharedAuthResolveReturnTo($module, $rawValue) {
+        $raw = trim((string)$rawValue);
+        if ($raw === '') {
+            return '';
+        }
+        $parsed = @parse_url($raw);
+        if ($parsed === false) {
+            return '';
+        }
+        if (!empty($parsed['scheme']) || !empty($parsed['host'])) {
+            return '';
+        }
+        $path = (string)($parsed['path'] ?? '');
+        if ($path === '' || strpos($path, '/views/' . $module . '/') !== 0) {
+            return '';
+        }
+        $normalized = $path;
+        if (!empty($parsed['query'])) {
+            $normalized .= '?' . $parsed['query'];
+        }
+        if (!empty($parsed['fragment'])) {
+            $normalized .= '#' . $parsed['fragment'];
+        }
+        return $normalized;
+    }
+}
+
 $allowedModules = ['admin', 'student', 'lecturer', 'finance'];
 $module = strtolower(trim((string)($_GET['module'] ?? $_POST['module'] ?? '')));
 if (!in_array($module, $allowedModules, true)) {
@@ -14,13 +42,15 @@ $session = new Session($module);
 $auth = new Auth($module);
 $error = '';
 $success = '';
+$returnTo = sharedAuthResolveReturnTo($module, $_GET['return_to'] ?? $_POST['return_to'] ?? '');
+$postAuthTarget = $returnTo !== '' ? (BASE_URL . $returnTo) : (BASE_URL . '/views/' . $module . '/dashboard.php');
 $pendingNotice = trim((string)$auth->consumePendingLoginNotice($module));
 if ($pendingNotice !== '') {
     $success = $pendingNotice;
 }
 
 if ($auth->isLoggedIn() && $auth->getRole() === $module) {
-    header('Location: ' . BASE_URL . '/views/' . $module . '/dashboard.php');
+    header('Location: ' . $postAuthTarget);
     exit;
 }
 
@@ -41,14 +71,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $result = $auth->verifyPendingMfa($code);
             if (!empty($result['success']) && (($result['role'] ?? '') === $module)) {
                 if (!empty($result['require_password_change'])) {
-                    header('Location: ' . BASE_URL . '/views/' . $module . '/change-password.php');
+                    $changePwdUrl = BASE_URL . '/views/' . $module . '/change-password.php';
+                    if ($returnTo !== '') {
+                        $changePwdUrl .= '?return_to=' . urlencode($returnTo);
+                    }
+                    header('Location: ' . $changePwdUrl);
                     exit;
                 }
-                header('Location: ' . BASE_URL . '/views/' . $module . '/dashboard.php');
+                header('Location: ' . $postAuthTarget);
                 exit;
             }
             if (!empty($result['consent_required'])) {
-                header('Location: ' . BASE_URL . '/views/auth/privacy-consent.php?module=' . urlencode($module));
+                $consentUrl = BASE_URL . '/views/auth/privacy-consent.php?module=' . urlencode($module);
+                if ($returnTo !== '') {
+                    $consentUrl .= '&return_to=' . urlencode($returnTo);
+                }
+                header('Location: ' . $consentUrl);
                 exit;
             }
             $error = $result['message'] ?? 'Verification failed.';
@@ -88,7 +126,7 @@ if ($mfaCodeLength > 8) {
     <link rel="stylesheet" href="../../assets/css/login.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
     <style>
         body {
-            background: url('../../assets/img/seminary.jpeg') no-repeat center center fixed;
+            background: url('../../uploads/seminary.jpeg') no-repeat center center fixed;
             background-size: cover;
         }
         .login-container {
@@ -172,6 +210,7 @@ $moduleLabel = ucfirst($module);
         <form method="post" class="login-form mfa-actions" id="mfaVerifyForm">
             <?php echo csrfField(); ?>
             <input type="hidden" name="module" value="<?php echo e($module); ?>">
+            <input type="hidden" name="return_to" value="<?php echo e($returnTo); ?>">
             <input type="hidden" name="action" value="verify">
             <div class="form-group">
                 <label for="code">Verification Code</label>

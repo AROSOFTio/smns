@@ -9,7 +9,7 @@ $session = new Session('admin');
 $auth    = new Auth('admin');
 
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true || $_SESSION['admin_role'] !== 'admin') {
-    header('Location: ' . BASE_URL . '/views/admin/login.php?error=unauthorized');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=unauthorized&role=admin');
     exit;
 }
 

@@ -5,6 +5,11 @@
  */
 require_once '../../config.php';
 
+$unifiedLoginQuery = $_GET;
+$unifiedLoginQuery['role'] = 'finance';
+header('Location: ' . BASE_URL . '/views/auth/login.php?' . http_build_query($unifiedLoginQuery));
+exit;
+
 // Don't start session here - let Session class handle it with proper role-specific name
 // Session will be started when Auth is created
 
@@ -151,7 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css">
 </head>
 
-<body style="background: url('../../assets/img/seminary.jpeg') no-repeat center center fixed; background-size: cover;">
+<body style="background: url('../../uploads/seminary.jpeg') no-repeat center center fixed; background-size: cover;">
     <div class="login-container">
         <div class="login-card finance-theme">
             <div class="login-header">

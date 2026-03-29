@@ -9,14 +9,14 @@ $auth = new Auth('lecturer');
 
 // Verify lecturer access using Auth helper (module-specific session keys)
 if (!$auth->isLoggedIn() || $auth->getRole() !== 'lecturer') {
-    header('Location: ' . BASE_URL . '/views/lecturer/login.php?error=unauthorized');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=unauthorized&role=lecturer');
     exit;
 }
 
 $currentUser = $auth->getCurrentUser();
 if (!$currentUser || empty($currentUser['profile'])) {
     // Fallback safety: if profile missing, force re-login
-    header('Location: ' . BASE_URL . '/views/lecturer/login.php?error=unauthorized');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=unauthorized&role=lecturer');
     exit;
 }
 

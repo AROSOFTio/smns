@@ -15,7 +15,7 @@ if (!$auth->isLoggedIn() || $auth->getRole() !== 'admin') {
     if (session_status() === PHP_SESSION_ACTIVE) {
         $_SESSION['flash_error'] = 'Session expired while opening credentials.';
     }
-    header('Location: ' . BASE_URL . '/views/admin/login.php?error=session_expired');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=session_expired&role=admin');
     exit;
 }
 

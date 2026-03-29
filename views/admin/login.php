@@ -5,15 +5,50 @@
  */
 require_once '../../config.php';
 
+$unifiedLoginQuery = $_GET;
+$unifiedLoginQuery['role'] = 'admin';
+header('Location: ' . BASE_URL . '/views/auth/login.php?' . http_build_query($unifiedLoginQuery));
+exit;
+
+if (!function_exists('adminLoginResolveReturnTo')) {
+    function adminLoginResolveReturnTo($rawValue) {
+        $raw = trim((string)$rawValue);
+        if ($raw === '') {
+            return '';
+        }
+        $parsed = @parse_url($raw);
+        if ($parsed === false) {
+            return '';
+        }
+        if (!empty($parsed['scheme']) || !empty($parsed['host'])) {
+            return '';
+        }
+        $path = (string)($parsed['path'] ?? '');
+        if ($path === '' || strpos($path, '/views/admin/') !== 0) {
+            return '';
+        }
+        $normalized = $path;
+        if (!empty($parsed['query'])) {
+            $normalized .= '?' . $parsed['query'];
+        }
+        if (!empty($parsed['fragment'])) {
+            $normalized .= '#' . $parsed['fragment'];
+        }
+        return $normalized;
+    }
+}
+
 // Don't start session here - let Session class handle it with proper role-specific name
 // Session will be started when Auth is created
 
 // Create session with admin role context to use SMNS_ADMIN_SESSION cookie
 $tempSession = new Session('admin');
+$returnTo = adminLoginResolveReturnTo($_GET['return_to'] ?? $_POST['return_to'] ?? '');
+$postLoginTarget = $returnTo !== '' ? (BASE_URL . $returnTo) : 'dashboard.php';
 
 // Check if admin is already logged in (using module-specific session keys)
 if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true && $_SESSION['admin_role'] === 'admin') {
-    header('Location: dashboard.php');
+    header('Location: ' . $postLoginTarget);
     exit;
 }
 
@@ -92,18 +127,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $result = $auth->login($entered_username, $password);
             
             if (!empty($result['mfa_required'])) {
-                header('Location: ' . BASE_URL . '/views/auth/mfa-verify.php?module=admin');
+                $mfaUrl = BASE_URL . '/views/auth/mfa-verify.php?module=admin';
+                if ($returnTo !== '') {
+                    $mfaUrl .= '&return_to=' . urlencode($returnTo);
+                }
+                header('Location: ' . $mfaUrl);
                 exit;
             } elseif (!empty($result['consent_required'])) {
-                header('Location: ' . BASE_URL . '/views/auth/privacy-consent.php?module=admin');
+                $consentUrl = BASE_URL . '/views/auth/privacy-consent.php?module=admin';
+                if ($returnTo !== '') {
+                    $consentUrl .= '&return_to=' . urlencode($returnTo);
+                }
+                header('Location: ' . $consentUrl);
                 exit;
             } elseif ($result['success'] && $result['role'] === 'admin') {
                 if (!empty($result['require_password_change'])) {
-                    header('Location: change-password.php');
+                    $changePwdUrl = 'change-password.php';
+                    if ($returnTo !== '') {
+                        $changePwdUrl .= '?return_to=' . urlencode($returnTo);
+                    }
+                    header('Location: ' . $changePwdUrl);
                     exit;
                 }
                 // Login successful - redirect to dashboard
-                header('Location: dashboard.php');
+                header('Location: ' . $postLoginTarget);
                 exit;
             } else {
                 // Login failed - show error and stay on step 2
@@ -162,7 +209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css">
 </head>
 
-<body style="background: url('../../assets/img/seminary.jpeg') no-repeat center center fixed; background-size: cover;">
+<body style="background: url('../../uploads/seminary.jpeg') no-repeat center center fixed; background-size: cover;">
     <div class="login-container">
         <div class="login-card admin-theme">
             <div class="login-header">
@@ -184,6 +231,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <form method="POST" action="" class="login-form" autocomplete="on">
                 <?php echo csrfField(); ?>
                 <input type="hidden" name="step" value="<?php echo $step; ?>">
+                <input type="hidden" name="return_to" value="<?php echo htmlspecialchars($returnTo); ?>">
                 <input type="hidden" name="username" value="<?php echo htmlspecialchars($entered_username); ?>" autocomplete="section-admin username">
                 
                 <?php if ($step === 1): ?>
@@ -233,7 +281,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </a>
                     </div>
                     <div class="text-center mt-3">
-                        <a href="login.php" class="btn btn-link btn-sm">
+                        <a href="login.php<?php echo $returnTo !== '' ? '?return_to=' . urlencode($returnTo) : ''; ?>" class="btn btn-link btn-sm">
                             <i class="fas fa-arrow-left"></i> Not you? Use different account
                         </a>
                     </div>

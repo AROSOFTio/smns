@@ -29,12 +29,13 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
 <div class="notification-wrapper">
     <button class="notification-bell" id="notificationBell" title="Notifications" data-notification-managed="1">
         <i class="fas fa-bell"></i>
+        <span
+            class="notification-badge notification-indicator<?php echo $initialUnreadCount > 0 ? ' active' : ''; ?>"
+            id="notificationIndicator"
+            aria-label="<?php echo $initialUnreadCount > 0 ? e(number_format($initialUnreadCount) . ' unread notifications') : 'No unread notifications'; ?>"
+            style="<?php echo $initialUnreadCount > 0 ? 'display:inline-flex;align-items:center;justify-content:center;' : 'display:none;'; ?>"
+        ><?php echo $initialUnreadCount > 99 ? '99+' : (int)$initialUnreadCount; ?></span>
     </button>
-    <span
-        class="notification-indicator<?php echo $initialUnreadCount > 0 ? ' active' : ''; ?>"
-        id="notificationIndicator"
-        aria-hidden="true"
-    ></span>
     <?php
     // Show change-password quick dropdown for logged-in users in the active module.
     // Role detection must prefer current module context to avoid cross-module endpoint mixups.
@@ -530,6 +531,14 @@ if ($initialUnreadCount <= 0 && !empty($unreadNotifications) && is_array($unread
             const unreadCount = Number(count || 0);
             if (indicator) {
                 indicator.classList.toggle('active', unreadCount > 0);
+                indicator.textContent = unreadCount > 0 ? (unreadCount > 99 ? '99+' : String(unreadCount)) : '';
+                indicator.style.display = unreadCount > 0 ? 'inline-flex' : 'none';
+                indicator.setAttribute(
+                    'aria-label',
+                    unreadCount > 0
+                        ? (unreadCount + ' unread notifications')
+                        : 'No unread notifications'
+                );
                 const hasNewUnread = unreadCount > previousUnreadCount;
                 if (hasNewUnread) {
                     indicator.classList.add('pulse');

@@ -10,7 +10,7 @@ $session = new Session('admin');
 $auth = new Auth('admin');
 
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true || $_SESSION['admin_role'] !== 'admin') {
-    header('Location: ' . BASE_URL . '/views/admin/login.php?error=unauthorized');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=unauthorized&role=admin');
     exit;
 }
 
@@ -153,9 +153,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 
     $updateReq = $conn->prepare("UPDATE student_requests SET status = 'approved', admin_response = :resp, updated_at = NOW() WHERE id = :id");
-    $selectSR = $conn->prepare('SELECT id, status FROM semester_registrations WHERE student_id = :sid AND semester_id = :semid LIMIT 1');
-    $updateSR = $conn->prepare('UPDATE semester_registrations SET status = "approved", approved_by = :admin, approval_date = NOW(), updated_at = NOW() WHERE id = :id');
-    $insertSR = $conn->prepare('INSERT INTO semester_registrations (student_id, semester_id, status, request_date, approved_by, approval_date, created_at) VALUES (:sid, :semid, "approved", NOW(), :admin, NOW(), NOW())');
+    $selectSR = $conn->prepare('SELECT id, status, year_of_study FROM semester_registrations WHERE student_id = :sid AND semester_id = :semid LIMIT 1');
+    $updateSR = $conn->prepare('UPDATE semester_registrations SET status = "approved", year_of_study = :yos, approved_by = :admin, approval_date = NOW(), updated_at = NOW() WHERE id = :id');
+    $insertSR = $conn->prepare('INSERT INTO semester_registrations (student_id, semester_id, year_of_study, status, request_date, approved_by, approval_date, created_at) VALUES (:sid, :semid, :yos, "approved", NOW(), :admin, NOW(), NOW())');
     $notifIns = $conn->prepare("INSERT INTO notifications (user_id, title, message, type, link, created_at) VALUES (:uid, :title, :msg, :type, :link, NOW())");
 
     $approvedCount = 0;
@@ -168,17 +168,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $semId = $r['semester_id'] ?? null;
             $stuId = $r['student_id'] ?? null;
             $uid = $r['user_id'] ?? null;
+            $requestYear = isset($r['year_of_study']) ? (int)$r['year_of_study'] : 0;
+
+            if ($requestYear <= 0 && !empty($r['reason']) && preg_match('/Year of study:\s*Year\s*(\d{1,2})/i', $r['reason'], $m)) {
+                $parsedYear = (int)$m[1];
+                if ($parsedYear >= 1 && $parsedYear <= 10) {
+                    $requestYear = $parsedYear;
+                }
+            }
 
             if ($semId && $stuId) {
                 // ensure semester_registrations exists; insert/update accordingly
                 $selectSR->execute(['sid' => $stuId, 'semid' => $semId]);
                 $sr = $selectSR->fetch(PDO::FETCH_ASSOC);
+                if ($requestYear <= 0) {
+                    $sdet = $conn->prepare('SELECT COALESCE(level_year, 1) FROM students WHERE id = :id LIMIT 1');
+                    $sdet->execute(['id' => $stuId]);
+                    $requestYear = max(1, (int)$sdet->fetchColumn());
+                }
                 if ($sr) {
-                    if ($sr['status'] !== 'approved') {
-                        $updateSR->execute(['admin' => $_SESSION['admin_id'] ?? 1, 'id' => $sr['id']]);
+                    if ($sr['status'] !== 'approved' || (int)($sr['year_of_study'] ?? 0) !== $requestYear) {
+                        $updateSR->execute([
+                            'yos' => $requestYear,
+                            'admin' => $_SESSION['admin_id'] ?? 1,
+                            'id' => $sr['id']
+                        ]);
                     }
                 } else {
-                    $insertSR->execute(['sid' => $stuId, 'semid' => $semId, 'admin' => $_SESSION['admin_id'] ?? 1]);
+                    $insertSR->execute([
+                        'sid' => $stuId,
+                        'semid' => $semId,
+                        'yos' => $requestYear,
+                        'admin' => $_SESSION['admin_id'] ?? 1
+                    ]);
                 }
                         // Auto-assign courses and mark student as reported when approved
                         try {
@@ -188,7 +210,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             $sdet->execute(['id' => $stuId]);
                             $sinfo = $sdet->fetch(PDO::FETCH_ASSOC);
                             $programId = $sinfo['program_id'] ?? null;
-                            $levelYear = $sinfo['level_year'] ?? null;
+                            $levelYear = $requestYear > 0 ? $requestYear : ($sinfo['level_year'] ?? null);
 
                             auto_assign_courses($conn, $stuId, $semId, $_SESSION['admin_id'] ?? null, $programId, $levelYear);
 
@@ -401,7 +423,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
             if ($semId && $stuId) {
                 if ($newStatus === 'approved') {
                     // check existing
-                    $sr = $conn->prepare('SELECT id, status FROM semester_registrations WHERE student_id = :sid AND semester_id = :semid LIMIT 1');
+                    $sr = $conn->prepare('SELECT id, status, year_of_study FROM semester_registrations WHERE student_id = :sid AND semester_id = :semid LIMIT 1');
                     $sr->execute(['sid' => $stuId, 'semid' => $semId]);
                     $existingSR = $sr->fetch();
 
@@ -412,7 +434,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
                     }
 
                     if ($existingSR) {
-                        if ($existingSR['status'] !== 'approved') {
+                        if ($existingSR['status'] !== 'approved' || (int)($existingSR['year_of_study'] ?? 0) !== (int)$yearFromReason) {
                             $u2 = $conn->prepare('UPDATE semester_registrations SET status = "approved", year_of_study = :yos, approved_by = :admin, approval_date = NOW(), updated_at = NOW() WHERE id = :id');
                             $u2->execute(['yos' => $yearFromReason, 'admin' => $adminId, 'id' => $existingSR['id']]);
                         }

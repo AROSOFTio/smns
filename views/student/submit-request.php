@@ -6,7 +6,7 @@ $auth = new Auth('student');
 
 // Must be logged in as student.
 if (!isset($_SESSION['student_logged_in']) || $_SESSION['student_logged_in'] !== true || ($_SESSION['student_role'] ?? '') !== 'student') {
-    header('Location: ' . BASE_URL . '/views/student/login.php?error=unauthorized');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=unauthorized&role=student');
     exit;
 }
 

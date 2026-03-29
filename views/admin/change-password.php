@@ -4,6 +4,34 @@
  */
 require_once '../../config.php';
 
+if (!function_exists('adminChangePasswordResolveReturnTo')) {
+    function adminChangePasswordResolveReturnTo($rawValue) {
+        $raw = trim((string)$rawValue);
+        if ($raw === '') {
+            return '';
+        }
+        $parsed = @parse_url($raw);
+        if ($parsed === false) {
+            return '';
+        }
+        if (!empty($parsed['scheme']) || !empty($parsed['host'])) {
+            return '';
+        }
+        $path = (string)($parsed['path'] ?? '');
+        if ($path === '' || strpos($path, '/views/admin/') !== 0) {
+            return '';
+        }
+        $normalized = $path;
+        if (!empty($parsed['query'])) {
+            $normalized .= '?' . $parsed['query'];
+        }
+        if (!empty($parsed['fragment'])) {
+            $normalized .= '#' . $parsed['fragment'];
+        }
+        return $normalized;
+    }
+}
+
 
 
 $session = new Session('admin');
@@ -11,12 +39,27 @@ $auth = new Auth('admin');
 
 // Ensure admin is logged in
 if (!$auth->isLoggedIn() || !$auth->hasRole('admin')) {
-    header('Location: login.php?error=unauthorized');
+    $redirectUrl = 'login.php?error=unauthorized';
+    if (!empty($_SERVER['REQUEST_URI'])) {
+        $requestPath = (string)parse_url((string)$_SERVER['REQUEST_URI'], PHP_URL_PATH);
+        $requestQuery = (string)parse_url((string)$_SERVER['REQUEST_URI'], PHP_URL_QUERY);
+        $relativePath = str_replace(BASE_URL, '', $requestPath);
+        if ($relativePath !== '' && strpos($relativePath, '/views/admin/') === 0) {
+            $returnTo = $relativePath;
+            if ($requestQuery !== '') {
+                $returnTo .= '?' . $requestQuery;
+            }
+            $redirectUrl .= '&return_to=' . urlencode($returnTo);
+        }
+    }
+    header('Location: ' . $redirectUrl);
     exit;
 }
 
 $currentUser = $auth->getCurrentUser();
 $userId = $currentUser['id'] ?? null;
+$returnTo = adminChangePasswordResolveReturnTo($_GET['return_to'] ?? $_POST['return_to'] ?? '');
+$postChangeTarget = $returnTo !== '' ? (BASE_URL . $returnTo) : 'dashboard.php';
 
 $error = '';
 $success = '';
@@ -59,6 +102,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $ph->execute(['user_id' => $userId, 'password_hash' => $hash]);
 
                 $success = 'Password changed successfully.';
+                header('Location: ' . $postChangeTarget);
+                exit;
             }
         } else {
             // keep validation error
@@ -89,6 +134,7 @@ include '../../includes/header.php';
         <div class="card"><div class="card-body">
             <form method="POST">
                 <?php echo csrfField(); ?>
+                <input type="hidden" name="return_to" value="<?php echo e($returnTo); ?>">
                 <div class="form-group"><label>Current Password</label><input type="password" name="current_password" class="form-control" required></div>
                 <div class="form-group"><label>New Password</label><input type="password" name="new_password" class="form-control" required></div>
                 <div class="form-group"><label>Confirm New Password</label><input type="password" name="confirm_password" class="form-control" required></div>

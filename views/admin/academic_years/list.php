@@ -9,7 +9,7 @@ require_once '../../../config.php';
 $session = new Session('admin');
 $auth = new Auth('admin');
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
-    header('Location: ' . BASE_URL . '/views/admin/login.php?error=unauthorized');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=unauthorized&role=admin');
     exit;
 }
 

@@ -64,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Reset Password - <?php echo e(APP_NAME); ?></title>
     <link rel="stylesheet" href="../../assets/css/login.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
 </head>
-<body style="background: url('../../assets/img/seminary.jpeg') no-repeat center center fixed; background-size: cover;">
+<body style="background: url('../../uploads/seminary.jpeg') no-repeat center center fixed; background-size: cover;">
 <div class="login-container">
     <div class="login-card <?php echo e($cardThemeClass); ?>">
         <div class="login-header">

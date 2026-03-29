@@ -8,7 +8,7 @@ $session = new Session('finance');
 $auth = new Auth('finance');
 
 if (!$auth->isLoggedIn() || $auth->getRole() !== 'finance') {
-    header('Location: ' . BASE_URL . '/views/finance/login.php?error=session_expired');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=session_expired&role=finance');
     exit;
 }
 

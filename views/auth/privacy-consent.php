@@ -4,6 +4,34 @@
  */
 require_once '../../config.php';
 
+if (!function_exists('sharedAuthResolveReturnTo')) {
+    function sharedAuthResolveReturnTo($module, $rawValue) {
+        $raw = trim((string)$rawValue);
+        if ($raw === '') {
+            return '';
+        }
+        $parsed = @parse_url($raw);
+        if ($parsed === false) {
+            return '';
+        }
+        if (!empty($parsed['scheme']) || !empty($parsed['host'])) {
+            return '';
+        }
+        $path = (string)($parsed['path'] ?? '');
+        if ($path === '' || strpos($path, '/views/' . $module . '/') !== 0) {
+            return '';
+        }
+        $normalized = $path;
+        if (!empty($parsed['query'])) {
+            $normalized .= '?' . $parsed['query'];
+        }
+        if (!empty($parsed['fragment'])) {
+            $normalized .= '#' . $parsed['fragment'];
+        }
+        return $normalized;
+    }
+}
+
 $allowedModules = ['admin', 'student', 'lecturer', 'finance'];
 $module = strtolower(trim((string)($_GET['module'] ?? $_POST['module'] ?? '')));
 if (!in_array($module, $allowedModules, true)) {
@@ -13,9 +41,11 @@ if (!in_array($module, $allowedModules, true)) {
 $session = new Session($module);
 $auth = new Auth($module);
 $error = '';
+$returnTo = sharedAuthResolveReturnTo($module, $_GET['return_to'] ?? $_POST['return_to'] ?? '');
+$postConsentTarget = $returnTo !== '' ? (BASE_URL . $returnTo) : (BASE_URL . '/views/' . $module . '/dashboard.php');
 
 if ($auth->isLoggedIn() && $auth->getRole() === $module) {
-    header('Location: ' . BASE_URL . '/views/' . $module . '/dashboard.php');
+    header('Location: ' . $postConsentTarget);
     exit;
 }
 
@@ -28,10 +58,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $result = $auth->acceptPendingPrivacyConsent();
         if (!empty($result['success']) && (($result['role'] ?? '') === $module)) {
             if (!empty($result['require_password_change'])) {
-                header('Location: ' . BASE_URL . '/views/' . $module . '/change-password.php');
+                $changePwdUrl = BASE_URL . '/views/' . $module . '/change-password.php';
+                if ($returnTo !== '') {
+                    $changePwdUrl .= '?return_to=' . urlencode($returnTo);
+                }
+                header('Location: ' . $changePwdUrl);
                 exit;
             }
-            header('Location: ' . BASE_URL . '/views/' . $module . '/dashboard.php');
+            header('Location: ' . $postConsentTarget);
             exit;
         }
         $error = $result['message'] ?? 'Unable to complete privacy consent.';
@@ -82,6 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <form method="post">
                         <?php echo csrfField(); ?>
                         <input type="hidden" name="module" value="<?php echo e($module); ?>">
+                        <input type="hidden" name="return_to" value="<?php echo e($returnTo); ?>">
                         <div class="form-check mb-3">
                             <input class="form-check-input" type="checkbox" value="1" id="consent_ack" name="consent_ack" required>
                             <label class="form-check-label" for="consent_ack">

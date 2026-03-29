@@ -17,7 +17,7 @@ $auth    = new Auth('admin');
 
 // Verify admin access
 if (!$auth->isLoggedIn() || $auth->getRole() !== 'admin') {
-    header('Location: ' . BASE_URL . '/views/admin/login.php?error=unauthorized');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=unauthorized&role=admin');
     exit;
 }
 

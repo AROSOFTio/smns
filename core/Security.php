@@ -261,15 +261,17 @@ class Security {
         $session = new Session($detectedRole);
         $auth = new Auth($detectedRole);
 
-        $loginTarget = $detectedRole
-            ? (BASE_URL . '/views/' . $detectedRole . '/login.php')
-            : (BASE_URL . '/views/auth/login.php');
+        $loginTarget = BASE_URL . '/views/auth/login.php';
         
         // Check if user is logged in
         if (!$auth->isLoggedIn()) {
             // Store the intended destination
             $_SESSION['intended_url'] = $_SERVER['REQUEST_URI'];
-            header('Location: ' . $loginTarget);
+            $redirectUrl = $loginTarget;
+            if ($detectedRole) {
+                $redirectUrl .= '?role=' . urlencode((string)$detectedRole);
+            }
+            header('Location: ' . $redirectUrl);
             exit;
         }
         
@@ -282,7 +284,11 @@ class Security {
         }
         if (!$hasToken) {
             $auth->logout();
-            header('Location: ' . $loginTarget . '?error=invalid_session');
+            $redirectUrl = $loginTarget . '?error=invalid_session';
+            if ($detectedRole) {
+                $redirectUrl .= '&role=' . urlencode((string)$detectedRole);
+            }
+            header('Location: ' . $redirectUrl);
             exit;
         }
         
@@ -294,7 +300,11 @@ class Security {
             // Role mismatch - possible session tampering
             error_log("Session role mismatch detected for user {$currentUser['username']}");
             $auth->logout();
-            header('Location: ' . $loginTarget . '?error=invalid_session');
+            $redirectUrl = $loginTarget . '?error=invalid_session';
+            if ($detectedRole) {
+                $redirectUrl .= '&role=' . urlencode((string)$detectedRole);
+            }
+            header('Location: ' . $redirectUrl);
             exit;
         }
         
@@ -338,14 +348,16 @@ class Security {
         $session = new Session($detectedRole);
         $auth = new Auth($detectedRole);
 
-        $loginTarget = $detectedRole
-            ? (BASE_URL . '/views/' . $detectedRole . '/login.php')
-            : (BASE_URL . '/views/auth/login.php');
+        $loginTarget = BASE_URL . '/views/auth/login.php';
         
         if (!$auth->isLoggedIn()) {
             // Store the intended destination
             $_SESSION['intended_url'] = $_SERVER['REQUEST_URI'];
-            header('Location: ' . $loginTarget);
+            $redirectUrl = $loginTarget;
+            if ($detectedRole) {
+                $redirectUrl .= '?role=' . urlencode((string)$detectedRole);
+            }
+            header('Location: ' . $redirectUrl);
             exit;
         }
         
@@ -353,7 +365,11 @@ class Security {
         $hasToken = $detectedRole ? $session->hasModule('session_token') : $session->has('session_token');
         if (!$hasToken) {
             $auth->logout();
-            header('Location: ' . $loginTarget . '?error=invalid_session');
+            $redirectUrl = $loginTarget . '?error=invalid_session';
+            if ($detectedRole) {
+                $redirectUrl .= '&role=' . urlencode((string)$detectedRole);
+            }
+            header('Location: ' . $redirectUrl);
             exit;
         }
         

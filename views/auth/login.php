@@ -251,7 +251,7 @@ if (!empty($loggedModules)) {
     <link rel="stylesheet" href="../../assets/css/login.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
     <style>
         body {
-            background: url('../../assets/img/seminary.jpeg') no-repeat center center fixed;
+            background: url('../../uploads/seminary.jpeg') no-repeat center center fixed;
             background-size: cover;
         }
         .login-container {
@@ -339,7 +339,7 @@ if (!empty($loggedModules)) {
         }
     </style>
 </head>
-<body style="background: url('../../assets/img/seminary.jpeg') no-repeat center center fixed; background-size: cover;">
+<body style="background: url('../../uploads/seminary.jpeg') no-repeat center center fixed; background-size: cover;">
 <div class="login-container">
     <div class="login-card unified-theme">
         <div class="login-header">

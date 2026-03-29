@@ -12,7 +12,7 @@ $auth = new Auth('admin');
 
 // Verify admin access
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true || $_SESSION['admin_role'] !== 'admin') {
-    header('Location: ' . BASE_URL . '/views/admin/login.php?error=unauthorized');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=unauthorized&role=admin');
     exit;
 $db = new Database();
 $conn = $db->getConnection();

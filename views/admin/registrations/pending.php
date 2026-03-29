@@ -81,19 +81,21 @@ function adminGetOutstandingRetakeCount(PDO $conn, int $studentId): int
             SELECT COUNT(*)
             FROM results r
             INNER JOIN semesters s ON s.id = r.semester_id
+            INNER JOIN academic_years ay ON ay.id = s.academic_year_id
             WHERE r.student_id = :student_id
               AND r.status = 'published'
               AND NOT EXISTS (
                     SELECT 1
                     FROM results r2
                     INNER JOIN semesters s2 ON s2.id = r2.semester_id
+                    INNER JOIN academic_years ay2 ON ay2.id = s2.academic_year_id
                     WHERE r2.student_id = r.student_id
                       AND r2.course_id = r.course_id
-                      AND r2.status = 'published'
+                      AND r2.status IN ('submitted', 'approved', 'published')
                       AND (
-                            s2.end_date > s.end_date
-                            OR (s2.end_date = s.end_date AND s2.start_date > s.start_date)
-                            OR (s2.end_date = s.end_date AND s2.start_date = s.start_date AND r2.id > r.id)
+                            ay2.start_date > ay.start_date
+                            OR (ay2.start_date = ay.start_date AND s2.semester_number > s.semester_number)
+                            OR (ay2.start_date = ay.start_date AND s2.semester_number = s.semester_number AND r2.id > r.id)
                       )
               )
               AND (

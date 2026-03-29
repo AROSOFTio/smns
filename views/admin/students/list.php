@@ -13,17 +13,21 @@ $auth = new Auth('admin');
 
 // Verify admin access
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true || $_SESSION['admin_role'] !== 'admin') {
-    header('Location: ' . BASE_URL . '/views/admin/login.php?error=unauthorized');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=unauthorized&role=admin');
     exit;
 }
 
 $currentUser = $auth->getCurrentUser();
 
 // Get filter parameters
-$search = $_GET['search'] ?? '';
-$program = $_GET['program'] ?? '';
-$status = $_GET['status'] ?? '';
-$level = $_GET['level'] ?? '';
+$normalizeFilterValue = static function ($value): string {
+    $value = trim((string)$value);
+    return preg_replace('/\s+/', ' ', $value) ?? '';
+};
+$search = $normalizeFilterValue($_GET['search'] ?? '');
+$program = $normalizeFilterValue($_GET['program'] ?? '');
+$status = $normalizeFilterValue($_GET['status'] ?? '');
+$level = $normalizeFilterValue($_GET['level'] ?? '');
 $allowedPageSizes = [25, 50, 100];
 $rowsPerPage = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 25;
 if (!in_array($rowsPerPage, $allowedPageSizes, true)) {
@@ -46,9 +50,36 @@ $fromWhereSql = " FROM students s
 $params = [];
 
 if ($search) {
-    $fromWhereSql .= " AND (s.student_id LIKE :search OR s.first_name LIKE :search 
-              OR s.last_name LIKE :search OR s.email LIKE :search)";
-    $params['search'] = "%$search%";
+    $searchTokens = preg_split('/\s+/', $search) ?: [];
+    $tokenIndex = 0;
+    foreach ($searchTokens as $token) {
+        $token = trim((string)$token);
+        if ($token === '') {
+            continue;
+        }
+        $studentIdKey = 'search_student_id_' . $tokenIndex;
+        $firstNameKey = 'search_first_name_' . $tokenIndex;
+        $lastNameKey = 'search_last_name_' . $tokenIndex;
+        $emailKey = 'search_email_' . $tokenIndex;
+        $fullNameKey = 'search_full_name_' . $tokenIndex;
+        $reverseNameKey = 'search_reverse_name_' . $tokenIndex;
+        $fromWhereSql .= " AND (
+            s.student_id LIKE :{$studentIdKey}
+            OR s.first_name LIKE :{$firstNameKey}
+            OR s.last_name LIKE :{$lastNameKey}
+            OR s.email LIKE :{$emailKey}
+            OR CONCAT_WS(' ', s.first_name, s.last_name) LIKE :{$fullNameKey}
+            OR CONCAT_WS(' ', s.last_name, s.first_name) LIKE :{$reverseNameKey}
+        )";
+        $tokenLike = '%' . $token . '%';
+        $params[$studentIdKey] = $tokenLike;
+        $params[$firstNameKey] = $tokenLike;
+        $params[$lastNameKey] = $tokenLike;
+        $params[$emailKey] = $tokenLike;
+        $params[$fullNameKey] = $tokenLike;
+        $params[$reverseNameKey] = $tokenLike;
+        $tokenIndex++;
+    }
 }
 
 if ($program) {
@@ -155,8 +186,33 @@ body { overflow-x: hidden; }
 .students-table .col-status { width: 96px; }
 .students-table .col-actions { width: 220px; }
 .students-name-wrap, .students-program-wrap { overflow: hidden; text-overflow: ellipsis; }
+.form-control-sm,
+select.form-control-sm {
+    min-height: 38px;
+    height: 38px;
+    line-height: 1.35;
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+    color: #1f2937;
+    background-color: #fff;
+}
+select.form-control-sm {
+    padding-right: 2rem;
+}
+select.form-control-sm option {
+    color: #1f2937;
+    background: #fff;
+}
 .btn-group .btn { padding: 0.25rem 0.5rem; font-size: 0.82rem; }
 .dropdown-menu { min-width: 180px; z-index: 9999; box-shadow: 0 4px 8px rgba(0,0,0,0.1); border: 1px solid #dee2e6; }
+.student-action-group { position: relative; }
+.student-action-menu {
+    display: none;
+    min-width: 190px;
+}
+.student-action-menu.show {
+    display: block;
+}
 .students-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .students-pagination .pagination { margin-bottom: 0; }
 @media (max-width: 1200px) {
@@ -343,11 +399,11 @@ body { overflow-x: hidden; }
                                                 <a href="audit.php?id=<?php echo $student['id']; ?>" class="btn btn-dark" title="Profile Audit">
                                                     <i class="fas fa-history"></i>
                                                 </a>
-                                                <div class="btn-group btn-group-sm" role="group">
-                                                    <button type="button" class="btn btn-secondary dropdown-toggle" data-toggle="dropdown" title="More Actions" data-boundary="viewport">
+                                                <div class="btn-group btn-group-sm student-action-group" role="group">
+                                                    <button type="button" class="btn btn-secondary dropdown-toggle student-action-toggle" title="More Actions" aria-expanded="false">
                                                         <i class="fas fa-ellipsis-v"></i>
                                                     </button>
-                                                    <div class="dropdown-menu dropdown-menu-right" style="position: fixed !important; z-index: 9999 !important;">
+                                                    <div class="dropdown-menu dropdown-menu-right student-action-menu">
                                                         <a class="dropdown-item" href="reset_password.php?id=<?php echo $student['id']; ?>">
                                                             <i class="fas fa-key"></i> Reset Password
                                                         </a>
@@ -404,38 +460,40 @@ body { overflow-x: hidden; }
 </div>
 
 <script>
-// Fix dropdown positioning in table
+// Student actions dropdowns
 $(document).ready(function() {
-    $('.dropdown-toggle').on('click', function(e) {
+    $('.student-action-toggle').on('click', function(e) {
+        e.preventDefault();
         e.stopPropagation();
-        
-        // Close other dropdowns
-        $('.dropdown-menu').not($(this).siblings('.dropdown-menu')).removeClass('show');
-        
-        // Toggle current dropdown
-        var dropdown = $(this).siblings('.dropdown-menu');
+
+        var button = $(this);
+        var dropdown = button.siblings('.student-action-menu');
+
+        $('.student-action-menu').not(dropdown).removeClass('show');
+        $('.student-action-toggle').not(button).attr('aria-expanded', 'false');
         dropdown.toggleClass('show');
-        
-        // Position the dropdown
+
         if (dropdown.hasClass('show')) {
-            var button = $(this);
             var buttonOffset = button.offset();
             var buttonHeight = button.outerHeight();
             var buttonWidth = button.outerWidth();
-            
+
             dropdown.css({
                 'position': 'fixed',
                 'top': (buttonOffset.top + buttonHeight) + 'px',
                 'left': (buttonOffset.left + buttonWidth - dropdown.outerWidth()) + 'px',
                 'z-index': '9999'
             });
+            button.attr('aria-expanded', 'true');
+        } else {
+            button.attr('aria-expanded', 'false');
         }
     });
-    
-    // Close dropdown when clicking outside
+
     $(document).on('click', function(e) {
-        if (!$(e.target).closest('.btn-group').length) {
-            $('.dropdown-menu').removeClass('show');
+        if (!$(e.target).closest('.student-action-group').length) {
+            $('.student-action-menu').removeClass('show');
+            $('.student-action-toggle').attr('aria-expanded', 'false');
         }
     });
 });

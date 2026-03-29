@@ -58,7 +58,7 @@ if (empty($availableModules)) {
         body {
             min-height: 100vh;
             margin: 0;
-            background: url('../../assets/img/seminary.jpeg') no-repeat center center fixed;
+            background: url('../../uploads/seminary.jpeg') no-repeat center center fixed;
             background-size: cover;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }

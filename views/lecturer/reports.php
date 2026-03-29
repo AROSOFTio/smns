@@ -8,14 +8,14 @@ $session = new Session('lecturer');
 $auth = new Auth('lecturer');
 
 if (!$auth->isLoggedIn() || $auth->getRole() !== 'lecturer') {
-    header('Location: ' . BASE_URL . '/views/lecturer/login.php?error=unauthorized');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=unauthorized&role=lecturer');
     exit;
 }
 
 $currentUser = $auth->getCurrentUser();
 $lecturerProfile = $currentUser['profile'] ?? [];
 if (empty($lecturerProfile['id'])) {
-    header('Location: ' . BASE_URL . '/views/lecturer/login.php?error=unauthorized');
+    header('Location: ' . BASE_URL . '/views/auth/login.php?error=unauthorized&role=lecturer');
     exit;
 }
 
