@@ -1,0 +1,274 @@
+
+<style>
+.wrap{padding:16px;font-family:'DM Sans',sans-serif}
+.erd-title{font-size:16px;font-weight:600;color:var(--color-text-primary);margin-bottom:2px}
+.erd-sub{font-size:11px;color:var(--color-text-tertiary);margin-bottom:14px}
+#erd-container svg{width:100%!important;height:auto!important}
+</style>
+<div class="wrap">
+  <div class="erd-title">SMNS — Full Entity Relationship Diagram</div>
+  <div class="erd-sub">All tables with crow-foot relationship arrows</div>
+  <div id="erd-container"></div>
+</div>
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+await document.fonts.ready;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  fontFamily: '"DM Mono", monospace',
+  themeVariables: {
+    darkMode: dark,
+    fontSize: '12px',
+    fontFamily: '"DM Mono", monospace',
+    lineColor: dark ? '#9c9a92' : '#534AB7',
+    textColor: dark ? '#c2c0b6' : '#3d3d3a',
+    primaryColor: dark ? '#2a2860' : '#EEEDFE',
+    primaryBorderColor: dark ? '#AFA9EC' : '#534AB7',
+    primaryTextColor: dark ? '#c2c0b6' : '#26215C',
+    secondaryColor: dark ? '#083528' : '#E1F5EE',
+    secondaryBorderColor: dark ? '#5DCAA5' : '#1D9E75',
+    secondaryTextColor: dark ? '#9FE1CB' : '#085041',
+    tertiaryColor: dark ? '#062840' : '#E6F1FB',
+    tertiaryBorderColor: dark ? '#85B7EB' : '#185FA5',
+    tertiaryTextColor: dark ? '#B5D4F4' : '#042C53',
+  },
+});
+
+const diagram = `erDiagram
+  USERS {
+    uuid id PK
+    string username
+    string email
+    enum role
+    enum status
+  }
+  STUDENTS {
+    uuid id PK
+    uuid user_id FK
+    uuid program_id FK
+    string student_id
+    string admission_number
+    enum academic_status
+    int entry_year
+  }
+  ADMINS {
+    uuid id PK
+    uuid user_id FK
+    string first_name
+    string email
+  }
+  LECTURERS {
+    uuid id PK
+    uuid user_id FK
+    string department
+    enum status
+  }
+  FINANCE_STAFF {
+    uuid id PK
+    uuid user_id FK
+    string first_name
+    enum status
+  }
+  PROGRAMS {
+    uuid id PK
+    string program_code
+    string program_name
+    int duration_years
+    int total_credits_required
+  }
+  ACADEMIC_YEARS {
+    uuid id PK
+    string year_name
+    date start_date
+    enum status
+  }
+  SEMESTERS {
+    uuid id PK
+    uuid academic_year_id FK
+    string semester_name
+    date start_date
+    date end_date
+    enum status
+  }
+  COURSES {
+    uuid id PK
+    uuid program_id FK
+    string course_code
+    string course_name
+    int credit_hours
+    enum status
+  }
+  COURSE_ASSIGNMENTS {
+    uuid id PK
+    uuid lecturer_id FK
+    uuid course_id FK
+    uuid semester_id FK
+    enum status
+  }
+  SEMESTER_REGISTRATIONS {
+    uuid id PK
+    uuid student_id FK
+    uuid semester_id FK
+    enum status
+  }
+  COURSE_REGISTRATIONS {
+    uuid id PK
+    uuid student_id FK
+    uuid course_id FK
+    uuid semester_id FK
+    enum status
+    uuid approved_by FK
+  }
+  RESULTS {
+    uuid id PK
+    uuid student_id FK
+    uuid course_id FK
+    uuid semester_id FK
+    decimal total_marks
+    string grade
+    uuid entered_by FK
+    uuid approved_by FK
+    enum status
+  }
+  STUDENT_GPAS {
+    uuid id PK
+    uuid student_id FK
+    uuid semester_id FK
+    decimal semester_gpa
+    decimal cumulative_gpa
+  }
+  TRANSCRIPT_RIGHTS {
+    uuid id PK
+    uuid student_id FK
+    enum status
+    uuid verified_by_user_id FK
+  }
+  TRANSCRIPT_ISSUANCES {
+    uuid id PK
+    uuid student_id FK
+    string transcript_hash
+    string verification_code
+    string verification_token
+    enum status
+  }
+  FEES_STRUCTURE {
+    uuid id PK
+    uuid program_id FK
+    enum fee_type
+    decimal amount
+    enum status
+  }
+  INVOICES {
+    uuid id PK
+    uuid student_id FK
+    uuid semester_id FK
+    decimal total_amount
+    enum status
+  }
+  PAYMENTS {
+    uuid id PK
+    uuid student_id FK
+    uuid invoice_id FK
+    decimal amount_paid
+    enum payment_status
+  }
+  STUDENT_BALANCES {
+    uuid id PK
+    uuid student_id FK
+    uuid semester_id FK
+    decimal total_fees
+    decimal balance
+  }
+  STUDENT_REQUESTS {
+    uuid id PK
+    uuid student_id FK
+    enum request_type
+    enum status
+  }
+  NOTIFICATIONS {
+    uuid id PK
+    uuid student_id FK
+    uuid user_id FK
+    string title
+    enum type
+    timestamp created_at
+  }
+  ACTIVITY_LOGS {
+    uuid id PK
+    uuid user_id FK
+    string action
+    string module
+    timestamp created_at
+  }
+
+  USERS ||--o{ STUDENTS : "is"
+  USERS ||--o{ ADMINS : "is"
+  USERS ||--o{ LECTURERS : "is"
+  USERS ||--o{ FINANCE_STAFF : "is"
+  USERS ||--o{ NOTIFICATIONS : "receives"
+  USERS ||--o{ ACTIVITY_LOGS : "generates"
+
+  PROGRAMS ||--o{ STUDENTS : "enrolls"
+  PROGRAMS ||--o{ COURSES : "contains"
+  PROGRAMS ||--o{ FEES_STRUCTURE : "has"
+
+  ACADEMIC_YEARS ||--o{ SEMESTERS : "has"
+
+  SEMESTERS ||--o{ SEMESTER_REGISTRATIONS : "has"
+  SEMESTERS ||--o{ COURSE_REGISTRATIONS : "has"
+  SEMESTERS ||--o{ COURSE_ASSIGNMENTS : "has"
+  SEMESTERS ||--o{ RESULTS : "has"
+  SEMESTERS ||--o{ INVOICES : "generates"
+  SEMESTERS ||--o{ STUDENT_BALANCES : "tracks"
+  SEMESTERS ||--o{ STUDENT_GPAS : "records"
+
+  STUDENTS ||--o{ SEMESTER_REGISTRATIONS : "registers"
+  STUDENTS ||--o{ COURSE_REGISTRATIONS : "registers"
+  STUDENTS ||--o{ RESULTS : "has"
+  STUDENTS ||--o{ STUDENT_GPAS : "has"
+  STUDENTS ||--o{ TRANSCRIPT_RIGHTS : "has"
+  STUDENTS ||--o{ TRANSCRIPT_ISSUANCES : "receives"
+  STUDENTS ||--o{ INVOICES : "billed"
+  STUDENTS ||--o{ PAYMENTS : "pays"
+  STUDENTS ||--o{ STUDENT_BALANCES : "has"
+  STUDENTS ||--o{ STUDENT_REQUESTS : "submits"
+  STUDENTS ||--o{ NOTIFICATIONS : "notified"
+
+  COURSES ||--o{ COURSE_REGISTRATIONS : "taken via"
+  COURSES ||--o{ COURSE_ASSIGNMENTS : "assigned via"
+  COURSES ||--o{ RESULTS : "graded in"
+
+  LECTURERS ||--o{ COURSE_ASSIGNMENTS : "assigned"
+
+  INVOICES ||--o{ PAYMENTS : "paid via"
+`;
+
+const { svg } = await mermaid.render('erd-main', diagram);
+document.getElementById('erd-container').innerHTML = svg;
+
+document.querySelectorAll('#erd-container svg .node').forEach(node => {
+  const firstPath = node.querySelector('path[d]');
+  if (!firstPath) return;
+  const d = firstPath.getAttribute('d');
+  const nums = d.match(/-?[\d.]+/g)?.map(Number);
+  if (!nums || nums.length < 8) return;
+  const xs = [nums[0],nums[2],nums[4],nums[6]];
+  const ys = [nums[1],nums[3],nums[5],nums[7]];
+  const x = Math.min(...xs), y = Math.min(...ys);
+  const w = Math.max(...xs)-x, h = Math.max(...ys)-y;
+  const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+  rect.setAttribute('x',x); rect.setAttribute('y',y);
+  rect.setAttribute('width',w); rect.setAttribute('height',h);
+  rect.setAttribute('rx','8');
+  for(const a of ['fill','stroke','stroke-width','class','style']){
+    if(firstPath.hasAttribute(a)) rect.setAttribute(a,firstPath.getAttribute(a));
+  }
+  firstPath.replaceWith(rect);
+});
+
+document.querySelectorAll('#erd-container svg .row-rect-odd path, #erd-container svg .row-rect-even path').forEach(p=>{
+  p.setAttribute('stroke','none');
+});
+</script>

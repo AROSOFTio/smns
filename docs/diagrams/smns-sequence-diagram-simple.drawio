@@ -1,0 +1,148 @@
+<mxfile host="65bd71144e">
+  <diagram id="smns-sequence-diagram-simple" name="SMNS Simple Sequence Diagram">
+    <mxGraphModel dx="1800" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="student_head" value="Student" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ecfdf5;strokeColor=#22c55e;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="120" y="90" width="180" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="admin_head" value="Admin" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fef2f2;strokeColor=#ef4444;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="520" y="90" width="180" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="smns_head" value="SMNS" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="920" y="90" width="180" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="db_head" value="Database" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdf2f8;strokeColor=#ec4899;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="90" width="180" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="l1" style="shape=line;strokeColor=#94a3b8;strokeWidth=2;direction=south;" vertex="1" parent="1">
+          <mxGeometry x="210" y="140" width="10" height="920" as="geometry"/>
+        </mxCell>
+        <mxCell id="l2" style="shape=line;strokeColor=#94a3b8;strokeWidth=2;direction=south;" vertex="1" parent="1">
+          <mxGeometry x="610" y="140" width="10" height="920" as="geometry"/>
+        </mxCell>
+        <mxCell id="l3" style="shape=line;strokeColor=#94a3b8;strokeWidth=2;direction=south;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="140" width="10" height="920" as="geometry"/>
+        </mxCell>
+        <mxCell id="l4" style="shape=line;strokeColor=#94a3b8;strokeWidth=2;direction=south;" vertex="1" parent="1">
+          <mxGeometry x="1410" y="140" width="10" height="920" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="altbox" value="Alt: eligible and released flow" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffbea;strokeColor=#d4d4d8;align=left;spacingLeft=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="70" y="220" width="1540" height="720" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="m1" value="Request transcript" style="edgeLabel;html=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="0.5" y="-1" relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="student_head" target="smns_head" style="endArrow=block;html=1;rounded=0;exitX=0.5;exitY=1;entryX=0.5;entryY=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="210" y="300"/>
+              <mxPoint x="1010" y="300"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="m2" value="Check results, balance, and status" style="edgeLabel;html=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="0.5" y="-1" relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="smns_head" target="db_head" style="endArrow=block;html=1;rounded=0;exitX=0.5;exitY=1;entryX=0.5;entryY=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1010" y="400"/>
+              <mxPoint x="1410" y="400"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="m3" value="Return eligibility data" style="edgeLabel;html=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="0.5" y="-1" relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="db_head" target="smns_head" style="endArrow=block;html=1;rounded=0;dashed=1;exitX=0.5;exitY=1;entryX=0.5;entryY=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1410" y="500"/>
+              <mxPoint x="1010" y="500"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="m4" value="Grant transcript rights" style="edgeLabel;html=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="0.5" y="-1" relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="admin_head" target="smns_head" style="endArrow=block;html=1;rounded=0;exitX=0.5;exitY=1;entryX=0.5;entryY=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="610" y="600"/>
+              <mxPoint x="1010" y="600"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="m5" value="Save transcript release" style="edgeLabel;html=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="0.5" y="-1" relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="smns_head" target="db_head" style="endArrow=block;html=1;rounded=0;exitX=0.5;exitY=1;entryX=0.5;entryY=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1010" y="680"/>
+              <mxPoint x="1410" y="680"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="m6" value="Open transcript" style="edgeLabel;html=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="0.5" y="-1" relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="student_head" target="smns_head" style="endArrow=block;html=1;rounded=0;exitX=0.5;exitY=1;entryX=0.5;entryY=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="210" y="760"/>
+              <mxPoint x="1010" y="760"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="m7" value="Read transcript data" style="edgeLabel;html=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="0.5" y="-1" relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="smns_head" target="db_head" style="endArrow=block;html=1;rounded=0;exitX=0.5;exitY=1;entryX=0.5;entryY=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1010" y="840"/>
+              <mxPoint x="1410" y="840"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="m8" value="Return transcript details" style="edgeLabel;html=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="0.5" y="-1" relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="db_head" target="smns_head" style="endArrow=block;html=1;rounded=0;dashed=1;exitX=0.5;exitY=1;entryX=0.5;entryY=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1410" y="920"/>
+              <mxPoint x="1010" y="920"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="m9" value="Show transcript with verification" style="edgeLabel;html=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="0.5" y="-1" relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="smns_head" target="student_head" style="endArrow=block;html=1;rounded=0;exitX=0.5;exitY=1;entryX=0.5;entryY=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1010" y="1000"/>
+              <mxPoint x="210" y="1000"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

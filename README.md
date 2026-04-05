@@ -106,6 +106,11 @@ smns/
 
 Stakeholder overview:
 - See [docs/Stakeholder-System-Overview.md](/r:/xxxamp/htdocs/smns/docs/Stakeholder-System-Overview.md) for a presentation-ready summary of modules, lifecycle flow, and transcript release/verification.
+- See [docs/System-Concept-Diagram.md](/r:/xxxamp/htdocs/smns/docs/System-Concept-Diagram.md) for a high-level concept diagram of the system.
+- See [docs/DFD-Levels.md](/r:/xxxamp/htdocs/smns/docs/DFD-Levels.md) for the proper Level 0, Level 1, and Level 2 DFD breakdown.
+- See [docs/System-Diagrams.md](/r:/xxxamp/htdocs/smns/docs/System-Diagrams.md) for the DFD, ERD, and flowchart of the current system.
+- See [docs/System-Diagrams-Simple.md](/r:/xxxamp/htdocs/smns/docs/System-Diagrams-Simple.md) for simplified report-ready versions and [docs/diagrams/README.md](/r:/xxxamp/htdocs/smns/docs/diagrams/README.md) for editable draw.io files.
+- See [docs/UML-System-Design.md](/r:/xxxamp/htdocs/smns/docs/UML-System-Design.md) for use case, class, and sequence diagrams of the system.
 
 ### For Administrators
 - Manage students, lecturers, and staff

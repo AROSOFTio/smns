@@ -103,10 +103,10 @@ function smnsResolveProfileName($module, array $user, $fallback = '') {
         return $fallbackName;
     }
     $tableMap = [
-        'admin' => ['table' => 'admins', 'id_col' => 'user_id'],
-        'student' => ['table' => 'students', 'id_col' => 'user_id'],
-        'lecturer' => ['table' => 'lecturers', 'id_col' => 'user_id'],
-        'finance' => ['table' => 'finance_staff', 'id_col' => 'user_id']
+        'admin' => ['table' => 'admins', 'id_col' => 'user_id', 'select' => 'first_name, last_name'],
+        'student' => ['table' => 'students', 'id_col' => 'user_id', 'select' => 'first_name, last_name'],
+        'lecturer' => ['table' => 'lecturers', 'id_col' => 'user_id', 'select' => 'first_name, last_name'],
+        'finance' => ['table' => 'finance_staff', 'id_col' => 'user_id', 'select' => 'first_name, last_name, fullname, name']
     ];
     $cfg = $tableMap[$module] ?? null;
     if (!$cfg) {
@@ -116,7 +116,7 @@ function smnsResolveProfileName($module, array $user, $fallback = '') {
         $db = new Database();
         $conn = $db->getConnection();
         $stmt = $conn->prepare("
-            SELECT first_name, last_name, fullname, name
+            SELECT {$cfg['select']}
             FROM {$cfg['table']}
             WHERE {$cfg['id_col']} = :user_id
             LIMIT 1

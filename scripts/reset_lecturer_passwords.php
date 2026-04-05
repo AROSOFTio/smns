@@ -12,11 +12,19 @@ $conn = $db->getConnection();
 
 echo "Database connected.\n";
 
-$password = 'password@2026';
+$password = 'Password@2026';
 $hash = password_hash($password, PASSWORD_DEFAULT);
 echo "Hash generated: $hash\n";
 
-$stmt = $conn->prepare("UPDATE users SET password_hash = ?, failed_login_attempts = 0, account_locked_until = NULL, status = 'active' WHERE role = 'lecturer'");
+$stmt = $conn->prepare("
+    UPDATE users
+    SET password_hash = ?,
+        failed_login_attempts = 0,
+        account_locked_until = NULL,
+        status = 'active',
+        require_password_change = 0
+    WHERE role = 'lecturer'
+");
 echo "Statement prepared.\n";
 $stmt->execute([$hash]);
 echo "Statement executed.\n";

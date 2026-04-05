@@ -286,12 +286,6 @@ $highestCompletedStudyYear = 0;
 foreach ($terms as $term) {
     $highestCompletedStudyYear = max($highestCompletedStudyYear, (int)($term['year_of_study'] ?? 0));
 }
-$highestCompletedStudyYear = max(
-    $highestCompletedStudyYear,
-    (int)($student['level_year'] ?? 0),
-    (int)($student['study_year'] ?? 0),
-    (int)($student['year_of_study'] ?? 0)
-);
 $completedFullProgram = !empty($transcriptEligibility['completed_studies']);
 if ($programDurationYears > 0) {
     $completedFullProgram = $completedFullProgram && $highestCompletedStudyYear >= $programDurationYears;
@@ -1991,7 +1985,7 @@ html[data-theme='dark'] .services-submenu {
                     </div>
                 </div>
 
-                <?php if ($transcriptDownloadRightsGranted && !empty($currentIssuedTranscript)): ?>
+                <?php if ($transcriptViewGranted && !empty($transcriptEligibility['completed_full_program']) && !empty($currentIssuedTranscript)): ?>
                     <div class="verification-panel">
                         <div class="verification-qr-wrap">
                             <div id="transcriptQrCode" class="verification-qr" data-qr-url="<?php echo e((string)($currentIssuedTranscript['verification_url'] ?? '')); ?>"></div>

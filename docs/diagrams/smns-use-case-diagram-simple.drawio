@@ -1,0 +1,87 @@
+<mxfile host="65bd71144e">
+    <diagram id="smns-use-case-diagram-simple" name="SMNS Simple Use Case">
+        <mxGraphModel dx="2142" dy="1094" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="boundary" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;SMNS System&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#94a3b8;fillColor=none;align=left;spacingLeft=12;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="350" y="70" width="570" height="980" as="geometry"/>
+                </mxCell>
+                <mxCell id="student" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;Student&lt;/font&gt;" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="85" width="80" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="lecturer" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;Lecturer&lt;/font&gt;" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="410" width="80" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="admin" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;Admin&lt;/font&gt;" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="700" width="80" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="finance" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;Finance&lt;/font&gt;" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" parent="1" vertex="1">
+                    <mxGeometry x="1070" y="410" width="80" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_login" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;Login&lt;/font&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="120" width="180" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_register" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;Register Courses&lt;/font&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" parent="1" vertex="1">
+                    <mxGeometry x="510" y="300" width="220" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_results" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;View or Manage Results&lt;/font&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="460" width="260" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_payments" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;Manage Payments&lt;/font&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="770" width="220" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_transcript" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;View or Release Transcript&lt;/font&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" parent="1" vertex="1">
+                    <mxGeometry x="450" y="610" width="320" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_reports" value="&lt;font style=&quot;font-size: 18px;&quot;&gt;Generate Reports&lt;/font&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" parent="1" vertex="1">
+                    <mxGeometry x="510" y="930" width="220" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="e1" style="endArrow=none;html=1;rounded=0;" parent="1" source="student" target="uc_login" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e2" style="endArrow=none;html=1;rounded=0;" parent="1" source="student" target="uc_register" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e3" style="endArrow=none;html=1;rounded=0;" parent="1" source="student" target="uc_results" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e4" style="endArrow=none;html=1;rounded=0;" parent="1" source="student" target="uc_transcript" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e5" style="endArrow=none;html=1;rounded=0;" parent="1" source="lecturer" target="uc_login" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e6" style="endArrow=none;html=1;rounded=0;" parent="1" target="uc_results" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="130" y="460" as="sourcePoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e7" style="endArrow=none;html=1;rounded=0;" parent="1" source="admin" target="uc_login" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e8" style="endArrow=none;html=1;rounded=0;" parent="1" source="admin" target="uc_register" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e9" style="endArrow=none;html=1;rounded=0;" parent="1" source="admin" target="uc_results" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e10" style="endArrow=none;html=1;rounded=0;" parent="1" source="admin" target="uc_transcript" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e11" style="endArrow=none;html=1;rounded=0;" parent="1" source="admin" target="uc_reports" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e12" style="endArrow=none;html=1;rounded=0;" parent="1" source="finance" target="uc_login" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e13" style="endArrow=none;html=1;rounded=0;" parent="1" source="finance" target="uc_payments" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e14" style="endArrow=none;html=1;rounded=0;" parent="1" source="finance" target="uc_reports" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
