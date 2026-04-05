@@ -3,6 +3,7 @@
  * Student Transcript (standard format with SGPA/CGPA)
  */
 require_once '../../config.php';
+require_once BASE_PATH . '/core/SimplePdfDocument.php';
 
 $session = new Session('student');
 $auth = new Auth('student');
@@ -91,16 +92,17 @@ try {
     $transcriptDownloadUsedFormat = '';
 }
 $transcriptEligibility = getStudentTranscriptEligibility($conn, $studentId);
-$transcriptViewGranted = $transcriptDownloadRightsGranted
-    && (($transcriptEligibility['eligible'] ?? false) === true);
-$transcriptDownloadAvailable = $transcriptViewGranted && !$transcriptDownloadAlreadyUsed;
+$transcriptViewGranted = false;
+$transcriptDownloadAvailable = false;
+$transcriptPdfAvailable = false;
 
 // Student + program profile.
 $studentStmt = $conn->prepare("
     SELECT
         s.*,
         p.program_code,
-        p.program_name
+        p.program_name,
+        p.duration_years
     FROM students s
     LEFT JOIN programs p ON p.id = s.program_id
     WHERE s.id = :student_id
@@ -108,6 +110,16 @@ $studentStmt = $conn->prepare("
 ");
 $studentStmt->execute(['student_id' => $studentId]);
 $student = $studentStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+if (!empty($student)) {
+    $effectiveProgram = getStudentEffectiveProgram($conn, $studentId, [
+        'program_id' => (int)($student['program_id'] ?? 0),
+        'program_code' => (string)($student['program_code'] ?? ''),
+        'program_name' => (string)($student['program_name'] ?? ''),
+    ]);
+    $student['program_id'] = (int)($effectiveProgram['program_id'] ?? ($student['program_id'] ?? 0));
+    $student['program_code'] = (string)($effectiveProgram['program_code'] ?? ($student['program_code'] ?? ''));
+    $student['program_name'] = (string)($effectiveProgram['program_name'] ?? ($student['program_name'] ?? ''));
+}
 
 // Pull all registrations with best-available result rows.
 $transcriptStmt = $conn->prepare("
@@ -269,6 +281,32 @@ foreach ($terms as $term) {
     $totalCreditsEarned += (float)($term['earned_credits'] ?? 0);
 }
 
+$programDurationYears = max(0, (int)($student['duration_years'] ?? 0));
+$highestCompletedStudyYear = 0;
+foreach ($terms as $term) {
+    $highestCompletedStudyYear = max($highestCompletedStudyYear, (int)($term['year_of_study'] ?? 0));
+}
+$highestCompletedStudyYear = max(
+    $highestCompletedStudyYear,
+    (int)($student['level_year'] ?? 0),
+    (int)($student['study_year'] ?? 0),
+    (int)($student['year_of_study'] ?? 0)
+);
+$completedFullProgram = !empty($transcriptEligibility['completed_studies']);
+if ($programDurationYears > 0) {
+    $completedFullProgram = $completedFullProgram && $highestCompletedStudyYear >= $programDurationYears;
+}
+$transcriptEligibility['completed_full_program'] = $completedFullProgram;
+if (!$completedFullProgram) {
+    $transcriptEligibility['eligible'] = false;
+    $requiredYearsLabel = $programDurationYears > 0 ? (string)$programDurationYears : 'required';
+    $transcriptEligibility['blocking_reasons'][] = 'Student has not completed the full programme duration (' . $requiredYearsLabel . ' year' . ($requiredYearsLabel === '1' ? '' : 's') . ').';
+}
+$transcriptViewGranted = $transcriptDownloadRightsGranted
+    && (($transcriptEligibility['eligible'] ?? false) === true);
+$transcriptDownloadAvailable = $transcriptViewGranted && !$transcriptDownloadAlreadyUsed;
+$transcriptPdfAvailable = $transcriptViewGranted;
+
 $cgpaClassification = 'In Progress';
 if ($finalCgpa !== null) {
     if ($finalCgpa >= 4.50) {
@@ -283,6 +321,53 @@ if ($finalCgpa !== null) {
         $cgpaClassification = 'Probation';
     }
 }
+
+$markToLetterGrade = static function ($mark): string {
+    if ($mark === null || $mark === '' || !is_numeric($mark)) {
+        return '';
+    }
+    $score = (float)$mark;
+    if ($score >= 80) {
+        return 'A';
+    }
+    if ($score >= 75) {
+        return 'B+';
+    }
+    if ($score >= 70) {
+        return 'B';
+    }
+    if ($score >= 65) {
+        return 'C+';
+    }
+    if ($score >= 60) {
+        return 'C';
+    }
+    if ($score >= 50) {
+        return 'D';
+    }
+    if ($score >= 40) {
+        return 'E';
+    }
+    return 'F';
+};
+
+$toRoman = static function (int $number): string {
+    $map = [
+        10 => 'X',
+        9 => 'IX',
+        5 => 'V',
+        4 => 'IV',
+        1 => 'I',
+    ];
+    $result = '';
+    foreach ($map as $value => $roman) {
+        while ($number >= $value) {
+            $result .= $roman;
+            $number -= $value;
+        }
+    }
+    return $result !== '' ? $result : 'I';
+};
 
 // Graduation/award metadata (latest explicit record wins).
 $graduationAward = null;
@@ -311,6 +396,78 @@ if (!$graduationAward && (!empty($student['graduation_date']) || !empty($student
     ];
 }
 
+$institutionName = (string)getSetting('institution_name', INSTITUTION_NAME);
+$institutionEmail = (string)getSetting('institution_email', '');
+$institutionPhone = (string)getSetting('institution_phone', '');
+$institutionAddress = (string)getSetting('institution_address', '');
+$institutionLogoPath = BASE_URL . '/assets/img/sem.PNG';
+
+$academicYearGroups = [];
+foreach ($terms as $term) {
+    $academicYearKey = (string)($term['academic_year'] ?? '-');
+    if (!isset($academicYearGroups[$academicYearKey])) {
+        $academicYearGroups[$academicYearKey] = [
+            'academic_year' => $academicYearKey,
+            'year_of_study' => (int)($term['year_of_study'] ?? 1),
+            'ay_start' => (string)($term['ay_start'] ?? ''),
+            'semesters' => [
+                1 => null,
+                2 => null,
+            ],
+        ];
+    }
+
+    $semesterRows = [];
+    $marksTotal = 0.0;
+    $marksCount = 0;
+    foreach ((array)($term['rows'] ?? []) as $courseRow) {
+        $marks = ($courseRow['total_marks'] !== null && $courseRow['total_marks'] !== '' && is_numeric($courseRow['total_marks']))
+            ? round((float)$courseRow['total_marks'])
+            : null;
+        $status = strtolower(trim((string)($courseRow['result_status'] ?? '')));
+        if ($status === 'published' && $marks !== null) {
+            $marksTotal += $marks;
+            $marksCount++;
+        }
+        $semesterRows[] = [
+            'course_code' => (string)($courseRow['course_code'] ?? ''),
+            'course_name' => (string)($courseRow['course_name'] ?? ''),
+            'credit_hours' => (float)($courseRow['credit_hours'] ?? 0),
+            'marks' => $marks,
+            'grade' => (string)($courseRow['grade'] ?? ''),
+            'status' => (string)($courseRow['result_status'] ?? ''),
+        ];
+    }
+
+    $semesterAverage = $marksCount > 0 ? round($marksTotal / $marksCount) : null;
+    $semesterAverageGrade = $semesterAverage !== null ? $markToLetterGrade($semesterAverage) : '';
+    $semesterNumber = (int)($term['semester_number'] ?? 1);
+    if (!isset($academicYearGroups[$academicYearKey]['semesters'][$semesterNumber])) {
+        $academicYearGroups[$academicYearKey]['semesters'][$semesterNumber] = [
+            'semester_name' => (string)($term['semester_name'] ?? ('Semester ' . $semesterNumber)),
+            'semester_number' => $semesterNumber,
+            'rows' => $semesterRows,
+            'average_mark' => $semesterAverage,
+            'average_grade' => $semesterAverageGrade,
+        ];
+    }
+}
+
+usort($academicYearGroups, static function ($a, $b) {
+    return strcmp((string)($a['ay_start'] ?? ''), (string)($b['ay_start'] ?? ''));
+});
+
+$getVisibleSemesterSlots = static function (array $yearGroup): array {
+    $visibleSlots = [];
+    foreach ([1, 2] as $semesterSlot) {
+        if (($yearGroup['semesters'][$semesterSlot] ?? null) !== null) {
+            $visibleSlots[] = $semesterSlot;
+        }
+    }
+
+    return $visibleSlots !== [] ? $visibleSlots : [1];
+};
+
 $buildTranscriptSnapshot = function () use ($student, $terms, $finalCgpa, $cgpaClassification, $totalCreditsAttempted, $totalCreditsEarned, $graduationAward) {
     $canonicalTerms = [];
     foreach ($terms as $term) {
@@ -320,6 +477,7 @@ $buildTranscriptSnapshot = function () use ($student, $terms, $finalCgpa, $cgpaC
                 'course_code' => (string)($courseRow['course_code'] ?? ''),
                 'course_name' => (string)($courseRow['course_name'] ?? ''),
                 'credit_hours' => number_format((float)($courseRow['credit_hours'] ?? 0), 2, '.', ''),
+                'total_marks' => $courseRow['total_marks'] !== null && $courseRow['total_marks'] !== '' ? number_format((float)$courseRow['total_marks'], 0, '.', '') : '',
                 'grade' => (string)($courseRow['grade'] ?? ''),
                 'grade_points' => $courseRow['grade_points'] !== null && $courseRow['grade_points'] !== '' ? number_format((float)$courseRow['grade_points'], 2, '.', '') : '',
                 'result_status' => (string)($courseRow['result_status'] ?? ''),
@@ -378,15 +536,6 @@ if ($transcriptViewGranted && !empty($student)) {
         $currentSnapshot = $buildTranscriptSnapshot();
         $currentSnapshotHash = $transcriptIssuanceService->computeSnapshotHash($currentSnapshot);
         $currentIssuedTranscript = $transcriptIssuanceService->findLatestActiveIssuanceForHash($studentId, $currentSnapshotHash);
-        if (!$currentIssuedTranscript) {
-            $currentIssuedTranscript = $transcriptIssuanceService->issueTranscript(
-                $studentId,
-                $currentSnapshot,
-                'print',
-                isset($currentUser['id']) ? (int)$currentUser['id'] : null,
-                'student_view'
-            );
-        }
     } catch (Exception $e) {
         $currentIssuedTranscript = null;
     }
@@ -395,17 +544,20 @@ if ($transcriptViewGranted && !empty($student)) {
 // Export transcript dataset.
 $export = strtolower(trim((string)($_GET['export'] ?? '')));
 if ($export !== '' && !$transcriptDownloadAvailable) {
-    if ($transcriptDownloadAlreadyUsed) {
+    if ($export === 'pdf' && $transcriptPdfAvailable) {
+        // PDF exports remain available even after the one-time structured export is used.
+    } elseif ($transcriptDownloadAlreadyUsed) {
         $when = $transcriptDownloadUsedAt !== '' ? date('Y-m-d H:i', strtotime($transcriptDownloadUsedAt)) : 'an earlier time';
         $format = $transcriptDownloadUsedFormat !== '' ? $transcriptDownloadUsedFormat : 'EXPORT';
         $session->setFlash('error', 'One-time transcript download was already used (' . $format . ') on ' . $when . '. Contact admin to re-enable.');
         header('Location: ' . BASE_URL . '/views/student/transcript.php');
         exit;
+    } else {
+        $blocking = !empty($transcriptEligibility['blocking_reasons']) ? implode(' ', $transcriptEligibility['blocking_reasons']) : '';
+        $session->setFlash('error', 'Transcript export is unavailable. ' . trim('Admin approval and eligibility are required. ' . $blocking));
+        header('Location: ' . BASE_URL . '/views/student/transcript.php');
+        exit;
     }
-    $blocking = !empty($transcriptEligibility['blocking_reasons']) ? implode(' ', $transcriptEligibility['blocking_reasons']) : '';
-    $session->setFlash('error', 'Transcript export is unavailable. ' . trim('Admin approval and eligibility are required. ' . $blocking));
-    header('Location: ' . BASE_URL . '/views/student/transcript.php');
-    exit;
 }
 $markOneTimeDownloadUsed = function (string $format) use ($conn, $studentId, $session) {
     try {
@@ -503,6 +655,194 @@ if ($export === 'xml') {
     $root->appendChild($issuanceNode);
 
     echo $dom->saveXML();
+    exit;
+}
+
+if ($export === 'pdf') {
+    if (!$transcriptPdfAvailable) {
+        $blocking = !empty($transcriptEligibility['blocking_reasons']) ? implode(' ', $transcriptEligibility['blocking_reasons']) : '';
+        $session->setFlash('error', 'Transcript PDF is unavailable. ' . trim('Admin approval and eligibility are required. ' . $blocking));
+        header('Location: ' . BASE_URL . '/views/student/transcript.php');
+        exit;
+    }
+
+    $issuance = $issueTranscriptSnapshot('pdf');
+    $filename = 'transcript_' . preg_replace('/[^A-Za-z0-9_-]/', '', (string)($student['student_id'] ?? ('student_' . $studentId))) . '_' . date('Ymd_His') . '.pdf';
+
+    $pdf = new SimplePdfDocument();
+    $pageWidth = 595.28;
+    $pageHeight = 841.89;
+    $pdf->addPage($pageWidth, $pageHeight);
+
+    $truncatePdfText = static function (string $text, int $maxChars): string {
+        $text = preg_replace('/\s+/', ' ', trim($text)) ?? '';
+        if ($text === '') {
+            return '';
+        }
+        if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+            return mb_strlen($text) > $maxChars ? rtrim((string)mb_substr($text, 0, max(0, $maxChars - 1))) . '.' : $text;
+        }
+        return strlen($text) > $maxChars ? rtrim(substr($text, 0, max(0, $maxChars - 1))) . '.' : $text;
+    };
+
+    $estimatePdfTextWidth = static function (string $text, float $fontSize, bool $bold = false): float {
+        $length = function_exists('mb_strlen') ? (float)mb_strlen($text) : (float)strlen($text);
+        $factor = $bold ? 0.57 : 0.52;
+        return $length * $fontSize * $factor;
+    };
+
+    $drawPdfCentered = static function (SimplePdfDocument $pdfDoc, float $centerX, float $y, string $text, float $fontSize, string $style = '') use ($estimatePdfTextWidth): void {
+        $textWidth = $estimatePdfTextWidth($text, $fontSize, strtoupper($style) === 'B');
+        $pdfDoc->text($centerX - ($textWidth / 2), $y, $text, $fontSize, $style);
+    };
+
+    $drawPdfMeta = static function (SimplePdfDocument $pdfDoc, float $x, float $y, string $label, string $value, int $maxChars = 18) use ($truncatePdfText): void {
+        $pdfDoc->text($x, $y, strtoupper($label), 5.2, 'B');
+        $pdfDoc->text($x, $y + 8, $truncatePdfText($value, $maxChars), 6.4, '');
+    };
+
+    $margin = 14.0;
+    $contentWidth = $pageWidth - ($margin * 2);
+
+    $headerY = $margin;
+    $headerH = 36.0;
+    $centerX = $pageWidth / 2;
+    $drawPdfCentered($pdf, $centerX, $headerY + 8, strtoupper($institutionName), 12.8, 'B');
+    $drawPdfCentered($pdf, $centerX, $headerY + 17, 'OFFICE OF THE DEAN OF STUDIES', 6.1, 'B');
+    $drawPdfCentered($pdf, $centerX, $headerY + 25, 'OFFICIAL ACADEMIC TRANSCRIPT', 7.3, 'B');
+    $drawPdfCentered($pdf, $centerX, $headerY + 32, 'Academic Transcript', 5.2, '');
+    $pdf->text($pageWidth - 112, $headerY + 7, $truncatePdfText($institutionAddress, 28), 5, '');
+    $pdf->text($pageWidth - 112, $headerY + 15, 'Tel: ' . (string)$institutionPhone, 5, '');
+    $pdf->text($pageWidth - 112, $headerY + 23, 'Email: ' . (string)$institutionEmail, 5, '');
+    $pdf->text($pageWidth - 112, $headerY + 31, 'Date: ' . date('D j M Y'), 5, '');
+
+    $metaY = $headerY + $headerH + 4;
+    $metaGap = 6.0;
+    $metaCols = 4;
+    $metaW = ($contentWidth - ($metaGap * ($metaCols - 1))) / $metaCols;
+    $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
+    $drawPdfMeta($pdf, $margin, $metaY, 'Name', $studentName, 22);
+    $drawPdfMeta($pdf, $margin + $metaW + $metaGap, $metaY, 'Reg No', (string)($student['student_id'] ?? ($student['admission_number'] ?? 'N/A')), 18);
+    $drawPdfMeta($pdf, $margin + (($metaW + $metaGap) * 2), $metaY, 'Sex', (string)($student['gender'] ?? 'N/A'), 10);
+    $drawPdfMeta($pdf, $margin + (($metaW + $metaGap) * 3), $metaY, 'Nationality', (string)($student['country'] ?? 'N/A'), 14);
+    $drawPdfMeta($pdf, $margin, $metaY + 16, 'Date Of Birth', !empty($student['date_of_birth']) ? (string)Helper::formatDate((string)$student['date_of_birth'], 'd-M-Y') : 'N/A', 14);
+    $drawPdfMeta($pdf, $margin + $metaW + $metaGap, $metaY + 16, 'Intake', (string)($student['entry_year'] ?? 'N/A'), 10);
+    $drawPdfMeta($pdf, $margin + (($metaW + $metaGap) * 2), $metaY + 16, 'Entry Mode', !empty($student['entry_semester_id']) ? 'Direct' : 'N/A', 12);
+    $drawPdfMeta($pdf, $margin + (($metaW + $metaGap) * 3), $metaY + 16, 'Programme', trim((string)($student['program_code'] ?? '') . ' ' . (string)($student['program_name'] ?? 'N/A')), 20);
+
+    $columnGap = 10.0;
+    $leftX = $margin;
+    $rightX = $margin + (($contentWidth - $columnGap) / 2) + $columnGap;
+    $columnW = ($contentWidth - $columnGap) / 2;
+    $leftY = $metaY + 36;
+    $rightY = $metaY + 36;
+
+    $drawSemesterBlock = static function (
+        SimplePdfDocument $pdfDoc,
+        float $x,
+        float $y,
+        float $width,
+        array $block,
+        callable $truncate
+    ): float {
+        $rows = (!empty($block['semester']['rows']) && is_array($block['semester']['rows'])) ? $block['semester']['rows'] : [];
+        $rowHeight = 6.8;
+        $sectionHeight = 15 + (count($rows) * $rowHeight) + 8;
+
+        $pdfDoc->text($x, $y, 'ACADEMIC YEAR: ' . (string)($block['academic_year'] ?? '-'), 5.8, 'B');
+        $pdfDoc->text($x + $width - 54, $y, (string)($block['stage'] ?? ''), 5.8, 'B');
+        $pdfDoc->text($x, $y + 7, strtoupper((string)($block['semester_label'] ?? 'Semester')), 5.1, 'B');
+
+        $headerY = $y + 12;
+        $codeW = 42.0;
+        $markW = 24.0;
+        $gradeW = 20.0;
+        $creditW = 18.0;
+        $titleW = $width - $codeW - $markW - $gradeW - $creditW;
+
+        $xCode = $x;
+        $xTitle = $xCode + $codeW;
+        $xMark = $xTitle + $titleW;
+        $xGrade = $xMark + $markW;
+        $xCredit = $xGrade + $gradeW;
+
+        $pdfDoc->text($xCode, $headerY, 'CODE', 4.3, 'B');
+        $pdfDoc->text($xTitle, $headerY, 'COURSE TITLE', 4.3, 'B');
+        $pdfDoc->text($xMark, $headerY, 'MARK', 4.3, 'B');
+        $pdfDoc->text($xGrade, $headerY, 'GRADE', 4.3, 'B');
+        $pdfDoc->text($xCredit, $headerY, 'CR', 4.3, 'B');
+
+        $currentRowY = $headerY + 6;
+        foreach ($rows as $courseRow) {
+            $pdfDoc->text($xCode, $currentRowY, $truncate((string)($courseRow['course_code'] ?? ''), 10), 4.75, '');
+            $pdfDoc->text($xTitle, $currentRowY, $truncate((string)($courseRow['course_name'] ?? ''), 34), 4.75, '');
+            $pdfDoc->text($xMark + 2, $currentRowY, ($courseRow['marks'] !== null ? (string)$courseRow['marks'] : '-'), 4.75, '');
+            $pdfDoc->text($xGrade + 2, $currentRowY, (string)($courseRow['grade'] ?? '-'), 4.75, '');
+            $pdfDoc->text($xCredit + 2, $currentRowY, number_format((float)($courseRow['credit_hours'] ?? 0), 0), 4.75, '');
+            $currentRowY += $rowHeight;
+        }
+
+        $averageMark = ($block['semester']['average_mark'] ?? null) !== null ? (string)$block['semester']['average_mark'] : '-';
+        $averageGrade = (string)($block['semester']['average_grade'] ?? '-');
+        $pdfDoc->text($xCode, $currentRowY, 'AVERAGE', 4.75, 'B');
+        $pdfDoc->text($xMark + 2, $currentRowY, $averageMark, 4.75, 'B');
+        $pdfDoc->text($xGrade + 2, $currentRowY, $averageGrade, 4.75, 'B');
+
+        return $sectionHeight;
+    };
+
+    foreach ($academicYearGroups as $yearGroup) {
+        $rowY = max($leftY, $rightY);
+        $rowHeight = 0.0;
+        $visibleSemesterSlots = $getVisibleSemesterSlots($yearGroup);
+
+        foreach (array_values($visibleSemesterSlots) as $slotIndex => $semesterSlot) {
+            $semesterBlock = $yearGroup['semesters'][$semesterSlot] ?? null;
+            $block = [
+                'academic_year' => (string)($yearGroup['academic_year'] ?? '-'),
+                'stage' => strtoupper((string)($student['program_code'] ?? 'PROGRAM') . ' ' . $toRoman((int)($yearGroup['year_of_study'] ?? 1))),
+                'semester_label' => 'Semester ' . ($semesterSlot === 1 ? 'I' : 'II'),
+                'semester' => $semesterBlock,
+            ];
+            $blockX = $slotIndex === 0 ? $leftX : $rightX;
+            $usedHeight = $drawSemesterBlock($pdf, $blockX, $rowY, $columnW, $block, $truncatePdfText);
+            $rowHeight = max($rowHeight, $usedHeight);
+        }
+
+        $leftY = $rowY + $rowHeight + 6;
+        $rightY = $leftY;
+    }
+
+    $resultsBottomY = max($leftY, $rightY) + 2;
+    $gradingY = min($resultsBottomY, $pageHeight - 110);
+    $gradingW = ($contentWidth * 0.58);
+    $awardW = $contentWidth - $gradingW - 8.0;
+    $pdf->text($margin, $gradingY, 'GRADING KEY', 5.6, 'B');
+    $pdf->text($margin, $gradingY + 10, 'A: 80-100 First Class | B+: 75-79 Second Class Upper', 4.8, '');
+    $pdf->text($margin, $gradingY + 18, 'B: 70-74 Second Class Upper | C+: 65-69 Second Class Lower', 4.8, '');
+    $pdf->text($margin, $gradingY + 26, 'C: 60-64 Pass | D: 50-59 Pass | E: 40-49 Fail | F: 0-39 Fail', 4.8, '');
+
+    $awardX = $margin + $gradingW + 8.0;
+    $pdf->text($awardX, $gradingY, 'AWARD SUMMARY', 5.6, 'B');
+    $pdf->text($awardX, $gradingY + 10, 'Award: ' . $truncatePdfText((string)($graduationAward['award_title'] ?? ($student['program_name'] ?? 'Pending')), 30), 4.8, '');
+    $pdf->text($awardX, $gradingY + 18, 'Grade: ' . $truncatePdfText((string)($graduationAward['classification'] ?? $cgpaClassification), 20), 4.8, '');
+    $pdf->text($awardX, $gradingY + 26, 'CGPA: ' . ($finalCgpa !== null ? number_format((float)$finalCgpa, 2) : 'N/A'), 4.8, '');
+    $pdf->text($awardX, $gradingY + 34, 'Credits: ' . number_format((float)$totalCreditsEarned, 0), 4.8, '');
+    $pdf->text($awardX, $gradingY + 42, 'Award Date: ' . (!empty($graduationAward['award_date']) ? (string)Helper::formatDate((string)$graduationAward['award_date'], 'M d, Y') : 'Pending'), 4.8, '');
+
+    $verificationY = $pageHeight - 38;
+    $pdf->text($margin, $verificationY, 'VERIFICATION CODE', 4.8, 'B');
+    $pdf->text($margin + 70, $verificationY, 'ISSUED AT', 4.8, 'B');
+    $pdf->text($margin, $verificationY + 8, (string)($issuance['verification_code'] ?? ''), 4.8, '');
+    $pdf->text($margin + 70, $verificationY + 8, (string)Helper::formatDateTime((string)($issuance['issued_at'] ?? ''), 'M d, Y g:i A'), 4.8, '');
+    $pdf->text($margin, $verificationY + 18, 'Hash: ' . $truncatePdfText((string)($issuance['transcript_hash'] ?? ''), 76), 4.5, '');
+    $pdf->text($margin, $verificationY + 26, 'Verify: ' . $truncatePdfText((string)($issuance['verification_url'] ?? ''), 88), 4.5, '');
+
+    $pdfBinary = $pdf->outputString();
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Content-Length: ' . strlen($pdfBinary));
+    echo $pdfBinary;
     exit;
 }
 
@@ -701,58 +1041,443 @@ body { background: #f8fafc; }
     width: 100vw;
     max-width: 100vw;
 }
-.transcript-card { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
-.transcript-header { background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%); color: #fff; padding: 1rem 1.25rem; }
-.transcript-title { margin: 0; font-weight: 700; letter-spacing: 0.4px; }
-.transcript-subtitle { margin: 0.2rem 0 0; opacity: 0.9; font-size: 0.9rem; }
-.profile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.75rem; padding: 1rem 1.25rem; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
-.profile-chip { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.6rem 0.75rem; }
-.profile-chip .label { color: #64748b; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 2px; }
-.profile-chip .value { color: #0f172a; font-size: 0.92rem; font-weight: 600; }
-.term-section { padding: 1rem 1.25rem; border-bottom: 1px solid #eef2f7; }
-.term-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 0.65rem; }
-.term-title { margin: 0; font-size: 0.98rem; font-weight: 700; color: #1f2937; }
-.term-meta { font-size: 0.8rem; color: #64748b; }
-.transcript-table { width: 100%; border-collapse: collapse; }
-.transcript-table th, .transcript-table td { border-bottom: 1px solid #edf2f7; padding: 0.46rem 0.48rem; font-size: 0.82rem; }
-.transcript-table th { background: #f8fafc; color: #334155; font-weight: 700; }
-.summary-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0.7rem; }
-.summary-badge { background: #f1f5f9; border: 1px solid #cbd5e1; color: #0f172a; border-radius: 999px; padding: 4px 10px; font-size: 0.76rem; font-weight: 600; }
-.final-summary { padding: 1rem 1.25rem; background: #f8fafc; }
-.final-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.7rem; }
-.final-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.6rem 0.75rem; }
-.final-item .label { color: #64748b; font-size: 0.76rem; text-transform: uppercase; }
-.final-item .value { color: #0f172a; font-size: 1rem; font-weight: 700; }
-.verification-panel { display:grid; grid-template-columns:minmax(180px,220px) 1fr; gap:1rem; padding:1rem 1.25rem; background:#fff; border-top:1px solid #e2e8f0; border-bottom:1px solid #e2e8f0; }
-.verification-qr-wrap { display:flex; align-items:center; justify-content:center; min-height:180px; border:1px dashed #cbd5e1; border-radius:12px; background:#f8fafc; }
-.verification-qr { width:160px; height:160px; }
-.verification-meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:.75rem; }
-.verification-card { border:1px solid #e2e8f0; border-radius:10px; padding:.75rem .85rem; background:#f8fafc; }
-.verification-card .label { color:#64748b; font-size:.73rem; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
-.verification-card .value { color:#0f172a; font-size:.88rem; font-weight:600; word-break:break-word; }
-.verification-link { font-size:.8rem; color:#1d4ed8; word-break:break-all; }
-.verification-note { margin-top:.5rem; color:#475569; font-size:.82rem; }
-html[data-theme='dark'] .transcript-card { border-color: #243047; box-shadow: 0 10px 26px rgba(2, 6, 23, 0.5); }
-html[data-theme='dark'] .profile-grid,
-html[data-theme='dark'] .final-summary { background: #0f172a; border-color: #243047; }
-html[data-theme='dark'] .profile-chip,
-html[data-theme='dark'] .final-item { background: #111a2b; border-color: #243047; }
-html[data-theme='dark'] .profile-chip .label,
-html[data-theme='dark'] .term-meta,
-html[data-theme='dark'] .final-item .label { color: #93c5fd; }
-html[data-theme='dark'] .profile-chip .value,
-html[data-theme='dark'] .term-title,
-html[data-theme='dark'] .final-item .value { color: #e2e8f0; }
-html[data-theme='dark'] .transcript-table th { background: #152238; color: #cbd5e1; border-color: #233147; }
-html[data-theme='dark'] .transcript-table td { border-color: #233147; color: #dbeafe; }
-html[data-theme='dark'] .summary-badge { background: #111827; border-color: #334155; color: #dbeafe; }
-html[data-theme='dark'] .verification-panel { background:#0f172a; border-color:#243047; }
-html[data-theme='dark'] .verification-qr-wrap,
-html[data-theme='dark'] .verification-card { background:#111a2b; border-color:#243047; }
+.topbar-right {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.55rem;
+}
+.transcript-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.42rem;
+    min-height: 40px;
+    padding: 0.52rem 0.95rem;
+    border-radius: 999px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    text-decoration: none;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+.transcript-action:hover {
+    transform: translateY(-1px);
+    text-decoration: none;
+}
+.transcript-action-primary {
+    color: #fff;
+    background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%);
+    border: 1px solid #1d4ed8;
+    box-shadow: 0 12px 28px rgba(29, 78, 216, 0.24);
+}
+.transcript-action-primary:hover {
+    color: #fff;
+    box-shadow: 0 15px 30px rgba(29, 78, 216, 0.3);
+}
+.transcript-action-secondary {
+    color: #1e293b;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+}
+.transcript-action-secondary:hover {
+    color: #0f172a;
+    background: #f8fafc;
+}
+.transcript-action-disabled {
+    opacity: 0.58;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+.transcript-paper {
+    background: #fff;
+    border: 1px solid #d6dde8;
+    border-radius: 14px;
+    box-shadow: 0 16px 32px rgba(15, 23, 42, 0.08);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.transcript-masthead {
+    padding: 1rem 1.25rem 0.85rem;
+    border-bottom: 3px double #1f2937;
+}
+.transcript-brand {
+    display: grid;
+    grid-template-columns: 88px 1fr 220px;
+    gap: 0.9rem;
+    align-items: center;
+}
+.transcript-logo-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.transcript-logo {
+    width: 74px;
+    height: 74px;
+    object-fit: contain;
+}
+.transcript-brand-center {
+    text-align: center;
+}
+.transcript-school-name {
+    margin: 0;
+    font-size: 1.6rem;
+    line-height: 1.1;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    font-weight: 800;
+    color: #0f172a;
+}
+.transcript-office-title {
+    margin: 0.28rem 0 0;
+    font-size: 0.86rem;
+    font-style: italic;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #1f2937;
+}
+.transcript-document-title {
+    margin: 0.18rem 0 0;
+    font-size: 1rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #111827;
+}
+.transcript-document-subtitle {
+    margin: 0.14rem 0 0;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #334155;
+}
+.transcript-brand-side {
+    font-size: 0.77rem;
+    line-height: 1.45;
+    color: #334155;
+}
+.transcript-meta-strip {
+    display: grid;
+    grid-template-columns: 92px repeat(4, minmax(0, 1fr));
+    gap: 0.42rem 0.55rem;
+    padding: 0.7rem 1.1rem;
+    border-bottom: 1px solid #cfd8e3;
+    background: #fafbfd;
+    align-items: stretch;
+}
+.meta-photo-item {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    grid-row: 1 / span 2;
+    padding: 0;
+    min-height: 0;
+    background: transparent;
+    border-color: transparent;
+}
+.meta-photo-frame {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.35rem;
+    border: 1px solid #dbe4ee;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #ffffff 0%, #f6f9fc 100%);
+}
+.student-transcript-photo-wrap {
+    width: 100%;
+    aspect-ratio: 5 / 6;
+    min-height: 118px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: linear-gradient(180deg, #ffffff 0%, #eef4fb 100%);
+}
+.student-transcript-photo {
+    width: 100%;
+    height: 100%;
+    min-height: 118px;
+    object-fit: contain;
+    object-position: center;
+    border: none;
+    border-radius: 0;
+    background: #fff;
+    display: block;
+}
+.student-transcript-photo-placeholder {
+    width: 100%;
+    height: 100%;
+    min-height: 118px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #64748b;
+    background: linear-gradient(180deg, #ffffff 0%, #eef4fb 100%);
+}
+.meta-photo-caption {
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-align: center;
+    color: #64748b;
+}
+.meta-item {
+    border: 1px solid #dbe4ee;
+    padding: 0.48rem 0.62rem 0.42rem;
+    min-height: 56px;
+    background: #fff;
+    border-radius: 10px;
+}
+.meta-label,
+.transcript-footer-label {
+    display: block;
+    font-size: 0.7rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 0.18rem;
+}
+.meta-value,
+.transcript-footer-value {
+    color: #0f172a;
+    font-size: 0.98rem;
+    line-height: 1.22;
+    font-weight: 700;
+}
+.year-sheet {
+    padding: 0.85rem 1.1rem 1rem;
+    border-bottom: 1px solid #dbe4ee;
+}
+.year-sheet:last-of-type {
+    border-bottom: 0;
+}
+.year-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.8rem;
+    align-items: baseline;
+    padding-bottom: 0.28rem;
+    margin-bottom: 0.6rem;
+    border-bottom: 1px solid #94a3b8;
+}
+.year-heading-title,
+.year-heading-stage {
+    font-size: 0.95rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #111827;
+}
+.year-semesters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.8rem;
+}
+.semester-panel {
+    border: 1px solid #b8c4d4;
+    min-height: 100%;
+}
+.semester-panel-title {
+    padding: 0.32rem 0.5rem;
+    border-bottom: 1px solid #b8c4d4;
+    background: #eff4f9;
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+.transcript-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.transcript-table th,
+.transcript-table td {
+    border: 1px solid #cbd5e1;
+    padding: 0.26rem 0.32rem;
+    font-size: 0.75rem;
+    vertical-align: top;
+    color: #0f172a;
+}
+.transcript-table th {
+    background: #f8fafc;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+.transcript-table .col-code { width: 18%; }
+.transcript-table .col-title { width: 54%; }
+.transcript-table .col-mark,
+.transcript-table .col-grade,
+.transcript-table .col-credit { width: 9%; text-align: center; }
+.average-row td {
+    font-weight: 800;
+    background: #f8fafc;
+}
+.empty-row td {
+    height: 1.42rem;
+}
+.transcript-footer-band {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr 0.8fr;
+    gap: 1rem;
+    padding: 0.95rem 1.25rem 1.1rem;
+    border-top: 3px double #1f2937;
+    background: #fafbfd;
+}
+.grading-key {
+    font-size: 0.78rem;
+    line-height: 1.55;
+    color: #1f2937;
+}
+.grading-key-title {
+    margin-bottom: 0.35rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.award-box {
+    display: grid;
+    gap: 0.45rem;
+}
+.award-line {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+}
+.award-line strong {
+    min-width: 112px;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.signature-box {
+    display: grid;
+    align-content: end;
+    gap: 0.65rem;
+    padding: 0.35rem 0.45rem 0.15rem;
+    border: 1px solid #dbe4ee;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+.signature-space {
+    min-height: 70px;
+    border-bottom: 1.5px solid #334155;
+}
+.signature-label {
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #0f172a;
+}
+.signature-subtext {
+    font-size: 0.72rem;
+    line-height: 1.45;
+    color: #475569;
+}
+.verification-panel {
+    display: grid;
+    grid-template-columns: minmax(160px, 190px) 1fr;
+    gap: 0.8rem;
+    padding: 0.95rem 1.25rem 1.15rem;
+    border-top: 1px solid #dbe4ee;
+    background: #fff;
+}
+.verification-qr-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 150px;
+    border: 1px dashed #b8c4d4;
+    background: #fafbfd;
+}
+.verification-qr { width: 140px; height: 140px; }
+.verification-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+}
+.verification-card {
+    border: 1px solid #dbe4ee;
+    padding: 0.5rem 0.6rem;
+    background: #fafbfd;
+}
+.verification-card .label { color:#64748b; font-size:.69rem; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
+.verification-card .value { color:#0f172a; font-size:.84rem; font-weight:700; word-break:break-word; }
+.verification-note { margin-top:.45rem; color:#475569; font-size:.79rem; }
+.verification-link { margin-top:.28rem; font-size:.75rem; color:#1d4ed8; word-break:break-all; }
+html[data-theme='dark'] .transcript-paper { background: #0f172a; border-color: #334155; box-shadow: 0 16px 34px rgba(2, 6, 23, 0.54); }
+html[data-theme='dark'] .transcript-masthead,
+html[data-theme='dark'] .year-heading,
+html[data-theme='dark'] .transcript-footer-band { border-color: #475569; }
+html[data-theme='dark'] .transcript-school-name,
+html[data-theme='dark'] .transcript-office-title,
+html[data-theme='dark'] .transcript-document-title,
+html[data-theme='dark'] .year-heading-title,
+html[data-theme='dark'] .year-heading-stage,
+html[data-theme='dark'] .meta-value,
+html[data-theme='dark'] .transcript-footer-value,
+html[data-theme='dark'] .award-line,
+html[data-theme='dark'] .grading-key,
+html[data-theme='dark'] .transcript-table th,
+html[data-theme='dark'] .transcript-table td,
+html[data-theme='dark'] .verification-card .value { color: #e2e8f0; }
+html[data-theme='dark'] .transcript-brand-side,
+html[data-theme='dark'] .meta-label,
+html[data-theme='dark'] .transcript-footer-label,
 html[data-theme='dark'] .verification-card .label,
-html[data-theme='dark'] .verification-note { color:#93c5fd; }
-html[data-theme='dark'] .verification-card .value { color:#e2e8f0; }
-html[data-theme='dark'] .verification-link { color:#93c5fd; }
+html[data-theme='dark'] .verification-note,
+html[data-theme='dark'] .verification-link { color: #93c5fd; }
+html[data-theme='dark'] .transcript-meta-strip,
+html[data-theme='dark'] .transcript-footer-band,
+html[data-theme='dark'] .verification-panel { background: #111827; border-color: #334155; }
+html[data-theme='dark'] .meta-photo-frame,
+html[data-theme='dark'] .signature-box,
+html[data-theme='dark'] .meta-item,
+html[data-theme='dark'] .verification-card {
+    background: #0f172a;
+    border-color: #334155;
+}
+html[data-theme='dark'] .meta-photo-caption,
+html[data-theme='dark'] .signature-subtext { color: #93c5fd; }
+html[data-theme='dark'] .signature-label { color: #e2e8f0; }
+html[data-theme='dark'] .signature-space { border-color: #93c5fd; }
+html[data-theme='dark'] .transcript-action-primary {
+    color: #fff;
+    background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+    border-color: #3b82f6;
+}
+html[data-theme='dark'] .transcript-action-secondary {
+    color: #e2e8f0;
+    background: #0f172a;
+    border-color: #334155;
+    box-shadow: none;
+}
+html[data-theme='dark'] .transcript-action-secondary:hover {
+    color: #f8fafc;
+    background: #172033;
+}
+html[data-theme='dark'] .meta-item,
+html[data-theme='dark'] .semester-panel,
+html[data-theme='dark'] .verification-card,
+html[data-theme='dark'] .verification-qr-wrap { background: #0b1220; border-color: #334155; }
+html[data-theme='dark'] .semester-panel-title,
+html[data-theme='dark'] .transcript-table th,
+html[data-theme='dark'] .average-row td { background: #152238; border-color: #334155; }
+html[data-theme='dark'] .transcript-table td,
+html[data-theme='dark'] .year-sheet { border-color: #334155; }
 html[data-theme='dark'] .student-sidebar {
     background: #0f172a;
     border-right-color: #233147;
@@ -779,18 +1504,214 @@ html[data-theme='dark'] .services-submenu {
     html[data-theme='dark'] #keyDropMenu label { color:#e2e8f0; }
     html[data-theme='dark'] #keyDropMenu input.form-control { background:#0b1220; color:#e2e8f0; border-color:#334155; }
     html[data-theme='dark'] #keyDropMenu input.form-control::placeholder { color:#94a3b8; }
+@media (max-width: 1100px) {
+    .transcript-brand,
+    .transcript-meta-strip,
+    .year-semesters,
+    .transcript-footer-band,
+    .verification-panel,
+    .verification-meta { grid-template-columns: 1fr; }
+}
 @media (max-width: 900px) {
-    .verification-panel { grid-template-columns: 1fr; }
+    .transcript-school-name { font-size: 1.2rem; }
 }
 @media print {
+    @page { size: A4 portrait; margin: 6mm; }
+    html,
+    body { width: 100% !important; height: auto !important; overflow: visible !important; }
+    #sidebarToggle,
+    .sidebar-toggle,
+    .fa-bars,
+    #themeToggle,
+    .theme-toggle,
+    .dark-mode-toggle,
+    .floating-theme-toggle,
+    .fa-moon,
+    .fa-sun,
+    [data-theme-toggle],
+    .topbar-left,
     .topbar,
     .student-sidebar,
     .notification-bell,
-    .sidebar-toggle { display:none !important; }
+    .profile-dropdown { display:none !important; }
+    body,
+    .main-content { background:#fff !important; }
     .main-content { margin-left:0 !important; width:100% !important; max-width:100% !important; }
-    .content-area { padding:0 !important; }
-    .transcript-card { box-shadow:none; border:1px solid #cbd5e1; }
-    .verification-panel { page-break-inside:avoid; }
+    .content-area,
+    .content-area.container {
+        padding:0 !important;
+        width:100% !important;
+        max-width:100% !important;
+        margin:0 !important;
+    }
+    .alert,
+    .btn { display:none !important; }
+    .transcript-paper {
+        box-shadow:none;
+        border:none;
+        border-radius:0;
+        width:100% !important;
+        max-width:100% !important;
+        transform:none !important;
+        margin:0 !important;
+        padding: 0 !important;
+        min-height: 279mm;
+        display: flex !important;
+        flex-direction: column !important;
+    }
+    .transcript-masthead,
+    .transcript-meta-strip,
+    .transcript-footer-band,
+    .verification-panel { flex: 0 0 auto; }
+    .year-sheet,
+    .verification-panel,
+    .transcript-footer-band { page-break-inside: avoid; }
+    .transcript-masthead { padding: 0.26rem 0.22rem 0.16rem; border-bottom: none; }
+    .transcript-brand { grid-template-columns: 56px 1fr 124px; gap: 0.24rem; align-items: start; }
+    .transcript-logo-wrap { align-items: flex-start; justify-content: flex-start; }
+    .transcript-logo { width: 48px; height: 48px; }
+    .transcript-school-name { font-size: 1.08rem; letter-spacing: 0.045em; }
+    .transcript-office-title { font-size: 0.58rem; margin-top: 0.07rem; }
+    .transcript-document-title { font-size: 0.72rem; margin-top: 0.09rem; }
+    .transcript-document-subtitle { font-size: 0.52rem; margin-top: 0.03rem; }
+    .transcript-brand-side { font-size: 0.47rem; line-height: 1.3; text-align: right; }
+    .transcript-meta-strip {
+        gap: 0.12rem 0.22rem;
+        padding: 0.14rem 0.22rem 0.18rem;
+        border-bottom: none;
+        background: transparent;
+        grid-template-columns: 54px repeat(4, minmax(0, 1fr));
+    }
+    .meta-photo-frame {
+        gap: 0.12rem;
+        padding: 0;
+        border: none;
+        border-radius: 0;
+        background: transparent;
+    }
+    .student-transcript-photo-wrap {
+        min-height: 56px;
+        border: none;
+        border-radius: 0;
+        background: transparent;
+    }
+    .meta-photo-caption { display: none; }
+    .meta-item { padding: 0.04rem 0; min-height: 20px; border: none; background: transparent; border-radius: 0; }
+    .student-transcript-photo,
+    .student-transcript-photo-placeholder { width: 46px; height: 56px; min-height: 56px; }
+    .meta-label,
+    .transcript-footer-label { font-size: 0.4rem; margin-bottom: 0.04rem; letter-spacing: 0.05em; }
+    .meta-value,
+    .transcript-footer-value { font-size: 0.58rem; font-weight: 700; line-height: 1.24; }
+    .year-sheet {
+        padding: 0.18rem 0.2rem 0.22rem;
+        border-bottom: none;
+        flex: 1 0 auto;
+    }
+    .year-sheet + .year-sheet { border-top: 0.45px solid #b9c1c9; }
+    .year-heading { margin-bottom: 0.08rem; padding-bottom: 0; border-bottom: none; }
+    .year-heading-title,
+    .year-heading-stage { font-size: 0.56rem; letter-spacing: 0.03em; }
+    .year-semesters { grid-template-columns: 1fr; gap: 0.12rem; }
+    .semester-panel { border: none; }
+    .semester-panel-title {
+        padding: 0.02rem 0;
+        margin-bottom: 0.04rem;
+        font-size: 0.5rem;
+        border-bottom: none;
+        background: transparent;
+        text-align: left;
+        letter-spacing: 0.035em;
+    }
+    .transcript-table { table-layout: fixed; width: 100%; }
+    .transcript-table td { font-size: 0.53rem; padding: 0.022rem 0.01rem; line-height: 1.18; border: none; }
+    .transcript-table th {
+        font-size: 0.43rem;
+        padding: 0.016rem 0.01rem 0.018rem;
+        line-height: 1.1;
+        border: none;
+        background: transparent;
+    }
+    .transcript-table .col-code { width: 10%; }
+    .transcript-table .col-title { width: 69%; }
+    .transcript-table .col-mark,
+    .transcript-table .col-grade,
+    .transcript-table .col-credit { width: 7%; }
+    .transcript-table td:nth-child(3),
+    .transcript-table td:nth-child(5),
+    .transcript-table th:nth-child(3),
+    .transcript-table th:nth-child(5) {
+        text-align: center;
+        padding-left: 0.002rem;
+        padding-right: 0.002rem;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum" 1;
+    }
+    .transcript-table td:nth-child(4),
+    .transcript-table th:nth-child(4) {
+        text-align: left;
+        padding-left: 0.006rem;
+        padding-right: 0.002rem;
+        white-space: nowrap;
+        letter-spacing: 0.01em;
+    }
+    .transcript-table td:nth-child(1),
+    .transcript-table td:nth-child(3),
+    .transcript-table td:nth-child(4),
+    .transcript-table td:nth-child(5) {
+        font-weight: 700;
+        letter-spacing: 0.01em;
+    }
+    .empty-row { display:none; }
+    .average-row td { padding-top: 0.04rem; padding-bottom: 0.035rem; background: transparent; }
+    .transcript-footer-band {
+        gap: 0.16rem;
+        padding: 0.12rem 0.2rem 0.06rem;
+        border-top: 0.45px solid #b9c1c9;
+        background: transparent;
+        grid-template-columns: 1.1fr 0.9fr 0.8fr;
+        margin-top: auto;
+    }
+    .grading-key,
+    .award-box { font-size: 0.41rem; line-height: 1.22; }
+    .grading-key-title { font-size: 0.44rem; margin-bottom: 0.03rem; }
+    .award-line { margin-bottom: 0.03rem; gap: 0.12rem; }
+    .award-line strong { min-width: 52px; font-size: 0.41rem; }
+    .signature-box {
+        gap: 0.18rem;
+        padding: 0.08rem 0.02rem 0 0.1rem;
+        border: none;
+        border-radius: 0;
+        background: transparent;
+    }
+    .signature-space { min-height: 28px; border-bottom-width: 0.8px; }
+    .signature-label { font-size: 0.38rem; }
+    .signature-subtext { font-size: 0.33rem; line-height: 1.16; }
+    .verification-panel {
+        display: grid !important;
+        gap: 0.08rem;
+        padding: 0.06rem 0.2rem 0.03rem;
+        grid-template-columns: 34px 1fr;
+        border-top: 0.45px solid #b9c1c9;
+        background: transparent;
+    }
+    .verification-qr-wrap {
+        min-height: 30px;
+        border: none;
+        background: transparent;
+        align-items: flex-start;
+        justify-content: flex-start;
+    }
+    .verification-qr { width: 28px !important; height: 28px !important; }
+    .verification-meta { gap: 0.1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .verification-card { padding: 0.05rem 0.09rem; border: none; background: transparent; }
+    .verification-card .label { font-size: 0.33rem; margin-bottom: 0.015rem; }
+    .verification-card .value,
+    .verification-note,
+    .verification-link { font-size: 0.32rem; line-height: 1.1; }
+    .verification-note { margin-top: 0.03rem; }
+    .verification-link { margin-top: 0.03rem; }
 }
 </style>
 
@@ -801,19 +1722,24 @@ html[data-theme='dark'] .services-submenu {
             <h4>My Transcript</h4>
         </div>
         <div class="topbar-right">
-            <?php if ($transcriptDownloadAvailable): ?>
-                <a href="?export=csv" class="btn btn-outline-secondary btn-sm mr-2"><i class="fas fa-file-csv"></i> Export CSV</a>
-                <a href="?export=excel" class="btn btn-outline-secondary btn-sm mr-2"><i class="fas fa-file-excel"></i> Export Excel</a>
-                <a href="?export=xml" class="btn btn-outline-secondary btn-sm mr-2"><i class="fas fa-code"></i> Export XML</a>
+            <?php if ($transcriptPdfAvailable): ?>
+                <a href="?export=pdf" class="btn btn-sm transcript-action transcript-action-primary"><i class="fas fa-file-pdf"></i> Download One-Page PDF</a>
             <?php else: ?>
-                <button type="button" class="btn btn-outline-secondary btn-sm mr-2" disabled title="<?php echo $transcriptDownloadAlreadyUsed ? 'One-time download already used' : 'Admin approval and eligibility required'; ?>">Export CSV</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm mr-2" disabled title="<?php echo $transcriptDownloadAlreadyUsed ? 'One-time download already used' : 'Admin approval and eligibility required'; ?>">Export Excel</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm mr-2" disabled title="<?php echo $transcriptDownloadAlreadyUsed ? 'One-time download already used' : 'Admin approval and eligibility required'; ?>">Export XML</button>
+                <button type="button" class="btn btn-sm transcript-action transcript-action-primary transcript-action-disabled" disabled title="Admin approval and eligibility required">Download One-Page PDF</button>
+            <?php endif; ?>
+            <?php if ($transcriptDownloadAvailable): ?>
+                <a href="?export=csv" class="btn btn-sm transcript-action transcript-action-secondary"><i class="fas fa-file-csv"></i> Export CSV</a>
+                <a href="?export=excel" class="btn btn-sm transcript-action transcript-action-secondary"><i class="fas fa-file-excel"></i> Export Excel</a>
+                <a href="?export=xml" class="btn btn-sm transcript-action transcript-action-secondary"><i class="fas fa-code"></i> Export XML</a>
+            <?php else: ?>
+                <button type="button" class="btn btn-sm transcript-action transcript-action-secondary transcript-action-disabled" disabled title="<?php echo $transcriptDownloadAlreadyUsed ? 'One-time download already used' : 'Admin approval and eligibility required'; ?>">Export CSV</button>
+                <button type="button" class="btn btn-sm transcript-action transcript-action-secondary transcript-action-disabled" disabled title="<?php echo $transcriptDownloadAlreadyUsed ? 'One-time download already used' : 'Admin approval and eligibility required'; ?>">Export Excel</button>
+                <button type="button" class="btn btn-sm transcript-action transcript-action-secondary transcript-action-disabled" disabled title="<?php echo $transcriptDownloadAlreadyUsed ? 'One-time download already used' : 'Admin approval and eligibility required'; ?>">Export XML</button>
             <?php endif; ?>
             <?php if ($transcriptViewGranted): ?>
-                <button type="button" class="btn btn-outline-secondary btn-sm mr-2" onclick="window.print()"><i class="fas fa-print"></i> Official PDF (Print)</button>
+                <button type="button" class="btn btn-sm transcript-action transcript-action-secondary" onclick="window.print()"><i class="fas fa-print"></i> Print View</button>
             <?php else: ?>
-                <button type="button" class="btn btn-outline-secondary btn-sm mr-2" disabled title="Admin approval and eligibility required">Official PDF (Print)</button>
+                <button type="button" class="btn btn-sm transcript-action transcript-action-secondary transcript-action-disabled" disabled title="Admin approval and eligibility required">Print View</button>
             <?php endif; ?>
             <?php include '../../includes/notification_bell.php'; ?>
             <div class="profile-dropdown" style="position:relative; margin-left:8px;">
@@ -854,11 +1780,11 @@ html[data-theme='dark'] .services-submenu {
             <div class="alert alert-danger"><?php echo e($session->getFlash('error')); ?></div>
         <?php endif; ?>
         <?php if ($transcriptDownloadAvailable): ?>
-            <div class="alert alert-info">Note: Official transcript export is available as a one-time download.</div>
+            <div class="alert alert-info">Note: CSV, Excel, and XML transcript export are available as a one-time download. PDF remains available while transcript access is granted.</div>
         <?php elseif ($transcriptDownloadAlreadyUsed && $transcriptViewGranted): ?>
             <div class="alert alert-info">
-                One-time transcript download already used<?php echo $transcriptDownloadUsedAt !== '' ? ' on ' . e(date('Y-m-d H:i', strtotime($transcriptDownloadUsedAt))) : ''; ?>.
-                Contact admin if re-enable is required.
+                One-time CSV/Excel/XML download already used<?php echo $transcriptDownloadUsedAt !== '' ? ' on ' . e(date('Y-m-d H:i', strtotime($transcriptDownloadUsedAt))) : ''; ?>.
+                PDF download remains available. Contact admin if you need structured export re-enabled.
             </div>
         <?php endif; ?>
         <?php if (!$transcriptViewGranted): ?>
@@ -870,11 +1796,13 @@ html[data-theme='dark'] .services-submenu {
                     <h6 class="mb-2">Transcript Eligibility Checklist</h6>
                     <ul class="mb-0 pl-3">
                         <li>Completed studies: <?php echo !empty($transcriptEligibility['completed_studies']) ? 'YES' : 'NO'; ?></li>
+                        <li>Completed full programme duration: <?php echo !empty($transcriptEligibility['completed_full_program']) ? 'YES' : 'NO'; ?><?php echo $programDurationYears > 0 ? ' (' . (int)$programDurationYears . ' year programme)' : ''; ?></li>
                         <li>No outstanding retakes: <?php echo !empty($transcriptEligibility['has_no_retakes']) ? 'YES' : 'NO'; ?><?php echo !empty($transcriptEligibility['retake_count']) ? ' (' . (int)$transcriptEligibility['retake_count'] . ')' : ''; ?></li>
                         <li>Bills cleared: <?php echo !empty($transcriptEligibility['bills_cleared']) ? 'YES' : 'NO'; ?></li>
                         <li>Discipline in good standing: <?php echo !empty($transcriptEligibility['discipline_ok']) ? 'YES' : 'NO'; ?><?php echo !empty($transcriptEligibility['discipline_status']) ? ' (' . e((string)$transcriptEligibility['discipline_status']) . ')' : ''; ?></li>
                         <li>Admin transcript rights granted: <?php echo $transcriptDownloadRightsGranted ? 'YES' : 'NO'; ?></li>
-                        <li>One-time download available: <?php echo $transcriptDownloadAlreadyUsed ? 'NO' : 'YES'; ?></li>
+                        <li>One-time CSV/Excel/XML download available: <?php echo $transcriptDownloadAlreadyUsed ? 'NO' : 'YES'; ?></li>
+                        <li>PDF download available: <?php echo $transcriptPdfAvailable ? 'YES' : 'NO'; ?></li>
                     </ul>
                 </div>
             </div>
@@ -888,32 +1816,182 @@ html[data-theme='dark'] .services-submenu {
                 </div>
             </div>
         <?php elseif ($transcriptViewGranted): ?>
-            <div class="transcript-card">
-                <div class="transcript-header">
-                    <h5 class="transcript-title">Official Academic Transcript</h5>
-                    <p class="transcript-subtitle">Generated on <?php echo e(date('Y-m-d H:i')); ?></p>
-                </div>
-
-                <div class="profile-grid">
-                    <div class="profile-chip">
-                        <div class="label">Student Name</div>
-                        <div class="value"><?php echo e(trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''))); ?></div>
-                    </div>
-                    <div class="profile-chip">
-                        <div class="label">Student ID</div>
-                        <div class="value"><?php echo e((string)($student['student_id'] ?? 'N/A')); ?></div>
-                    </div>
-                    <div class="profile-chip">
-                        <div class="label">Program</div>
-                        <div class="value"><?php echo e(trim((string)($student['program_code'] ?? '') . ' - ' . (string)($student['program_name'] ?? ''))); ?></div>
-                    </div>
-                    <div class="profile-chip">
-                        <div class="label">Academic Status</div>
-                        <div class="value"><?php echo e(ucfirst((string)($student['status'] ?? 'active'))); ?></div>
+            <div class="transcript-paper">
+                <div class="transcript-masthead">
+                    <div class="transcript-brand">
+                        <div class="transcript-logo-wrap">
+                            <img src="<?php echo e($institutionLogoPath); ?>" alt="Institution Logo" class="transcript-logo">
+                        </div>
+                        <div class="transcript-brand-center">
+                            <h5 class="transcript-school-name"><?php echo e($institutionName); ?></h5>
+                            <div class="transcript-office-title">Office Of The Dean Of Studies</div>
+                            <div class="transcript-document-title">Official Academic Transcript</div>
+                            <div class="transcript-document-subtitle">Academic Transcript</div>
+                        </div>
+                        <div class="transcript-brand-side">
+                            <?php if ($institutionAddress !== ''): ?><div><?php echo nl2br(e($institutionAddress)); ?></div><?php endif; ?>
+                            <?php if ($institutionPhone !== ''): ?><div>Tel: <?php echo e($institutionPhone); ?></div><?php endif; ?>
+                            <?php if ($institutionEmail !== ''): ?><div>Email: <?php echo e($institutionEmail); ?></div><?php endif; ?>
+                            <div>Date: <?php echo e(date('D j M Y')); ?></div>
+                        </div>
                     </div>
                 </div>
 
-                <?php if (!empty($currentIssuedTranscript)): ?>
+                <div class="transcript-meta-strip">
+                    <div class="meta-item meta-photo-item">
+                        <div class="meta-photo-frame">
+                            <div class="student-transcript-photo-wrap">
+                                <?php if (!empty($student['photo'])): ?>
+                                    <img src="<?php echo e(BASE_URL . '/' . ltrim((string)$student['photo'], '/')); ?>" alt="Student Photo" class="student-transcript-photo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                    <div class="student-transcript-photo-placeholder" style="display:none;">Student Photo</div>
+                                <?php else: ?>
+                                    <div class="student-transcript-photo-placeholder" style="display:flex;">Student Photo</div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="meta-photo-caption">Student Photo</div>
+                        </div>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Name</span>
+                        <div class="meta-value"><?php echo e(trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''))); ?></div>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Reg No</span>
+                        <div class="meta-value"><?php echo e((string)($student['student_id'] ?? ($student['admission_number'] ?? 'N/A'))); ?></div>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Sex</span>
+                        <div class="meta-value"><?php echo e((string)($student['gender'] ?? 'N/A')); ?></div>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Nationality</span>
+                        <div class="meta-value"><?php echo e((string)($student['country'] ?? 'N/A')); ?></div>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Date Of Birth</span>
+                        <div class="meta-value"><?php echo !empty($student['date_of_birth']) ? e(Helper::formatDate((string)$student['date_of_birth'], 'd-M-Y')) : 'N/A'; ?></div>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Intake</span>
+                        <div class="meta-value"><?php echo e((string)($student['entry_year'] ?? 'N/A')); ?></div>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Entry Mode</span>
+                        <div class="meta-value"><?php echo e(!empty($student['entry_semester_id']) ? 'Direct' : 'N/A'); ?></div>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Programme</span>
+                        <div class="meta-value"><?php echo e(trim((string)($student['program_code'] ?? '') . ' ' . (string)($student['program_name'] ?? 'N/A'))); ?></div>
+                    </div>
+                </div>
+
+                <?php foreach ($academicYearGroups as $yearGroup): ?>
+                    <div class="year-sheet">
+                        <div class="year-heading">
+                            <div class="year-heading-title">Academic Year: <?php echo e((string)($yearGroup['academic_year'] ?? '-')); ?></div>
+                            <div class="year-heading-stage"><?php echo e(strtoupper((string)($student['program_code'] ?? 'PROGRAM') . ' ' . $toRoman((int)($yearGroup['year_of_study'] ?? 1)))); ?></div>
+                        </div>
+
+                        <div class="year-semesters">
+                            <?php foreach ($getVisibleSemesterSlots($yearGroup) as $semesterSlot): ?>
+                                <?php $semesterBlock = $yearGroup['semesters'][$semesterSlot] ?? null; ?>
+                                <div class="semester-panel">
+                                    <div class="semester-panel-title">Semester <?php echo $semesterSlot === 1 ? 'I' : 'II'; ?></div>
+                                    <table class="transcript-table">
+                                        <thead>
+                                            <tr>
+                                                <th class="col-code">Course Code</th>
+                                                <th class="col-title">Course Title</th>
+                                                <th class="col-mark">Marks</th>
+                                                <th class="col-grade">Grade</th>
+                                                <th class="col-credit">Credit</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php if ($semesterBlock && !empty($semesterBlock['rows'])): ?>
+                                                <?php foreach ($semesterBlock['rows'] as $courseRow): ?>
+                                                    <tr>
+                                                        <td><?php echo e((string)($courseRow['course_code'] ?? '')); ?></td>
+                                                        <td><?php echo e((string)($courseRow['course_name'] ?? '')); ?></td>
+                                                        <td class="text-center"><?php echo $courseRow['marks'] !== null ? e((string)$courseRow['marks']) : '-'; ?></td>
+                                                        <td class="text-center"><?php echo e((string)($courseRow['grade'] ?? '-')); ?></td>
+                                                        <td class="text-center"><?php echo e(number_format((float)($courseRow['credit_hours'] ?? 0), 0)); ?></td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                                <tr class="average-row">
+                                                    <td colspan="2">Average</td>
+                                                    <td class="text-center"><?php echo $semesterBlock['average_mark'] !== null ? e((string)$semesterBlock['average_mark']) : '-'; ?></td>
+                                                    <td class="text-center"><?php echo e((string)($semesterBlock['average_grade'] ?? '-')); ?></td>
+                                                    <td class="text-center">-</td>
+                                                </tr>
+                                            <?php else: ?>
+                                                <?php for ($rowPad = 0; $rowPad < 10; $rowPad++): ?>
+                                                    <tr class="empty-row">
+                                                        <td>&nbsp;</td>
+                                                        <td></td>
+                                                        <td></td>
+                                                        <td></td>
+                                                        <td></td>
+                                                    </tr>
+                                                <?php endfor; ?>
+                                            <?php endif; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+
+                <div class="transcript-footer-band">
+                    <div class="grading-key">
+                        <div class="grading-key-title">Grading Key</div>
+                        <div>80% - 100%: A First Class</div>
+                        <div>75% - 79%: B+ Second Class Upper Division</div>
+                        <div>70% - 74%: B Second Class Upper Division</div>
+                        <div>65% - 69%: C+ Second Class Lower Division</div>
+                        <div>60% - 64%: C Pass</div>
+                        <div>50% - 59%: D Pass</div>
+                        <div>40% - 49%: E Fail</div>
+                        <div>Below 40%: F Fail</div>
+                    </div>
+
+                    <div class="award-box">
+                        <div class="award-line">
+                            <strong>Award:</strong>
+                            <span class="transcript-footer-value"><?php echo e((string)($graduationAward['award_title'] ?? ($student['program_name'] ?? 'Pending'))); ?></span>
+                        </div>
+                        <div class="award-line">
+                            <strong>Grade:</strong>
+                            <span class="transcript-footer-value"><?php echo e((string)($graduationAward['classification'] ?? $cgpaClassification)); ?></span>
+                        </div>
+                        <div class="award-line">
+                            <strong>CGPA:</strong>
+                            <span class="transcript-footer-value"><?php echo $finalCgpa !== null ? e(number_format((float)$finalCgpa, 2)) : 'N/A'; ?></span>
+                        </div>
+                        <div class="award-line">
+                            <strong>Credits:</strong>
+                            <span class="transcript-footer-value"><?php echo e(number_format((float)$totalCreditsEarned, 0)); ?></span>
+                        </div>
+                        <div class="award-line">
+                            <strong>Award Date:</strong>
+                            <span class="transcript-footer-value"><?php echo !empty($graduationAward['award_date']) ? e(Helper::formatDate((string)$graduationAward['award_date'], 'M d, Y')) : 'Pending'; ?></span>
+                        </div>
+                    </div>
+
+                    <div class="signature-box">
+                        <div class="signature-space"></div>
+                        <div class="signature-label">For Dean Of Studies</div>
+                        <div class="signature-subtext">
+                            Authorized signature and institutional stamp
+                            <?php if (!empty($currentIssuedTranscript['issued_at'])): ?>
+                                on <?php echo e(Helper::formatDate((string)$currentIssuedTranscript['issued_at'], 'M d, Y')); ?>
+                            <?php endif; ?>.
+                        </div>
+                    </div>
+                </div>
+
+                <?php if ($transcriptDownloadRightsGranted && !empty($currentIssuedTranscript)): ?>
                     <div class="verification-panel">
                         <div class="verification-qr-wrap">
                             <div id="transcriptQrCode" class="verification-qr" data-qr-url="<?php echo e((string)($currentIssuedTranscript['verification_url'] ?? '')); ?>"></div>
@@ -937,82 +2015,11 @@ html[data-theme='dark'] .services-submenu {
                                     <div class="value"><?php echo e((string)($currentIssuedTranscript['verification_token'] ?? '')); ?></div>
                                 </div>
                             </div>
-                            <div class="verification-note">This transcript has a permanent verification record for student-led sharing and printed copies.</div>
-                            <div class="verification-link mt-2"><?php echo e((string)($currentIssuedTranscript['verification_url'] ?? '')); ?></div>
+                            <div class="verification-note">This transcript has a permanent verification record for print and digital confirmation.</div>
+                            <div class="verification-link"><?php echo e((string)($currentIssuedTranscript['verification_url'] ?? '')); ?></div>
                         </div>
                     </div>
                 <?php endif; ?>
-
-                <?php foreach ($terms as $term): ?>
-                    <div class="term-section">
-                        <div class="term-header">
-                            <h6 class="term-title">
-                                <?php echo e((string)($term['academic_year'] ?? '-')); ?> - <?php echo e((string)($term['semester_name'] ?? 'Semester')); ?>
-                            </h6>
-                            <span class="term-meta">Year <?php echo (int)($term['year_of_study'] ?? 1); ?> | Semester <?php echo (int)($term['semester_number'] ?? 1); ?></span>
-                        </div>
-                        <div class="table-responsive">
-                            <table class="transcript-table">
-                                <thead>
-                                    <tr>
-                                        <th>Course Code</th>
-                                        <th>Course Title</th>
-                                        <th class="text-center">CU</th>
-                                        <th class="text-center">Grade</th>
-                                        <th class="text-center">GP</th>
-                                        <th class="text-center">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($term['rows'] as $courseRow): ?>
-                                        <tr>
-                                            <td><?php echo e((string)($courseRow['course_code'] ?? '')); ?></td>
-                                            <td><?php echo e((string)($courseRow['course_name'] ?? '')); ?></td>
-                                            <td class="text-center"><?php echo e((string)($courseRow['credit_hours'] ?? '0')); ?></td>
-                                            <td class="text-center"><?php echo e((string)($courseRow['grade'] ?? '-')); ?></td>
-                                            <td class="text-center"><?php echo ($courseRow['grade_points'] !== null && $courseRow['grade_points'] !== '') ? e(number_format((float)$courseRow['grade_points'], 2)) : '-'; ?></td>
-                                            <td class="text-center"><?php echo e(ucfirst((string)($courseRow['result_status'] ?? 'pending'))); ?></td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                        <div class="summary-badges">
-                            <span class="summary-badge">Attempted Credits: <?php echo e(number_format((float)$term['attempted_credits'], 0)); ?></span>
-                            <span class="summary-badge">Earned Credits: <?php echo e(number_format((float)$term['earned_credits'], 0)); ?></span>
-                            <span class="summary-badge">SGPA: <?php echo $term['sgpa'] !== null ? e(number_format((float)$term['sgpa'], 2)) : 'N/A'; ?></span>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
-
-                <div class="final-summary">
-                    <div class="final-summary-grid">
-                        <div class="final-item">
-                            <div class="label">Final CGPA</div>
-                            <div class="value"><?php echo $finalCgpa !== null ? e(number_format((float)$finalCgpa, 2)) : 'N/A'; ?></div>
-                        </div>
-                        <div class="final-item">
-                            <div class="label">Classification</div>
-                            <div class="value"><?php echo e($cgpaClassification); ?></div>
-                        </div>
-                        <div class="final-item">
-                            <div class="label">Attempted Credits</div>
-                            <div class="value"><?php echo e(number_format((float)$totalCreditsAttempted, 0)); ?></div>
-                        </div>
-                        <div class="final-item">
-                            <div class="label">Earned Credits</div>
-                            <div class="value"><?php echo e(number_format((float)$totalCreditsEarned, 0)); ?></div>
-                        </div>
-                        <div class="final-item">
-                            <div class="label">Award</div>
-                            <div class="value"><?php echo e((string)($graduationAward['award_title'] ?? 'Pending')); ?></div>
-                        </div>
-                        <div class="final-item">
-                            <div class="label">Award Class</div>
-                            <div class="value"><?php echo e((string)($graduationAward['classification'] ?? $cgpaClassification)); ?></div>
-                        </div>
-                    </div>
-                </div>
             </div>
         <?php endif; ?>
     </div>

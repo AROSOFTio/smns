@@ -40,6 +40,7 @@ $currentUser = $auth->getCurrentUser();
 
 $success = '';
 $error = '';
+$defaultStudentPassword = 'Password@2026';
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -52,6 +53,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $firstName = Security::sanitize($_POST['first_name'] ?? '');
         $lastName = Security::sanitize($_POST['last_name'] ?? '');
         $phone = Security::sanitize($_POST['phone'] ?? '');
+
+        if ($role === 'student') {
+            $password = $defaultStudentPassword;
+            $confirmPassword = $defaultStudentPassword;
+        }
         
         // Validation
         $validator = new Validator($_POST);
@@ -143,7 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $stmt->execute([$userId, $lecturerId, $firstName, $lastName, $phone, $email]);
                             break;
                         case 'student':
-                            $studentId = 'STD' . date('Y') . str_pad((string)$userId, 3, '0', STR_PAD_LEFT);
+                            $studentId = generateStudentRegistrationNumber($conn);
                             $accountIdentifier = $studentId;
                             $accountIdLabel = 'Student ID';
                             $stmt = $conn->prepare("

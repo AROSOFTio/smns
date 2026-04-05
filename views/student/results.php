@@ -59,26 +59,18 @@ $academicStatusMeta = getStudentAcademicStatusMeta(
 $academicStatus = (string)($academicStatusMeta['label'] ?? 'Status Pending');
 $academicStatusStyle = (string)($academicStatusMeta['style'] ?? getAcademicStatusChipStyle('neutral'));
 
-// Always resolve programme from admin-assigned student record.
+// Resolve programme from the effective academic trail to avoid stale profile labels.
 $registeredProgramName = '-';
 if (!empty($studentProfile['id'])) {
-    try {
-        $progStmt = $conn->prepare("
-            SELECT p.program_name
-            FROM students s
-            LEFT JOIN programs p ON s.program_id = p.id
-            WHERE s.id = :student_id
-            LIMIT 1
-        ");
-        $progStmt->execute(['student_id' => (int)$studentProfile['id']]);
-        $programName = $progStmt->fetchColumn();
-        if (!empty($programName)) {
-            $registeredProgramName = $programName;
-        } elseif (!empty($studentProfile['program_name'])) {
-            $registeredProgramName = $studentProfile['program_name'];
-        }
-    } catch (Exception $e) {
-        $registeredProgramName = !empty($studentProfile['program_name']) ? $studentProfile['program_name'] : '-';
+    $effectiveProgram = getStudentEffectiveProgram($conn, (int)$studentProfile['id'], [
+        'program_id' => (int)($studentProfile['program_id'] ?? 0),
+        'program_code' => (string)($studentProfile['program_code'] ?? ''),
+        'program_name' => (string)($studentProfile['program_name'] ?? ''),
+    ]);
+    if (!empty($effectiveProgram['program_name'])) {
+        $registeredProgramName = (string)$effectiveProgram['program_name'];
+    } elseif (!empty($studentProfile['program_name'])) {
+        $registeredProgramName = (string)$studentProfile['program_name'];
     }
 }
 
@@ -103,6 +95,36 @@ $mailUnreadCount = !empty($currentUser['id']) ? getUnreadNotificationCountForUse
 $results = [];
 $organizedResults = [];
 $activePublishedSemesterId = 0;
+$resolveTranscriptScale = static function ($mark): array {
+    if ($mark === null || $mark === '' || !is_numeric($mark)) {
+        return ['grade' => '', 'grade_point' => null];
+    }
+
+    $score = (float)$mark;
+    if ($score >= 80.0) {
+        return ['grade' => 'A', 'grade_point' => 5.00];
+    }
+    if ($score >= 75.0) {
+        return ['grade' => 'B+', 'grade_point' => 4.00];
+    }
+    if ($score >= 70.0) {
+        return ['grade' => 'B', 'grade_point' => 3.50];
+    }
+    if ($score >= 65.0) {
+        return ['grade' => 'C+', 'grade_point' => 3.00];
+    }
+    if ($score >= 60.0) {
+        return ['grade' => 'C', 'grade_point' => 2.50];
+    }
+    if ($score >= 50.0) {
+        return ['grade' => 'D', 'grade_point' => 2.00];
+    }
+    if ($score >= 40.0) {
+        return ['grade' => 'E', 'grade_point' => 1.00];
+    }
+
+    return ['grade' => 'F', 'grade_point' => 0.00];
+};
 
 if ($studentId > 0) {
     try {
@@ -389,8 +411,34 @@ html[data-theme='dark'] #keyDropMenu input.form-control::placeholder {
 .text-center { text-align: center; }
 .summary-row td { background: #f8fafc; font-weight: 700; }
 .cgpa-row td { background: #ecfdf3; color: #166534; font-weight: 700; }
+.grading-key { margin-top: 1rem; padding: 0.85rem 1rem; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; font-size: 0.82rem; color: #334155; }
+.grading-key strong { color: #0f172a; }
 .badge-published { background: #dcfce7; border: 1px solid #86efac; color: #166534; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; }
 .badge-pending { background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; }
+html[data-theme='dark'] .main-content {
+    background: #020617;
+}
+html[data-theme='dark'] .results-card {
+    background: #0f172a;
+    border-color: #334155;
+    box-shadow: 0 10px 28px rgba(2, 6, 23, 0.45);
+}
+html[data-theme='dark'] .results-header {
+    background: #111827;
+    border-bottom-color: #334155;
+}
+html[data-theme='dark'] .results-header h4,
+html[data-theme='dark'] .student-meta,
+html[data-theme='dark'] .year-title,
+html[data-theme='dark'] .results-wrap,
+html[data-theme='dark'] .results-card .alert {
+    color: #e2e8f0;
+}
+html[data-theme='dark'] .semester-title {
+    background: #172033;
+    color: #dbeafe;
+    border-color: #334155;
+}
 html[data-theme='dark'] .marks-table { border-color: #334155; }
 html[data-theme='dark'] .marks-table th {
     background: #1e293b;
@@ -401,8 +449,30 @@ html[data-theme='dark'] .marks-table td {
     border-color: #334155;
     color: #e2e8f0;
 }
+html[data-theme='dark'] .marks-table tbody tr {
+    background: #0f172a;
+}
 html[data-theme='dark'] .marks-table tbody tr:nth-child(even) { background: #0f172a; }
 html[data-theme='dark'] .marks-table tbody tr:hover { background: #132235; }
+html[data-theme='dark'] .summary-row td {
+    background: #182235;
+    color: #f8fafc;
+}
+html[data-theme='dark'] .cgpa-row td {
+    background: #0f2b1f;
+    color: #bbf7d0;
+}
+html[data-theme='dark'] .grading-key {
+    background: #172033;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+html[data-theme='dark'] .grading-key strong {
+    color: #f8fafc;
+}
+html[data-theme='dark'] .table-responsive {
+    border-radius: 0 0 10px 10px;
+}
 </style>
 
 <div class="student-sidebar">
@@ -577,10 +647,17 @@ html[data-theme='dark'] .marks-table tbody tr:hover { background: #132235; }
                                                 <?php
                                                 $isPublished = (($course['result_status'] ?? '') === 'published');
                                                 $cu = (int)($course['credit_hours'] ?? 0);
+                                                $resolvedScale = $resolveTranscriptScale($course['total_marks'] ?? null);
+                                                $displayGrade = $isPublished && $resolvedScale['grade'] !== ''
+                                                    ? (string)$resolvedScale['grade']
+                                                    : '';
+                                                $displayGradePoint = $isPublished
+                                                    ? $resolvedScale['grade_point']
+                                                    : null;
 
-                                                if ($isPublished && is_numeric($course['grade_points'])) {
+                                                if ($isPublished && $displayGradePoint !== null) {
                                                     $semesterCredits += $cu;
-                                                    $semesterPoints += ((float)$course['grade_points']) * $cu;
+                                                    $semesterPoints += ((float)$displayGradePoint) * $cu;
                                                     $publishedCourses++;
                                                 } else {
                                                     $allPublished = false;
@@ -593,8 +670,8 @@ html[data-theme='dark'] .marks-table tbody tr:hover { background: #132235; }
                                                     <td class="text-center"><?php echo $isPublished ? number_format((float)$course['assignment_marks'], 0) : 'PA'; ?></td>
                                                     <td class="text-center"><?php echo $isPublished ? number_format((float)$course['final_exam_marks'], 0) : 'PA'; ?></td>
                                                     <td class="text-center"><?php echo $isPublished ? number_format((float)$course['total_marks'], 0) : 'PA'; ?></td>
-                                                    <td class="text-center"><?php echo $isPublished ? e($course['grade'] ?? '-') : 'PA'; ?></td>
-                                                    <td class="text-center"><?php echo $isPublished ? number_format((float)$course['grade_points'], 2) : 'PA'; ?></td>
+                                                    <td class="text-center"><?php echo $isPublished && $displayGrade !== '' ? e($displayGrade) : 'PA'; ?></td>
+                                                    <td class="text-center"><?php echo $isPublished && $displayGradePoint !== null ? number_format((float)$displayGradePoint, 2) : 'PA'; ?></td>
                                                 </tr>
                                             <?php endforeach; ?>
 
@@ -627,6 +704,17 @@ html[data-theme='dark'] .marks-table tbody tr:hover { background: #132235; }
                             <?php endforeach; ?>
                         </div>
                     <?php endforeach; ?>
+                    <div class="grading-key">
+                        <strong>Grading Key:</strong>
+                        A (80-100, 5.00),
+                        B+ (75-79, 4.00),
+                        B (70-74, 3.50),
+                        C+ (65-69, 3.00),
+                        C (60-64, 2.50),
+                        D (50-59, 2.00),
+                        E (40-49, 1.00),
+                        F (0-39, 0.00).
+                    </div>
                 <?php endif; ?>
             </div>
         </div>

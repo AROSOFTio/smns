@@ -159,13 +159,13 @@ class MfaService {
 
         $sent = Helper::sendEmail([$email], $subject, $message, [
             'context_label' => 'MFA OTP',
-            // Keep MFA responsive on slow localhost SMTP/network links.
-            'retry_attempts' => 1,
-            'retry_delay_ms' => 0,
+            // MFA still needs to feel responsive, but the transport should get a fair chance on slower links.
+            'retry_attempts' => 2,
+            'retry_delay_ms' => 800,
             'allow_php_fallback' => false,
-            'smtp_connection_timeout_ms' => 6000,
-            'smtp_greeting_timeout_ms' => 5000,
-            'smtp_socket_timeout_ms' => 7000
+            'smtp_connection_timeout_ms' => 12000,
+            'smtp_greeting_timeout_ms' => 10000,
+            'smtp_socket_timeout_ms' => 15000
         ]);
         if (!$sent) {
             $lastError = method_exists('Helper', 'getLastEmailError') ? trim((string)Helper::getLastEmailError()) : '';

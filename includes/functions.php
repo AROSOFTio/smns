@@ -80,6 +80,123 @@ function e($string) {
 }
 
 /**
+ * Build the canonical student registration prefix for a given year.
+ */
+function buildStudentRegistrationPrefix($year = null) {
+    $resolvedYear = (int)($year ?: date('Y'));
+    if ($resolvedYear < 1900) {
+        $resolvedYear = (int)date('Y');
+    }
+    return $resolvedYear . '-STU-';
+}
+
+/**
+ * Generate a unique student registration number in the format YYYY-STU-XXX.
+ */
+function generateStudentRegistrationNumber(PDO $conn, $year = null) {
+    $prefix = buildStudentRegistrationPrefix($year);
+    $stmt = $conn->prepare("SELECT student_id FROM students WHERE student_id LIKE :prefix ORDER BY student_id DESC LIMIT 1");
+    $stmt->execute(['prefix' => $prefix . '%']);
+    $lastStudentId = (string)($stmt->fetchColumn() ?: '');
+    $next = 1;
+
+    if ($lastStudentId !== '' && preg_match('/(\d+)$/', $lastStudentId, $matches)) {
+        $next = ((int)$matches[1]) + 1;
+    }
+
+    for ($i = 0; $i < 1000; $i++) {
+        $candidate = $prefix . str_pad((string)($next + $i), 3, '0', STR_PAD_LEFT);
+        $checkStmt = $conn->prepare("SELECT id FROM students WHERE student_id = :student_id LIMIT 1");
+        $checkStmt->execute(['student_id' => $candidate]);
+        if (!$checkStmt->fetch(PDO::FETCH_ASSOC)) {
+            return $candidate;
+        }
+    }
+
+    throw new Exception('Unable to allocate a unique student registration number.');
+}
+
+/**
+ * Resolve the student's effective programme from the most reliable academic source.
+ * Preference order:
+ * 1. Dominant programme found in the student's registered course history.
+ * 2. Explicit programme on the student profile row.
+ * 3. Caller-provided fallback values.
+ */
+function getStudentEffectiveProgram(PDO $conn, int $studentId, array $fallback = []): array
+{
+    $result = [
+        'program_id' => (int)($fallback['program_id'] ?? 0),
+        'program_code' => (string)($fallback['program_code'] ?? ''),
+        'program_name' => (string)($fallback['program_name'] ?? ''),
+        'source' => 'fallback',
+    ];
+
+    if ($studentId <= 0) {
+        return $result;
+    }
+
+    try {
+        $historyStmt = $conn->prepare("
+            SELECT
+                c.program_id,
+                p.program_code,
+                p.program_name,
+                COUNT(*) AS course_count
+            FROM course_registrations cr
+            INNER JOIN courses c ON c.id = cr.course_id
+            LEFT JOIN programs p ON p.id = c.program_id
+            WHERE cr.student_id = :student_id
+              AND COALESCE(LOWER(cr.status), 'approved') <> 'dropped'
+              AND c.program_id IS NOT NULL
+              AND c.program_id > 0
+            GROUP BY c.program_id, p.program_code, p.program_name
+            ORDER BY course_count DESC, c.program_id ASC
+            LIMIT 1
+        ");
+        $historyStmt->execute(['student_id' => $studentId]);
+        $historyProgram = $historyStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if ($historyProgram && !empty($historyProgram['program_id'])) {
+            return [
+                'program_id' => (int)$historyProgram['program_id'],
+                'program_code' => (string)($historyProgram['program_code'] ?? ''),
+                'program_name' => (string)($historyProgram['program_name'] ?? ''),
+                'source' => 'course_history',
+            ];
+        }
+    } catch (Exception $e) {
+        // Fall through to profile programme.
+    }
+
+    try {
+        $profileStmt = $conn->prepare("
+            SELECT
+                s.program_id,
+                p.program_code,
+                p.program_name
+            FROM students s
+            LEFT JOIN programs p ON p.id = s.program_id
+            WHERE s.id = :student_id
+            LIMIT 1
+        ");
+        $profileStmt->execute(['student_id' => $studentId]);
+        $profileProgram = $profileStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if ($profileProgram && !empty($profileProgram['program_id'])) {
+            return [
+                'program_id' => (int)$profileProgram['program_id'],
+                'program_code' => (string)($profileProgram['program_code'] ?? ''),
+                'program_name' => (string)($profileProgram['program_name'] ?? ''),
+                'source' => 'student_profile',
+            ];
+        }
+    } catch (Exception $e) {
+        // Use fallback.
+    }
+
+    return $result;
+}
+
+/**
  * Normalize country/nationality tokens for currency routing.
  */
 function normalizeGeoForCurrency($value) {

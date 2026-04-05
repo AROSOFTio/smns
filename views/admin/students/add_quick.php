@@ -19,38 +19,11 @@ $conn = $db->getConnection();
 
 $errors = [];
 $success = '';
+$defaultStudentPassword = 'Password@2026';
 
 // Fetch programs
 $pstmt = $conn->query("SELECT id, program_name FROM programs WHERE status='active' ORDER BY program_name");
 $programs = $pstmt->fetchAll();
-
-function generateQuickStudentCode(PDO $conn): string
-{
-    $year = date('Y');
-    $prefix = strtoupper((string)preg_replace('/[^A-Z0-9]/i', '', getSetting('student_id_prefix', 'STD')));
-    if ($prefix === '') {
-        $prefix = 'STD';
-    }
-    $codePrefix = $year . '-' . $prefix . '-';
-    $stmt = $conn->prepare("SELECT student_id FROM students WHERE student_id LIKE :pattern ORDER BY student_id DESC LIMIT 1");
-    $stmt->execute(['pattern' => $codePrefix . '%']);
-    $lastCode = (string)($stmt->fetchColumn() ?: '');
-    $next = 1;
-    if ($lastCode !== '' && preg_match('/(\d+)$/', $lastCode, $m)) {
-        $next = ((int)$m[1]) + 1;
-    }
-
-    for ($i = 0; $i < 1000; $i++) {
-        $candidate = $codePrefix . str_pad($next + $i, 3, '0', STR_PAD_LEFT);
-        $check = $conn->prepare("SELECT id FROM students WHERE student_id = :student_id LIMIT 1");
-        $check->execute(['student_id' => $candidate]);
-        if (!$check->fetch(PDO::FETCH_ASSOC)) {
-            return $candidate;
-        }
-    }
-
-    throw new Exception('Unable to allocate unique student ID.');
-}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $first_name = trim($_POST['first_name'] ?? '');
@@ -111,15 +84,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $suffix++;
             }
 
-            $tempPassword = Security::generatePassword(10);
+            $tempPassword = $defaultStudentPassword;
             $passwordHash = Security::hashPassword($tempPassword);
 
-            $ust = $conn->prepare("INSERT INTO users (username,email,password_hash,role,status,require_password_change,created_at) VALUES (:username,:email,:hash,'student','active',1,NOW())");
+            $ust = $conn->prepare("INSERT INTO users (username,email,password_hash,role,status,require_password_change,created_at) VALUES (:username,:email,:hash,'student','active',0,NOW())");
             $ust->execute(['username' => $username, 'email' => $email, 'hash' => $passwordHash]);
             $newUserId = $conn->lastInsertId();
 
             // Generate permanent student code (PRN-like) with collision guard.
-            $studentCode = generateQuickStudentCode($conn);
+            $studentCode = generateStudentRegistrationNumber($conn);
 
             $sstmt = $conn->prepare("INSERT INTO students (user_id, student_id, first_name, last_name, email, program_id, level_year, status, created_at) VALUES (:user_id,:student_id,:first_name,:last_name,:email,:program_id,:level_year,'active',NOW())");
             $sstmt->execute([

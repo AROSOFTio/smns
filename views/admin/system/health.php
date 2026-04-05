@@ -342,6 +342,161 @@ function getHealthCheckMetadata($checkName) {
     ];
 }
 
+function getHealthStatusSeverity($status) {
+    $status = strtolower((string)$status);
+    if ($status === 'fail') {
+        return 3;
+    }
+    if ($status === 'warning') {
+        return 2;
+    }
+    return 1;
+}
+
+function resolveHealthAggregateStatus($statuses) {
+    $highest = 1;
+    foreach ((array)$statuses as $status) {
+        $highest = max($highest, getHealthStatusSeverity($status));
+    }
+    if ($highest >= 3) {
+        return 'fail';
+    }
+    if ($highest >= 2) {
+        return 'warning';
+    }
+    return 'pass';
+}
+
+function runSmtpDiagnostics() {
+    $smtpHost = trim((string)(defined('SMTP_HOST') ? SMTP_HOST : ''));
+    $smtpPort = (int)(defined('SMTP_PORT') ? SMTP_PORT : 0);
+    $transport = trim((string)(defined('EMAIL_TRANSPORT') ? EMAIL_TRANSPORT : 'php_mail'));
+    $secure = defined('SMTP_SECURE') ? (SMTP_SECURE ? 'SSL/TLS' : 'STARTTLS / opportunistic TLS') : 'Not set';
+
+    $details = [];
+    $summaryParts = [];
+
+    $configStatus = 'pass';
+    if ($smtpHost === '' || $smtpPort < 1 || $smtpPort > 65535) {
+        $configStatus = 'warning';
+        $summaryParts[] = 'SMTP settings are incomplete.';
+    } else {
+        $summaryParts[] = "Configured host {$smtpHost} on port {$smtpPort}.";
+    }
+    $details[] = [
+        'label' => 'Configuration',
+        'status' => $configStatus,
+        'message' => 'Transport: ' . ($transport !== '' ? $transport : 'not set')
+            . ' | Host: ' . ($smtpHost !== '' ? $smtpHost : 'not set')
+            . ' | Port: ' . ($smtpPort > 0 ? $smtpPort : 'not set')
+            . ' | Security: ' . $secure
+    ];
+
+    $dnsStatus = 'warning';
+    $dnsAddresses = [];
+    $dnsNotes = [];
+    if ($smtpHost === '') {
+        $dnsStatus = 'warning';
+        $dnsNotes[] = 'SMTP host is not configured.';
+    } else {
+        if (function_exists('dns_get_record')) {
+            $records = @dns_get_record($smtpHost, DNS_A + DNS_AAAA);
+            if (is_array($records) && !empty($records)) {
+                foreach ($records as $record) {
+                    if (!empty($record['ip'])) {
+                        $dnsAddresses[] = $record['ip'];
+                    }
+                    if (!empty($record['ipv6'])) {
+                        $dnsAddresses[] = $record['ipv6'];
+                    }
+                }
+            }
+        }
+
+        if (empty($dnsAddresses)) {
+            $fallbackAddress = @gethostbyname($smtpHost);
+            if ($fallbackAddress !== '' && $fallbackAddress !== $smtpHost) {
+                $dnsAddresses[] = $fallbackAddress;
+                $dnsNotes[] = 'Resolved using gethostbyname() fallback.';
+            }
+        }
+
+        $dnsAddresses = array_values(array_unique(array_filter(array_map('trim', $dnsAddresses))));
+        if (!empty($dnsAddresses)) {
+            $dnsStatus = 'pass';
+            $dnsNotes[] = 'Resolved address(es): ' . implode(', ', $dnsAddresses);
+        } else {
+            $dnsStatus = 'fail';
+            $dnsNotes[] = 'DNS could not resolve the configured SMTP host.';
+        }
+    }
+    $details[] = [
+        'label' => 'DNS Resolution',
+        'status' => $dnsStatus,
+        'message' => implode(' ', $dnsNotes)
+    ];
+
+    $reachabilityStatus = 'warning';
+    $reachabilityMessage = 'SMTP reachability not tested.';
+    if ($smtpHost === '' || $smtpPort < 1 || $smtpPort > 65535) {
+        $reachabilityStatus = 'warning';
+        $reachabilityMessage = 'SMTP host/port must be configured before port reachability can be tested.';
+    } else {
+        $connectHost = !empty($dnsAddresses) ? (string)$dnsAddresses[0] : $smtpHost;
+        $start = microtime(true);
+        $errno = 0;
+        $errstr = '';
+        $socket = @fsockopen($connectHost, $smtpPort, $errno, $errstr, 4);
+        $elapsedMs = (int)round((microtime(true) - $start) * 1000);
+        if ($socket) {
+            fclose($socket);
+            $reachabilityStatus = 'pass';
+            $reachabilityMessage = 'TCP connection succeeded to ' . $connectHost . ':' . $smtpPort . ' in ' . $elapsedMs . ' ms.';
+            if ($connectHost !== $smtpHost) {
+                $reachabilityMessage .= ' Original host: ' . $smtpHost . '.';
+            }
+        } else {
+            $reachabilityStatus = !empty($dnsAddresses) ? 'fail' : 'warning';
+            $reachabilityMessage = 'TCP connection failed to ' . $connectHost . ':' . $smtpPort;
+            if ($errno || $errstr !== '') {
+                $reachabilityMessage .= ' (' . $errno . ') ' . $errstr;
+            }
+            $reachabilityMessage .= '.';
+            if (!empty($dnsAddresses)) {
+                $reachabilityMessage .= ' DNS resolved, so this usually points to firewall, antivirus, ISP, or SMTP egress blocking.';
+            }
+        }
+    }
+    $details[] = [
+        'label' => 'Port Reachability',
+        'status' => $reachabilityStatus,
+        'message' => $reachabilityMessage
+    ];
+
+    $overallStatus = resolveHealthAggregateStatus([$configStatus, $dnsStatus, $reachabilityStatus]);
+    if ($overallStatus === 'pass') {
+        $summaryParts[] = 'DNS resolution and SMTP port reachability are both working.';
+    } elseif ($dnsStatus === 'fail') {
+        $summaryParts[] = 'DNS resolution failed for the SMTP host.';
+    } elseif ($reachabilityStatus === 'fail') {
+        $summaryParts[] = 'SMTP host resolves, but the configured port is not reachable.';
+    } else {
+        $summaryParts[] = 'SMTP diagnostics need attention.';
+    }
+
+    return [
+        'status' => $overallStatus,
+        'message' => implode(' ', $summaryParts),
+        'details' => $details,
+        'meta' => [
+            'host' => $smtpHost,
+            'port' => $smtpPort,
+            'transport' => $transport,
+            'secure' => $secure,
+        ],
+    ];
+}
+
 /**
  * Extract warning/fail issues with location context.
  */
@@ -645,20 +800,14 @@ if (empty($missingConstants)) {
     $checks['constants'] = ['status' => 'fail', 'message' => 'Missing constants: ' . implode(', ', $missingConstants)];
 }
 
-// 10. SMTP connectivity (basic)
+// 10. SMTP diagnostics
 try {
-    $smtpHost = defined('SMTP_HOST') ? SMTP_HOST : null;
-    $smtpPort = defined('SMTP_PORT') ? SMTP_PORT : null;
-    if ($smtpHost && $smtpPort) {
-        $fp = @fsockopen($smtpHost, $smtpPort, $errno, $errstr, 2);
-        if ($fp) { fclose($fp); $checks['smtp'] = ['status' => 'pass', 'message' => "SMTP reachable: $smtpHost:$smtpPort"]; }
-        else { $checks['smtp'] = ['status' => 'warning', 'message' => "SMTP not reachable: $smtpHost:$smtpPort ($errno) $errstr"]; }
-    } else {
-        $checks['smtp'] = ['status' => 'warning', 'message' => 'SMTP settings not configured in config.php'];
-    }
+    $checks['smtp'] = runSmtpDiagnostics();
 } catch (Throwable $e) {
     $checks['smtp'] = ['status' => 'fail', 'message' => 'SMTP check error: ' . $e->getMessage()];
-} 
+}
+
+$smtpDiagnostics = $checks['smtp'] ?? ['status' => 'warning', 'message' => 'SMTP diagnostics unavailable.', 'details' => []];
 
 // 11. Module page coverage checks (all major modules)
 $modulePageChecks = [
@@ -955,6 +1104,45 @@ include '../../../includes/header.php';
             </div>
             
             <!-- Detailed Health Checks -->
+            <div class="row mt-4">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">
+                                <i class="fas fa-envelope-open-text"></i> SMTP Diagnostics
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="smtp-diagnostic-summary smtp-<?php echo e($smtpDiagnostics['status'] ?? 'warning'); ?>">
+                                <div>
+                                    <strong>Status:</strong>
+                                    <span class="badge badge-<?php echo ($smtpDiagnostics['status'] ?? 'warning') === 'pass' ? 'success' : (($smtpDiagnostics['status'] ?? 'warning') === 'warning' ? 'warning' : 'danger'); ?>">
+                                        <?php echo strtoupper((string)($smtpDiagnostics['status'] ?? 'warning')); ?>
+                                    </span>
+                                </div>
+                                <p class="mb-0 mt-2"><?php echo e($smtpDiagnostics['message'] ?? ''); ?></p>
+                            </div>
+
+                            <div class="row mt-3">
+                                <?php foreach (($smtpDiagnostics['details'] ?? []) as $detail): ?>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="smtp-detail-card smtp-<?php echo e($detail['status'] ?? 'warning'); ?>">
+                                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                                <h6 class="mb-0"><?php echo e($detail['label'] ?? 'Check'); ?></h6>
+                                                <span class="badge badge-<?php echo ($detail['status'] ?? 'warning') === 'pass' ? 'success' : (($detail['status'] ?? 'warning') === 'warning' ? 'warning' : 'danger'); ?>">
+                                                    <?php echo strtoupper((string)($detail['status'] ?? 'warning')); ?>
+                                                </span>
+                                            </div>
+                                            <p class="mb-0 text-secondary"><?php echo e($detail['message'] ?? ''); ?></p>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="row">
                 <div class="col-md-12">
                     <div class="card">
@@ -976,12 +1164,25 @@ include '../../../includes/header.php';
                                                 <i class="fas fa-times-circle text-danger"></i>
                                             <?php endif; ?>
                                         </div>
-                                        <div class="check-details">
-                                            <h6><?php echo ucwords(str_replace('_', ' ', $checkName)); ?></h6>
-                                            <p class="text-secondary"><?php echo e($check['message']); ?></p>
-                                        </div>
-                                        <div class="check-badge">
-                                            <span class="badge badge-<?php echo $check['status'] === 'pass' ? 'success' : ($check['status'] === 'warning' ? 'warning' : 'danger'); ?>">
+                                         <div class="check-details">
+                                             <h6><?php echo ucwords(str_replace('_', ' ', $checkName)); ?></h6>
+                                             <p class="text-secondary"><?php echo e($check['message']); ?></p>
+                                             <?php if (!empty($check['details']) && is_array($check['details'])): ?>
+                                                 <div class="health-check-subdetails">
+                                                     <?php foreach ($check['details'] as $detail): ?>
+                                                         <div class="health-check-subdetail">
+                                                             <span class="badge badge-<?php echo ($detail['status'] ?? 'warning') === 'pass' ? 'success' : (($detail['status'] ?? 'warning') === 'warning' ? 'warning' : 'danger'); ?>">
+                                                                 <?php echo strtoupper((string)($detail['status'] ?? 'warning')); ?>
+                                                             </span>
+                                                             <span class="subdetail-label"><?php echo e($detail['label'] ?? 'Detail'); ?>:</span>
+                                                             <span><?php echo e($detail['message'] ?? ''); ?></span>
+                                                         </div>
+                                                     <?php endforeach; ?>
+                                                 </div>
+                                             <?php endif; ?>
+                                         </div>
+                                         <div class="check-badge">
+                                             <span class="badge badge-<?php echo $check['status'] === 'pass' ? 'success' : ($check['status'] === 'warning' ? 'warning' : 'danger'); ?>">
                                                 <?php echo strtoupper($check['status']); ?>
                                             </span>
                                         </div>
@@ -1200,8 +1401,49 @@ include '../../../includes/header.php';
     margin: 0;
     font-size: 0.9rem;
 }
+.health-check-subdetails {
+    margin-top: 10px;
+    display: grid;
+    gap: 6px;
+}
+.health-check-subdetail {
+    font-size: 0.85rem;
+    color: #4b5563;
+}
+.health-check-subdetail .badge {
+    margin-right: 6px;
+}
+.health-check-subdetail .subdetail-label {
+    font-weight: 600;
+    margin-right: 4px;
+}
 .check-badge {
     margin-left: 15px;
+}
+.smtp-diagnostic-summary {
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid #dbe4ea;
+    background: #f8fafc;
+}
+.smtp-detail-card {
+    height: 100%;
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid #dbe4ea;
+    background: #ffffff;
+}
+.smtp-pass {
+    border-color: #c3e6cb;
+    background: #f0fff4;
+}
+.smtp-warning {
+    border-color: #ffe08a;
+    background: #fff9e6;
+}
+.smtp-fail {
+    border-color: #f5c6cb;
+    background: #fff5f5;
 }
 
 html[data-theme='dark'] .alert.alert-success.mt-3 {
@@ -1235,6 +1477,27 @@ html[data-theme='dark'] .health-score .score-circle.poor {
 
 html[data-theme='dark'] .health-score p {
     color: #e2e8f0;
+}
+html[data-theme='dark'] .health-check-subdetail {
+    color: #cbd5e1;
+}
+html[data-theme='dark'] .smtp-diagnostic-summary,
+html[data-theme='dark'] .smtp-detail-card {
+    color: #e2e8f0;
+    border-color: #334155;
+    background: #0f172a;
+}
+html[data-theme='dark'] .smtp-pass {
+    border-color: #166534;
+    background: #052e16;
+}
+html[data-theme='dark'] .smtp-warning {
+    border-color: #a16207;
+    background: #422006;
+}
+html[data-theme='dark'] .smtp-fail {
+    border-color: #991b1b;
+    background: #450a0a;
 }
 </style>
 

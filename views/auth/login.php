@@ -136,6 +136,50 @@ function smnsResolveProfileName($module, array $user, $fallback = '') {
     return $fallbackName;
 }
 
+function smnsFindStudentProfileByStudentId($studentId) {
+    $studentId = trim((string)$studentId);
+    if ($studentId === '') {
+        return null;
+    }
+    try {
+        $db = new Database();
+        $conn = $db->getConnection();
+        $stmt = $conn->prepare("
+            SELECT student_id, first_name, last_name
+            FROM students
+            WHERE student_id = :student_id
+            LIMIT 1
+        ");
+        $stmt->execute(['student_id' => $studentId]);
+        $student = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!$student) {
+            return null;
+        }
+        $fullName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
+        return [
+            'student_id' => (string)($student['student_id'] ?? ''),
+            'full_name' => $fullName !== '' ? $fullName : (string)($student['student_id'] ?? ''),
+        ];
+    } catch (Exception $e) {
+        return null;
+    }
+}
+
+if (isset($_GET['lookup_student']) && $_GET['lookup_student'] === '1') {
+    header('Content-Type: application/json');
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    $studentProfile = smnsFindStudentProfileByStudentId((string)($_GET['student_id'] ?? ''));
+    echo json_encode($studentProfile
+        ? [
+            'found' => true,
+            'student_id' => (string)$studentProfile['student_id'],
+            'full_name' => (string)$studentProfile['full_name'],
+        ]
+        : ['found' => false]
+    );
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $error = 'Invalid request token. Please refresh and try again.';
@@ -316,6 +360,20 @@ if (!empty($loggedModules)) {
             margin-top: 10px;
             margin-bottom: 0;
         }
+        .student-id-preview {
+            display: none;
+            margin-top: 8px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: #ecfdf5;
+            border: 1px solid #86efac;
+            color: #166534;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .student-id-preview.is-visible {
+            display: block;
+        }
         html[data-theme='dark'] .module-chip {
             background: #0f172a;
             border-color: #334155;
@@ -323,6 +381,11 @@ if (!empty($loggedModules)) {
         }
         html[data-theme='dark'] .u-info {
             color: #94a3b8;
+        }
+        html[data-theme='dark'] .student-id-preview {
+            background: rgba(20, 83, 45, 0.35);
+            border-color: rgba(74, 222, 128, 0.45);
+            color: #bbf7d0;
         }
         html[data-theme='dark'] .login-card.unified-theme::before {
             background: linear-gradient(90deg, #0284c7, #1d4ed8);
@@ -365,14 +428,16 @@ if (!empty($loggedModules)) {
                     <div class="input-wrapper">
                         <input
                             type="text"
+                            id="username"
                             name="username"
                             class="form-control"
                             value="<?php echo e($enteredUsername); ?>"
-                            placeholder="Enter username"
+                            placeholder="Enter username or student ID"
                             required
                             autofocus
                         >
                     </div>
+                    <div id="studentIdPreview" class="student-id-preview" aria-live="polite"></div>
                 </div>
                 <button type="submit" class="btn btn-primary btn-block">
                     Next
@@ -421,18 +486,74 @@ if (!empty($loggedModules)) {
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     var alerts = document.querySelectorAll('.auto-dismiss-alert');
-    if (!alerts.length) return;
-    setTimeout(function () {
-        alerts.forEach(function (el) {
-            el.style.transition = 'opacity 0.25s ease';
-            el.style.opacity = '0';
-            setTimeout(function () {
-                if (el && el.parentNode) {
-                    el.parentNode.removeChild(el);
-                }
-            }, 260);
+    if (alerts.length) {
+        setTimeout(function () {
+            alerts.forEach(function (el) {
+                el.style.transition = 'opacity 0.25s ease';
+                el.style.opacity = '0';
+                setTimeout(function () {
+                    if (el && el.parentNode) {
+                        el.parentNode.removeChild(el);
+                    }
+                }, 260);
+            });
+        }, 3500);
+    }
+
+    var usernameInput = document.getElementById('username');
+    var previewBox = document.getElementById('studentIdPreview');
+    if (!usernameInput || !previewBox) {
+        return;
+    }
+
+    var activeRequest = 0;
+    var debounceTimer = null;
+
+    function setPreview(message, visible) {
+        previewBox.textContent = message || '';
+        previewBox.classList.toggle('is-visible', !!visible && !!message);
+    }
+
+    function lookupStudent() {
+        var value = (usernameInput.value || '').trim();
+        if (value === '') {
+            setPreview('', false);
+            return;
+        }
+
+        activeRequest += 1;
+        var requestId = activeRequest;
+        fetch('<?php echo e(BASE_URL . '/views/auth/login.php?lookup_student=1&student_id='); ?>' + encodeURIComponent(value), {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+            if (requestId !== activeRequest) {
+                return;
+            }
+            if (data && data.found && data.full_name) {
+                setPreview('Student: ' + data.full_name, true);
+            } else {
+                setPreview('', false);
+            }
+        })
+        .catch(function () {
+            if (requestId === activeRequest) {
+                setPreview('', false);
+            }
         });
-    }, 3500);
+    }
+
+    usernameInput.addEventListener('input', function () {
+        if (debounceTimer) {
+            clearTimeout(debounceTimer);
+        }
+        debounceTimer = setTimeout(lookupStudent, 180);
+    });
+
+    if ((usernameInput.value || '').trim() !== '') {
+        lookupStudent();
+    }
 });
 function togglePassword(id, btn) {
     var input = document.getElementById(id);

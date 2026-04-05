@@ -5,6 +5,10 @@ const dns = require('dns');
 const net = require('net');
 const nodemailer = require('nodemailer');
 
+if (typeof dns.setDefaultResultOrder === 'function') {
+  dns.setDefaultResultOrder('ipv4first');
+}
+
 function parseBool(value, defaultValue = false) {
   if (value === undefined || value === null || value === '') return defaultValue;
   const normalized = String(value).toLowerCase().trim();
@@ -18,40 +22,69 @@ function fail(message, details) {
   process.exit(1);
 }
 
-async function resolveSmtpHost(hostname) {
+async function resolveSmtpHostCandidates(hostname) {
   if (!hostname || net.isIP(hostname)) {
     return {
-      host: hostname,
-      tlsServername: null,
-      resolvedViaLookup: false,
-      lookupError: ''
+      candidates: [
+        {
+          host: hostname,
+          tlsServername: null,
+          source: 'literal'
+        }
+      ],
+      lookupErrors: []
     };
+  }
+
+  const candidates = [];
+  const seen = new Set();
+  const lookupErrors = [];
+
+  function addCandidate(host, source, tlsServername = hostname) {
+    const key = `${host}|${tlsServername || ''}`;
+    if (!host || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    candidates.push({
+      host,
+      tlsServername,
+      source
+    });
   }
 
   try {
     const record = await dns.promises.lookup(hostname, { family: 4 });
     if (record && record.address) {
-      return {
-        host: record.address,
-        tlsServername: hostname,
-        resolvedViaLookup: true,
-        lookupError: ''
-      };
+      addCandidate(record.address, 'lookup4');
     }
   } catch (error) {
-    return {
-      host: hostname,
-      tlsServername: null,
-      resolvedViaLookup: false,
-      lookupError: error && error.message ? error.message : String(error)
-    };
+    lookupErrors.push('lookup4: ' + (error && error.message ? error.message : String(error)));
   }
 
+  try {
+    const records = await dns.promises.resolve4(hostname);
+    for (const address of records) {
+      addCandidate(address, 'resolve4');
+    }
+  } catch (error) {
+    lookupErrors.push('resolve4: ' + (error && error.message ? error.message : String(error)));
+  }
+
+  try {
+    const records = await dns.promises.resolve6(hostname);
+    for (const address of records) {
+      addCandidate(address, 'resolve6');
+    }
+  } catch (error) {
+    lookupErrors.push('resolve6: ' + (error && error.message ? error.message : String(error)));
+  }
+
+  addCandidate(hostname, 'hostname', hostname);
+
   return {
-    host: hostname,
-    tlsServername: null,
-    resolvedViaLookup: false,
-    lookupError: ''
+    candidates,
+    lookupErrors
   };
 }
 
@@ -104,55 +137,64 @@ async function main() {
     fail('From email is missing');
   }
 
-  const resolvedHost = await resolveSmtpHost(smtpHost);
+  const resolved = await resolveSmtpHostCandidates(smtpHost);
+  const attemptErrors = [];
 
-  const transportOptions = {
-    host: resolvedHost.host,
-    port: smtpPort,
-    secure: smtpSecure,
-    connectionTimeout: connectionTimeout,
-    greetingTimeout: greetingTimeout,
-    socketTimeout: socketTimeout
-  };
-
-  if (resolvedHost.tlsServername) {
-    transportOptions.tls = {
-      servername: resolvedHost.tlsServername
+  for (const candidate of resolved.candidates) {
+    const transportOptions = {
+      host: candidate.host,
+      port: smtpPort,
+      secure: smtpSecure,
+      connectionTimeout: connectionTimeout,
+      greetingTimeout: greetingTimeout,
+      socketTimeout: socketTimeout
     };
-  }
 
-  if (smtpUser && smtpPass) {
-    transportOptions.auth = {
-      user: smtpUser,
-      pass: smtpPass
-    };
-  }
-
-  const transporter = nodemailer.createTransport(transportOptions);
-
-  try {
-    const info = await transporter.sendMail({
-      from: `"${fromName}" <${fromEmail}>`,
-      to: recipients.join(','),
-      subject: payload.subject || '(No subject)',
-      text: payload.text || '',
-      html: payload.html || undefined
-    });
-
-    process.stdout.write(
-      JSON.stringify({
-        ok: true,
-        messageId: info.messageId,
-        resolvedViaLookup: resolvedHost.resolvedViaLookup
-      }) + '\n'
-    );
-  } catch (error) {
-    let details = error && error.message ? error.message : String(error);
-    if (resolvedHost.lookupError) {
-      details += ' | DNS lookup warning: ' + resolvedHost.lookupError;
+    if (candidate.tlsServername) {
+      transportOptions.tls = {
+        servername: candidate.tlsServername
+      };
     }
-    fail('Send failed', details);
+
+    if (smtpUser && smtpPass) {
+      transportOptions.auth = {
+        user: smtpUser,
+        pass: smtpPass
+      };
+    }
+
+    const transporter = nodemailer.createTransport(transportOptions);
+
+    try {
+      const info = await transporter.sendMail({
+        from: `"${fromName}" <${fromEmail}>`,
+        to: recipients.join(','),
+        subject: payload.subject || '(No subject)',
+        text: payload.text || '',
+        html: payload.html || undefined
+      });
+
+      process.stdout.write(
+        JSON.stringify({
+          ok: true,
+          messageId: info.messageId,
+          smtpHostTried: candidate.host,
+          smtpHostSource: candidate.source,
+          lookupWarnings: resolved.lookupErrors
+        }) + '\n'
+      );
+      return;
+    } catch (error) {
+      const message = error && error.message ? error.message : String(error);
+      attemptErrors.push(`${candidate.host} [${candidate.source}]: ${message}`);
+    }
   }
+
+  let details = attemptErrors.join(' | ');
+  if (resolved.lookupErrors.length) {
+    details += (details ? ' | ' : '') + 'DNS lookup warnings: ' + resolved.lookupErrors.join('; ');
+  }
+  fail('Send failed', details || 'No SMTP connection attempt succeeded');
 }
 
 main().catch((error) => fail('Send failed', error.message));

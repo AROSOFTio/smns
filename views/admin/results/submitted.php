@@ -1078,13 +1078,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function calculateGrade(total) {
         if (isNaN(total)) return '-';
-        if (total >= 90) return 'A+';
         if (total >= 80) return 'A';
         if (total >= 75) return 'B+';
         if (total >= 70) return 'B';
         if (total >= 65) return 'C+';
         if (total >= 60) return 'C';
-        if (total >= 0)  return 'F';
+        if (total >= 50) return 'D';
+        if (total >= 40) return 'E';
+        if (total >= 0) return 'F';
         return '-';
     }
 

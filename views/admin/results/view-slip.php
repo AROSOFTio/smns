@@ -633,13 +633,14 @@ include '../../../includes/header.php';
                         <strong>GP</strong> = Grade Points
                     </p>
                     <p style="font-size: 0.8rem;">
-                        <strong>A+</strong> (90-100, GP 5.0),
-                        <strong>A</strong> (80-89, GP 4.0),
-                        <strong>B+</strong> (75-79, GP 3.5),
-                        <strong>B</strong> (70-74, GP 3.0),
-                        <strong>C+</strong> (65-69, GP 2.5),
-                        <strong>C</strong> (60-64, GP 2.0),
-                        <strong>F</strong> (0-59, GP 0.0, Fail)
+                        <strong>A</strong> (80-100, GP 5.0),
+                        <strong>B+</strong> (75-79, GP 4.0),
+                        <strong>B</strong> (70-74, GP 3.5),
+                        <strong>C+</strong> (65-69, GP 3.0),
+                        <strong>C</strong> (60-64, GP 2.5),
+                        <strong>D</strong> (50-59, GP 2.0, Pass),
+                        <strong>E</strong> (40-49, GP 1.0, Fail),
+                        <strong>F</strong> (0-39, GP 0.0, Fail)
                     </p>
                 </div>
             </div>
@@ -691,6 +692,80 @@ body, html {
 }
 .results-table th, .results-table td {
     padding: 0.5rem 0.35rem;
+}
+.summary-table th,
+.summary-table td,
+.student-details-table th,
+.student-details-table td {
+    vertical-align: middle !important;
+}
+html[data-theme='dark'] .main-content,
+html[data-theme='dark'] .content-area {
+    background: #020617;
+}
+html[data-theme='dark'] .results-slip-card,
+html[data-theme='dark'] .card {
+    background: #0f172a;
+    border-color: #334155;
+    box-shadow: 0 10px 28px rgba(2, 6, 23, 0.45);
+}
+html[data-theme='dark'] .results-slip-label {
+    color: #94a3b8;
+}
+html[data-theme='dark'] .results-slip-value,
+html[data-theme='dark'] .card-body,
+html[data-theme='dark'] .text-muted,
+html[data-theme='dark'] .alert {
+    color: #e2e8f0 !important;
+}
+html[data-theme='dark'] #results-slip .card-body {
+    background: #0f172a;
+}
+html[data-theme='dark'] .student-details-table th,
+html[data-theme='dark'] .student-details-table td,
+html[data-theme='dark'] .summary-table th,
+html[data-theme='dark'] .summary-table td {
+    background: #111827;
+    color: #e2e8f0;
+    border-color: #334155;
+}
+html[data-theme='dark'] .marks-table,
+html[data-theme='dark'] .summary-table,
+html[data-theme='dark'] .student-details-table {
+    border-color: #334155;
+}
+html[data-theme='dark'] .marks-table thead th {
+    background: #1e293b;
+    border-color: #334155;
+    color: #f8fafc;
+}
+html[data-theme='dark'] .marks-table td,
+html[data-theme='dark'] .marks-table th {
+    border-color: #334155;
+    color: #e2e8f0;
+}
+html[data-theme='dark'] .marks-table tbody tr {
+    background: #0f172a;
+}
+html[data-theme='dark'] .marks-table tbody tr:nth-child(even) {
+    background: #111c2f;
+}
+html[data-theme='dark'] .marks-table tbody tr:hover {
+    background: #132235;
+}
+html[data-theme='dark'] .badge.badge-light {
+    background: #334155;
+    color: #e2e8f0;
+    border: 1px solid #475569;
+}
+html[data-theme='dark'] .key-to-grades h6,
+html[data-theme='dark'] .key-to-grades p,
+html[data-theme='dark'] .results-header h4,
+html[data-theme='dark'] .results-header p {
+    color: #e2e8f0;
+}
+html[data-theme='dark'] .table-responsive {
+    border-radius: 8px;
 }
 @media print {
     .no-print, .no-print * { display: none !important; }

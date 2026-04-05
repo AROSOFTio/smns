@@ -58,22 +58,31 @@ if ($search) {
             continue;
         }
         $studentIdKey = 'search_student_id_' . $tokenIndex;
+        $admissionKey = 'search_admission_' . $tokenIndex;
         $firstNameKey = 'search_first_name_' . $tokenIndex;
+        $otherNameKey = 'search_other_name_' . $tokenIndex;
+        $middleNameKey = 'search_middle_name_' . $tokenIndex;
         $lastNameKey = 'search_last_name_' . $tokenIndex;
         $emailKey = 'search_email_' . $tokenIndex;
         $fullNameKey = 'search_full_name_' . $tokenIndex;
         $reverseNameKey = 'search_reverse_name_' . $tokenIndex;
         $fromWhereSql .= " AND (
             s.student_id LIKE :{$studentIdKey}
+            OR COALESCE(s.admission_number, '') LIKE :{$admissionKey}
             OR s.first_name LIKE :{$firstNameKey}
+            OR COALESCE(s.other_name, '') LIKE :{$otherNameKey}
+            OR COALESCE(s.middle_name, '') LIKE :{$middleNameKey}
             OR s.last_name LIKE :{$lastNameKey}
             OR s.email LIKE :{$emailKey}
-            OR CONCAT_WS(' ', s.first_name, s.last_name) LIKE :{$fullNameKey}
-            OR CONCAT_WS(' ', s.last_name, s.first_name) LIKE :{$reverseNameKey}
+            OR CONCAT_WS(' ', s.first_name, s.other_name, s.middle_name, s.last_name) LIKE :{$fullNameKey}
+            OR CONCAT_WS(' ', s.last_name, s.first_name, s.other_name, s.middle_name) LIKE :{$reverseNameKey}
         )";
         $tokenLike = '%' . $token . '%';
         $params[$studentIdKey] = $tokenLike;
+        $params[$admissionKey] = $tokenLike;
         $params[$firstNameKey] = $tokenLike;
+        $params[$otherNameKey] = $tokenLike;
+        $params[$middleNameKey] = $tokenLike;
         $params[$lastNameKey] = $tokenLike;
         $params[$emailKey] = $tokenLike;
         $params[$fullNameKey] = $tokenLike;
@@ -88,8 +97,20 @@ if ($program) {
 }
 
 if ($status) {
-    $fromWhereSql .= " AND s.status = :status";
-    $params['status'] = $status;
+    $statusKey = strtolower($status);
+    if ($statusKey === 'graduated') {
+        $fromWhereSql .= " AND (
+            LOWER(COALESCE(s.status, '')) = :status
+            OR LOWER(COALESCE(s.academic_status, '')) = :status_academic
+            OR s.graduation_date IS NOT NULL
+            OR COALESCE(s.graduation_award_title, '') <> ''
+        )";
+        $params['status'] = $statusKey;
+        $params['status_academic'] = 'graduated';
+    } else {
+        $fromWhereSql .= " AND LOWER(COALESCE(s.status, '')) = :status";
+        $params['status'] = $statusKey;
+    }
 }
 
 if ($level) {
@@ -130,6 +151,85 @@ try {
 } catch (Exception $e) {
     $students = [];
 }
+$searchFilterHint = null;
+if ($search !== '' && $totalStudents === 0 && $status !== '') {
+    try {
+        $hintSql = "SELECT s.student_id, s.first_name, s.last_name, s.status, s.academic_status
+            FROM students s
+            INNER JOIN programs p ON s.program_id = p.id
+            INNER JOIN users u ON s.user_id = u.id
+            WHERE 1=1";
+        $hintParams = [];
+        $searchTokens = preg_split('/\s+/', $search) ?: [];
+        $tokenIndex = 0;
+        foreach ($searchTokens as $token) {
+            $token = trim((string)$token);
+            if ($token === '') {
+                continue;
+            }
+            $studentIdKey = 'hint_search_student_id_' . $tokenIndex;
+            $admissionKey = 'hint_search_admission_' . $tokenIndex;
+            $firstNameKey = 'hint_search_first_name_' . $tokenIndex;
+            $otherNameKey = 'hint_search_other_name_' . $tokenIndex;
+            $middleNameKey = 'hint_search_middle_name_' . $tokenIndex;
+            $lastNameKey = 'hint_search_last_name_' . $tokenIndex;
+            $emailKey = 'hint_search_email_' . $tokenIndex;
+            $fullNameKey = 'hint_search_full_name_' . $tokenIndex;
+            $reverseNameKey = 'hint_search_reverse_name_' . $tokenIndex;
+            $hintSql .= " AND (
+                s.student_id LIKE :{$studentIdKey}
+                OR COALESCE(s.admission_number, '') LIKE :{$admissionKey}
+                OR s.first_name LIKE :{$firstNameKey}
+                OR COALESCE(s.other_name, '') LIKE :{$otherNameKey}
+                OR COALESCE(s.middle_name, '') LIKE :{$middleNameKey}
+                OR s.last_name LIKE :{$lastNameKey}
+                OR s.email LIKE :{$emailKey}
+                OR CONCAT_WS(' ', s.first_name, s.other_name, s.middle_name, s.last_name) LIKE :{$fullNameKey}
+                OR CONCAT_WS(' ', s.last_name, s.first_name, s.other_name, s.middle_name) LIKE :{$reverseNameKey}
+            )";
+            $tokenLike = '%' . $token . '%';
+            $hintParams[$studentIdKey] = $tokenLike;
+            $hintParams[$admissionKey] = $tokenLike;
+            $hintParams[$firstNameKey] = $tokenLike;
+            $hintParams[$otherNameKey] = $tokenLike;
+            $hintParams[$middleNameKey] = $tokenLike;
+            $hintParams[$lastNameKey] = $tokenLike;
+            $hintParams[$emailKey] = $tokenLike;
+            $hintParams[$fullNameKey] = $tokenLike;
+            $hintParams[$reverseNameKey] = $tokenLike;
+            $tokenIndex++;
+        }
+
+        if ($program !== '') {
+            $hintSql .= " AND s.program_id = :hint_program";
+            $hintParams['hint_program'] = $program;
+        }
+        if ($level !== '') {
+            $hintSql .= " AND s.level_year = :hint_level";
+            $hintParams['hint_level'] = $level;
+        }
+
+        $hintSql .= " ORDER BY s.created_at DESC LIMIT 3";
+        $hintStmt = $conn->prepare($hintSql);
+        foreach ($hintParams as $k => $v) {
+            $hintStmt->bindValue(':' . $k, $v);
+        }
+        $hintStmt->execute();
+        $hintMatches = $hintStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if (!empty($hintMatches)) {
+            $match = $hintMatches[0];
+            $searchFilterHint = 'Search found '
+                . trim((string)($match['first_name'] ?? '') . ' ' . (string)($match['last_name'] ?? ''))
+                . ' (' . (string)($match['student_id'] ?? '') . ')'
+                . ', but the current status filter "' . $status . '" excludes this record. '
+                . 'Current student status is "' . (string)($match['status'] ?? 'n/a') . '"'
+                . (!empty($match['academic_status']) ? ' and academic status is "' . (string)$match['academic_status'] . '"' : '')
+                . '.';
+        }
+    } catch (Exception $e) {
+        $searchFilterHint = null;
+    }
+}
 $displayStart = $totalStudents > 0 ? ($offset + 1) : 0;
 $displayEnd = $totalStudents > 0 ? min($offset + count($students), $totalStudents) : 0;
 $buildListUrl = static function (int $page, int $perPage, string $search, string $program, string $status, string $level): string {
@@ -154,6 +254,7 @@ $buildListUrl = static function (int $page, int $perPage, string $search, string
     }
     return 'list.php' . (!empty($query) ? ('?' . http_build_query($query)) : '');
 };
+$clearStatusFilterUrl = $buildListUrl(1, $rowsPerPage, $search, $program, '', $level);
 
 // Get programs for filter
 $stmt = $conn->query("SELECT * FROM programs WHERE status = 'active' ORDER BY program_name");
@@ -325,6 +426,12 @@ select.form-control-sm option {
                         </a>
                     </div>
                 </form>
+                <?php if ($searchFilterHint !== null): ?>
+                    <div class="alert alert-warning mt-3 mb-0">
+                        <?php echo e($searchFilterHint); ?>
+                        <a href="<?php echo e($clearStatusFilterUrl); ?>" class="alert-link ml-2">Clear status filter</a>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
         

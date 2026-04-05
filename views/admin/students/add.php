@@ -22,6 +22,7 @@ $errors = [];
 $formData = $_POST;
 $success = '';
 $mailStatus = '';
+$defaultStudentPassword = 'Password@2026';
 
 function generateAdmissionNumber($conn) {
     $year = date('Y');
@@ -41,31 +42,7 @@ function generateAdmissionNumber($conn) {
         return $prefix . str_pad($count, 4, '0', STR_PAD_LEFT);
     }
 }
-// Generate registration number in 'YYYY-STU-XXX' format
-function generateStudentReg($conn) {
-    $year = date('Y');
-    $prefix = $year . '-STU-';
-    $stmt = $conn->prepare("SELECT student_id FROM students WHERE student_id LIKE :prefix ORDER BY student_id DESC LIMIT 1");
-    $stmt->execute(['prefix' => $prefix . '%']);
-    $lastStudentId = (string)($stmt->fetchColumn() ?: '');
-    $next = 1;
-    if ($lastStudentId !== '' && preg_match('/(\d+)$/', $lastStudentId, $m)) {
-        $next = ((int)$m[1]) + 1;
-    }
-
-    // Safety loop to avoid collisions from historical/manual records.
-    for ($i = 0; $i < 1000; $i++) {
-        $candidate = $prefix . str_pad($next + $i, 3, '0', STR_PAD_LEFT);
-        $checkStmt = $conn->prepare("SELECT id FROM students WHERE student_id = :sid LIMIT 1");
-        $checkStmt->execute(['sid' => $candidate]);
-        if (!$checkStmt->fetch(PDO::FETCH_ASSOC)) {
-            return $candidate;
-        }
-    }
-
-    throw new Exception('Unable to allocate a unique student ID.');
-}
-$registration_number = generateStudentReg($conn);
+$registration_number = generateStudentRegistrationNumber($conn);
 
 // Assign student_id to registration_number
 $student_id = $registration_number;
@@ -85,7 +62,7 @@ function isValidDate($date) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $admission_number = generateAdmissionNumber($conn);
-    $registration_number = generateStudentReg($conn);
+    $registration_number = generateStudentRegistrationNumber($conn);
     $student_id = $registration_number;
     $student_reg = $registration_number;
     $first_name = trim($_POST['first_name'] ?? '');
@@ -190,7 +167,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $username = $usernameBase . $suffix;
                 $suffix++;
             }
-            $password = Security::generatePassword(10);
+            $password = $defaultStudentPassword;
             $hash = Security::hashPassword($password);
             $stmt = $conn->prepare("INSERT INTO users (username,email,password_hash,role,status,created_at) VALUES (:u,:e,:p,'student','active',NOW())");
             $stmt->execute(['u' => $username, 'e' => $email, 'p' => $hash]);

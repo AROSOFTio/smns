@@ -127,6 +127,16 @@ class TranscriptIssuanceService {
             return null;
         }
 
+        if (function_exists('getStudentEffectiveProgram')) {
+            $effectiveProgram = getStudentEffectiveProgram($this->conn, (int)($row['student_id'] ?? 0), [
+                'program_id' => 0,
+                'program_code' => (string)($row['program_code'] ?? ''),
+                'program_name' => (string)($row['program_name'] ?? ''),
+            ]);
+            $row['program_code'] = (string)($effectiveProgram['program_code'] ?? ($row['program_code'] ?? ''));
+            $row['program_name'] = (string)($effectiveProgram['program_name'] ?? ($row['program_name'] ?? ''));
+        }
+
         $row['snapshot'] = $this->decodeSnapshot((string)($row['snapshot_json'] ?? ''));
         $row['verification_url'] = $this->buildVerificationUrl((string)$row['verification_token']);
         $row['ledger_valid'] = $this->isLedgerChainValid((int)($row['id'] ?? 0));

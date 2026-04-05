@@ -64,27 +64,50 @@ $academicStatusStyle = (string)($academicStatusMeta['style'] ?? getAcademicStatu
 
 $registeredProgramName = '-';
 if ($studentId > 0) {
-    try {
-        $progStmt = $conn->prepare("
-            SELECT p.program_name
-            FROM students s
-            LEFT JOIN programs p ON s.program_id = p.id
-            WHERE s.id = :student_id
-            LIMIT 1
-        ");
-        $progStmt->execute(['student_id' => $studentId]);
-        $programName = $progStmt->fetchColumn();
-        if (!empty($programName)) {
-            $registeredProgramName = $programName;
-        } elseif (!empty($studentProfile['program_name'])) {
-            $registeredProgramName = $studentProfile['program_name'];
-        }
-    } catch (Exception $e) {
+    $effectiveProgram = getStudentEffectiveProgram($conn, $studentId, [
+        'program_id' => (int)($studentProfile['program_id'] ?? 0),
+        'program_code' => (string)($studentProfile['program_code'] ?? ''),
+        'program_name' => (string)($studentProfile['program_name'] ?? ''),
+    ]);
+    if (!empty($effectiveProgram['program_name'])) {
+        $registeredProgramName = (string)$effectiveProgram['program_name'];
+    } elseif (!empty($studentProfile['program_name'])) {
+        $registeredProgramName = (string)$studentProfile['program_name'];
     }
 }
 
 $rows = [];
 $organizedResults = [];
+$resolveTranscriptScale = static function ($mark): array {
+    if ($mark === null || $mark === '' || !is_numeric($mark)) {
+        return ['grade' => '', 'grade_point' => null];
+    }
+
+    $score = (float)$mark;
+    if ($score >= 80.0) {
+        return ['grade' => 'A', 'grade_point' => 5.00];
+    }
+    if ($score >= 75.0) {
+        return ['grade' => 'B+', 'grade_point' => 4.00];
+    }
+    if ($score >= 70.0) {
+        return ['grade' => 'B', 'grade_point' => 3.50];
+    }
+    if ($score >= 65.0) {
+        return ['grade' => 'C+', 'grade_point' => 3.00];
+    }
+    if ($score >= 60.0) {
+        return ['grade' => 'C', 'grade_point' => 2.50];
+    }
+    if ($score >= 50.0) {
+        return ['grade' => 'D', 'grade_point' => 2.00];
+    }
+    if ($score >= 40.0) {
+        return ['grade' => 'E', 'grade_point' => 1.00];
+    }
+
+    return ['grade' => 'F', 'grade_point' => 0.00];
+};
 if ($studentId > 0) {
     $sql = "
         SELECT
@@ -294,6 +317,8 @@ body { background: #f8fafc; }
 .badge-published { background:#dcfce7; border:1px solid #86efac; color:#166534; padding:2px 8px; border-radius:999px; font-size:.75rem; }
 .badge-provisional { background:#ffedd5; border:1px solid #fdba74; color:#9a3412; padding:2px 8px; border-radius:999px; font-size:.75rem; }
 .semester-title { background:#f8fafc; border:1px solid #e2e8f0; border-bottom:none; padding:.65rem .9rem; font-size:.94rem; font-weight:600; color:#334155; margin-top:1rem; }
+.grading-key { margin-top:1rem; padding:.85rem 1rem; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc; font-size:.82rem; color:#334155; }
+.grading-key strong { color:#0f172a; }
 
 /* Dark mode overrides for results/provisional card */
 html[data-theme='dark'] .cardx {
@@ -330,6 +355,14 @@ html[data-theme='dark'] .semester-title {
     background: var(--app-surface-2) !important;
     border-color: var(--app-border) !important;
     color: #e5e7eb !important;
+}
+html[data-theme='dark'] .grading-key {
+    background: var(--app-surface-2) !important;
+    border-color: var(--app-border) !important;
+    color: #e5e7eb !important;
+}
+html[data-theme='dark'] .grading-key strong {
+    color: #f8fafc !important;
 }
 html[data-theme='dark'] .tbl {
     border-color: var(--app-border) !important;
@@ -454,24 +487,68 @@ html[data-theme='dark'] .badge-provisional {
                                     </tr>
                                 </thead>
                                 <tbody>
+                                    <?php
+                                    $semesterCredits = 0.0;
+                                    $semesterPoints = 0.0;
+                                    $allPublished = true;
+                                    $totalCourses = count($data['courses']);
+                                    $publishedCourses = 0;
+                                    ?>
                                     <?php foreach ($data['courses'] as $c): ?>
                                         <?php $status = strtolower((string)($c['result_status'] ?? '')); ?>
                                         <?php $isPublished = ($status === 'published'); ?>
+                                        <?php
+                                        $creditHours = (float)($c['credit_hours'] ?? 0);
+                                        $resolvedScale = $resolveTranscriptScale($c['total_marks'] ?? null);
+                                        $displayGrade = $isPublished && $resolvedScale['grade'] !== ''
+                                            ? (string)$resolvedScale['grade']
+                                            : '';
+                                        $gradePoints = $isPublished
+                                            ? $resolvedScale['grade_point']
+                                            : null;
+                                        if ($isPublished && $gradePoints !== null && $creditHours > 0) {
+                                            $semesterCredits += $creditHours;
+                                            $semesterPoints += ($gradePoints * $creditHours);
+                                            $publishedCourses++;
+                                        } else {
+                                            $allPublished = false;
+                                        }
+                                        ?>
                                         <tr>
                                             <td><?php echo e($c['course_code'] ?? '-'); ?></td>
                                             <td><?php echo e($c['course_name'] ?? '-'); ?></td>
                                             <td><?php echo $isPublished && $c['total_marks'] !== null ? number_format((float)$c['total_marks'], 0) : '-'; ?></td>
                                             <td><?php echo e($c['credit_hours'] ?? '-'); ?></td>
-                                            <td><?php echo $isPublished && !empty($c['grade']) ? e($c['grade']) : '-'; ?></td>
-                                            <td><?php echo $isPublished && $c['grade_points'] !== null ? number_format((float)$c['grade_points'], 2) : '-'; ?></td>
+                                            <td><?php echo $isPublished && $displayGrade !== '' ? e($displayGrade) : '-'; ?></td>
+                                            <td><?php echo $isPublished && $gradePoints !== null ? number_format((float)$gradePoints, 2) : '-'; ?></td>
                                             <td><?php echo $isPublished ? 'FINAL' : 'PROVISIONAL'; ?></td>
                                             <td><?php echo $isPublished ? '<span class="badge-published">Published</span>' : '<span class="badge-provisional">' . e(ucfirst($status !== '' ? $status : 'provisional')) . '</span>'; ?></td>
                                         </tr>
                                     <?php endforeach; ?>
+                                    <?php
+                                    $sgpa = ($semesterCredits > 0 && $allPublished) ? ($semesterPoints / $semesterCredits) : null;
+                                    ?>
+                                    <tr>
+                                        <td colspan="2"><strong>Published Courses</strong></td>
+                                        <td colspan="2"><?php echo e($publishedCourses); ?>/<?php echo e($totalCourses); ?></td>
+                                        <td colspan="2"><strong>Semester GPA</strong></td>
+                                        <td colspan="2"><?php echo $sgpa !== null ? number_format((float)$sgpa, 2) : 'PA'; ?></td>
+                                    </tr>
                                 </tbody>
                             </table>
                         <?php endforeach; ?>
                     <?php endforeach; ?>
+                    <div class="grading-key">
+                        <strong>Grading Key:</strong>
+                        A (80-100, 5.00),
+                        B+ (75-79, 4.00),
+                        B (70-74, 3.50),
+                        C+ (65-69, 3.00),
+                        C (60-64, 2.50),
+                        D (50-59, 2.00),
+                        E (40-49, 1.00),
+                        F (0-39, 0.00).
+                    </div>
                 <?php endif; ?>
             </div>
         </div>
