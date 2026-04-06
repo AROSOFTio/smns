@@ -1,0 +1,23 @@
+<mxfile host="65bd71144e">
+  <diagram id="smns-dfd-level-2-transcript" name="SMNS DFD Level 2 Transcript">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/><mxCell id="1" parent="0"/>
+        <mxCell id="student" value="Student" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;" vertex="1" parent="1"><mxGeometry x="50" y="120" width="140" height="60" as="geometry"/></mxCell>
+        <mxCell id="admin" value="Admin" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;" vertex="1" parent="1"><mxGeometry x="50" y="260" width="140" height="60" as="geometry"/></mxCell>
+        <mxCell id="verifier" value="External Verifier" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;" vertex="1" parent="1"><mxGeometry x="50" y="400" width="180" height="60" as="geometry"/></mxCell>
+        <mxCell id="p51" value="5.1 Check Transcript Eligibility" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" vertex="1" parent="1"><mxGeometry x="340" y="90" width="260" height="80" as="geometry"/></mxCell>
+        <mxCell id="p52" value="5.2 Grant Transcript Rights" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" vertex="1" parent="1"><mxGeometry x="660" y="90" width="240" height="80" as="geometry"/></mxCell>
+        <mxCell id="p53" value="5.3 Build Transcript Snapshot" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" vertex="1" parent="1"><mxGeometry x="960" y="90" width="250" height="80" as="geometry"/></mxCell>
+        <mxCell id="p54" value="5.4 Issue Transcript" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" vertex="1" parent="1"><mxGeometry x="520" y="260" width="220" height="80" as="geometry"/></mxCell>
+        <mxCell id="p55" value="5.5 Verify Transcript Authenticity" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" vertex="1" parent="1"><mxGeometry x="860" y="260" width="290" height="80" as="geometry"/></mxCell>
+        <mxCell id="d1" value="Student Records" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="300" y="470" width="170" height="60" as="geometry"/></mxCell>
+        <mxCell id="d2" value="Results / GPA" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="500" y="470" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="d3" value="Payments / Balances" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="680" y="470" width="190" height="60" as="geometry"/></mxCell>
+        <mxCell id="d4" value="Transcript Rights" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="900" y="470" width="180" height="60" as="geometry"/></mxCell>
+        <mxCell id="d5" value="Transcript Issuances" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="1110" y="470" width="190" height="60" as="geometry"/></mxCell>
+        <mxCell id="d6" value="Verification Ledger" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="1330" y="470" width="180" height="60" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,22 @@
+<mxfile host="65bd71144e">
+  <diagram id="smns-dfd-level-2-results" name="SMNS DFD Level 2 Results">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/><mxCell id="1" parent="0"/>
+        <mxCell id="lecturer" value="Lecturer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;" vertex="1" parent="1"><mxGeometry x="60" y="120" width="140" height="60" as="geometry"/></mxCell>
+        <mxCell id="admin" value="Admin" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;" vertex="1" parent="1"><mxGeometry x="60" y="260" width="140" height="60" as="geometry"/></mxCell>
+        <mxCell id="student" value="Student" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;" vertex="1" parent="1"><mxGeometry x="60" y="400" width="140" height="60" as="geometry"/></mxCell>
+        <mxCell id="p31" value="3.1 View Assigned Courses" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" vertex="1" parent="1"><mxGeometry x="320" y="90" width="220" height="80" as="geometry"/></mxCell>
+        <mxCell id="p32" value="3.2 Enter Marks" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" vertex="1" parent="1"><mxGeometry x="590" y="90" width="190" height="80" as="geometry"/></mxCell>
+        <mxCell id="p33" value="3.3 Submit Results" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" vertex="1" parent="1"><mxGeometry x="830" y="90" width="200" height="80" as="geometry"/></mxCell>
+        <mxCell id="p34" value="3.4 Approve and Publish Results" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" vertex="1" parent="1"><mxGeometry x="1080" y="90" width="290" height="80" as="geometry"/></mxCell>
+        <mxCell id="p35" value="3.5 Compute GPA and Standing" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" vertex="1" parent="1"><mxGeometry x="700" y="260" width="260" height="80" as="geometry"/></mxCell>
+        <mxCell id="d1" value="Course Assignments" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="330" y="470" width="180" height="60" as="geometry"/></mxCell>
+        <mxCell id="d2" value="Course Registrations" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="550" y="470" width="190" height="60" as="geometry"/></mxCell>
+        <mxCell id="d3" value="Results" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="780" y="470" width="140" height="60" as="geometry"/></mxCell>
+        <mxCell id="d4" value="Student GPA" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="960" y="470" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="d5" value="Results Audit" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="1150" y="470" width="160" height="60" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

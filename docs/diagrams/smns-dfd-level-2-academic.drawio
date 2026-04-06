@@ -1,0 +1,23 @@
+<mxfile host="65bd71144e">
+  <diagram id="smns-dfd-level-2-academic" name="SMNS DFD Level 2 Academic">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/><mxCell id="1" parent="0"/>
+        <mxCell id="student" value="Student" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;" vertex="1" parent="1"><mxGeometry x="50" y="180" width="140" height="60" as="geometry"/></mxCell>
+        <mxCell id="admin" value="Admin" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;" vertex="1" parent="1"><mxGeometry x="50" y="340" width="140" height="60" as="geometry"/></mxCell>
+        <mxCell id="p21" value="2.1 Manage Programs and Courses" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" vertex="1" parent="1"><mxGeometry x="330" y="90" width="260" height="80" as="geometry"/></mxCell>
+        <mxCell id="p22" value="2.2 Manage Academic Years and Semesters" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" vertex="1" parent="1"><mxGeometry x="660" y="90" width="300" height="80" as="geometry"/></mxCell>
+        <mxCell id="p23" value="2.3 Semester Registration" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" vertex="1" parent="1"><mxGeometry x="330" y="260" width="240" height="80" as="geometry"/></mxCell>
+        <mxCell id="p24" value="2.4 Course Registration" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" vertex="1" parent="1"><mxGeometry x="650" y="260" width="220" height="80" as="geometry"/></mxCell>
+        <mxCell id="p25" value="2.5 Registration Approval" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;" vertex="1" parent="1"><mxGeometry x="960" y="260" width="220" height="80" as="geometry"/></mxCell>
+        <mxCell id="d1" value="Programs" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="280" y="470" width="140" height="60" as="geometry"/></mxCell>
+        <mxCell id="d2" value="Courses" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="450" y="470" width="140" height="60" as="geometry"/></mxCell>
+        <mxCell id="d3" value="Academic Years" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="620" y="470" width="160" height="60" as="geometry"/></mxCell>
+        <mxCell id="d4" value="Semesters" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="810" y="470" width="140" height="60" as="geometry"/></mxCell>
+        <mxCell id="d5" value="Semester Registrations" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="980" y="470" width="200" height="60" as="geometry"/></mxCell>
+        <mxCell id="d6" value="Course Registrations" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="1210" y="470" width="190" height="60" as="geometry"/></mxCell>
+        <mxCell id="d7" value="Student Records" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;" vertex="1" parent="1"><mxGeometry x="1430" y="470" width="170" height="60" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
