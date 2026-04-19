@@ -9,7 +9,7 @@
 require_once '../config.php';
 
 // --- Configuration ---
-$new_password = 'Password@2026'; // The new password for the users.
+$new_password = 'Password@' . date('Y'); // The new password for the users.
 $users_to_update = [
     'admin',
     'kevin'

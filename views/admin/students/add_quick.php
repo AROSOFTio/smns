@@ -19,7 +19,7 @@ $conn = $db->getConnection();
 
 $errors = [];
 $success = '';
-$defaultStudentPassword = 'Password@2026';
+$defaultStudentPassword = 'Password@' . date('Y');
 
 // Fetch programs
 $pstmt = $conn->query("SELECT id, program_name FROM programs WHERE status='active' ORDER BY program_name");

@@ -87,15 +87,21 @@ try {
     $transcriptRights = null;
 }
 $transcriptRightsGranted = (bool)($transcriptRights && ($transcriptRights['status'] ?? '') === 'granted');
+$presenterProgress = getStudentPresenterProgressMeta($conn, $studentId, $student, (int)($student['graduation_semester_id'] ?? 0));
 
 $semesters = [];
 try {
-    $semesters = $conn->query("
+    $window = getAcademicCalendarDisplayWindowBounds();
+    $semStmt = $conn->prepare("
         SELECT s.id, s.semester_name, s.semester_number, ay.year_name
         FROM semesters s
         INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+        WHERE ay.start_date >= :start_date
+          AND ay.start_date <= :end_date
         ORDER BY ay.start_date DESC, s.semester_number DESC
-    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    ");
+    $semStmt->execute($window);
+    $semesters = $semStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 } catch (Exception $e) {
     $semesters = [];
 }
@@ -528,7 +534,7 @@ html[data-theme='dark'] .ga-summary-item .value { color: #e2e8f0; }
                     </div>
                     <div class="ga-summary-item">
                         <div class="label">Student ID</div>
-                        <div class="value"><?php echo e((string)($student['student_id'] ?? 'N/A')); ?></div>
+                        <div class="value"><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $student)); ?></div>
                     </div>
                     <div class="ga-summary-item">
                         <div class="label">Program</div>
@@ -545,6 +551,14 @@ html[data-theme='dark'] .ga-summary-item .value { color: #e2e8f0; }
                     <div class="ga-summary-item">
                         <div class="label">Awards Recorded</div>
                         <div class="value"><?php echo e((string)count($awards)); ?></div>
+                    </div>
+                    <div class="ga-summary-item">
+                        <div class="label">Presentation Stage</div>
+                        <div class="value"><?php echo e((string)($presenterProgress['stage_label'] ?? 'In Progress')); ?></div>
+                    </div>
+                    <div class="ga-summary-item">
+                        <div class="label">Study Progress</div>
+                        <div class="value"><?php echo e((string)($presenterProgress['progress_label'] ?? 'Year 1 Sem 1')); ?></div>
                     </div>
                 </div>
             </div>
@@ -629,7 +643,7 @@ html[data-theme='dark'] .ga-summary-item .value { color: #e2e8f0; }
                                     <option value="">Select Semester</option>
                                     <?php foreach ($semesters as $semester): ?>
                                         <option value="<?php echo (int)$semester['id']; ?>" <?php echo ((int)($student['graduation_semester_id'] ?? 0) === (int)$semester['id']) ? 'selected' : ''; ?>>
-                                            <?php echo e((string)$semester['year_name'] . ' - ' . (string)$semester['semester_name']); ?>
+                                            <?php echo e(getRolloutStageLabel((string)($semester['year_name'] ?? ''), (int)($semester['semester_number'] ?? 0), (string)($semester['semester_name'] ?? ''))); ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>

@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../config.php';
 
-$defaultPassword = 'Password@2026';
+$defaultPassword = 'Password@' . date('Y');
 $passwordHash = Security::hashPassword($defaultPassword);
 
 $db = new Database();

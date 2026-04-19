@@ -14,6 +14,7 @@ $currentUserId = (int)($currentUser['id'] ?? 0);
 $db = new Database();
 $conn = $db->getConnection();
 $studentDbId = (int)($studentProfile['id'] ?? 0);
+$studentDisplayId = resolveDisplayedStudentRegistrationNumber($conn, $studentProfile);
 
 /**
  * Ensure student profile-completion fields exist.
@@ -388,6 +389,11 @@ if (!empty($studentSemesterContext['id'])) {
     $currentSemester['id'] = (int)($studentSemesterContext['id'] ?? 0);
     $currentSemester['academic_year'] = $studentSemesterContext['academic_year'] ?? '-';
 }
+$currentRolloutStageLabel = getRolloutStageLabel(
+    (string)($currentSemester['academic_year'] ?? ''),
+    (int)($studentSemesterContext['semester_number'] ?? 0),
+    (string)($currentSemester['semester_name'] ?? '')
+);
 
 $approvedFeesAmount = 0.0;
 $outstandingBalance = 0.0;
@@ -415,50 +421,15 @@ $academicStatusMeta = getStudentAcademicStatusMeta(
 $academicStatus = (string)($academicStatusMeta['label'] ?? 'Status Pending');
 $academicStatusStyle = (string)($academicStatusMeta['style'] ?? getAcademicStatusChipStyle('neutral'));
 
-// Resolve study progress as "Year X Sem Y" using approved semester registrations.
-$resolvedStudyYear = (int)($studentRow['level_year'] ?? ($studentProfile['level_year'] ?? ($studentProfile['year_of_study'] ?? 0)));
-$resolvedStudySemesterNumber = (int)($currentSemester['semester_number'] ?? 0);
-if ($studentDbId > 0) {
-    try {
-        $studyProgressStmt = $conn->prepare("
-            SELECT
-                COALESCE(sr.year_of_study, s.level_year, s.year_of_study, 0) AS study_year,
-                COALESCE(sem.semester_number, 0) AS semester_number
-            FROM semester_registrations sr
-            INNER JOIN students s ON s.id = sr.student_id
-            INNER JOIN semesters sem ON sem.id = sr.semester_id
-            WHERE sr.student_id = :student_id
-              AND sr.status = 'approved'
-            ORDER BY
-                CASE WHEN sr.semester_id = :current_semester_id THEN 0 ELSE 1 END ASC,
-                COALESCE(sr.updated_at, sr.approval_date, sr.request_date, sr.created_at) DESC,
-                sr.id DESC
-            LIMIT 1
-        ");
-        $studyProgressStmt->execute([
-            'student_id' => $studentDbId,
-            'current_semester_id' => (int)($currentSemester['id'] ?? 0)
-        ]);
-        $studyProgressRow = $studyProgressStmt->fetch(PDO::FETCH_ASSOC) ?: [];
-        $approvedStudyYear = (int)($studyProgressRow['study_year'] ?? 0);
-        $approvedSemesterNumber = (int)($studyProgressRow['semester_number'] ?? 0);
-        if ($approvedStudyYear > 0) {
-            $resolvedStudyYear = $approvedStudyYear;
-        }
-        if ($approvedSemesterNumber > 0) {
-            $resolvedStudySemesterNumber = $approvedSemesterNumber;
-        }
-    } catch (Exception $e) {
-        // Keep fallback values when registrations are unavailable.
-    }
-}
-if ($resolvedStudyYear <= 0) {
-    $resolvedStudyYear = 1;
-}
-$studyProgressLabel = 'Year ' . (int)$resolvedStudyYear;
-if ($resolvedStudySemesterNumber > 0) {
-    $studyProgressLabel .= ' Sem ' . (int)$resolvedStudySemesterNumber;
-}
+$presenterProgress = getStudentPresenterProgressMeta(
+    $conn,
+    $studentDbId,
+    $studentRow ?: $studentProfile,
+    (int)($currentSemester['id'] ?? 0)
+);
+$studyProgressLabel = (string)($presenterProgress['progress_label'] ?? 'Year 1 Sem 1');
+$studyStageLabel = (string)($presenterProgress['stage_label'] ?? 'In Progress');
+$studyStageStyle = (string)($presenterProgress['stage_style'] ?? getAcademicStatusChipStyle('info'));
 
 // Always resolve programme from admin-assigned student record.
 $registeredProgramName = '-';
@@ -848,7 +819,7 @@ html[data-theme='dark'] .profile-lock-modal .text-muted {
         <div class="sidebar-user-name">
             <?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?>
         </div>
-        <div class="sidebar-user-no"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no"><?php echo e($studentDisplayId); ?></div>
     </div>
     <ul>
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
@@ -937,6 +908,9 @@ html[data-theme='dark'] .profile-lock-modal .text-muted {
         <span class="status-badge status-active" style="font-size:0.85rem; padding:3px 10px;"><?php echo !empty($studentProfile['status']) ? strtoupper(e($studentProfile['status'])) : 'ACTIVE'; ?></span>
         <span style="margin-left:auto; font-size:1.05rem; color:#222;">ACADEMIC STATUS: <span style="<?php echo e($academicStatusStyle); ?> border-radius:6px; padding:4px 12px; font-weight:600;">
             <?php echo !empty($academicStatus) ? e($academicStatus) : '-'; ?>
+        </span></span>
+        <span style="margin-left:12px; font-size:0.98rem; color:#222;">STUDY STAGE: <span style="<?php echo e($studyStageStyle); ?> border-radius:6px; padding:4px 12px; font-weight:600;">
+            <?php echo e($studyStageLabel); ?>
         </span></span>
     </div>
 <script>
@@ -1124,7 +1098,7 @@ document.addEventListener('click', function() {
 
         <div style="display:flex; align-items:center; gap:0.35rem; margin-bottom:1.2rem; flex-wrap:wrap; white-space:normal;">
             <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">CURRENT YR. <span style="color:#2563eb;"><?php echo !empty($currentSemester['academic_year']) ? e($currentSemester['academic_year']) : '-'; ?></span></span>
-            <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">CURRENT SEM. <span style="color:#2563eb;"><?php echo !empty($currentSemester['semester_name']) ? e($currentSemester['semester_name']) : '-'; ?></span></span>
+            <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">CURRENT CALENDAR. <span style="color:#2563eb;"><?php echo e($currentRolloutStageLabel); ?></span></span>
             <span style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7; color:#166534; border:1px solid #86efac; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;' : 'background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;'; ?>">
                 <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?>
             </span>
@@ -1148,7 +1122,7 @@ document.addEventListener('click', function() {
                     <div style="font-size:1.2rem; font-weight:700; color:#2563eb;">
                         <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?>
                     </div>
-                    <div style="font-size:1.05rem; color:#222;"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+                    <div style="font-size:1.05rem; color:#222;"><?php echo e($studentDisplayId); ?></div>
                     <span class="status-badge <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'status-active' : 'status-notreg'; ?>" style="margin-top:0.5rem;">
                         <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?>
                     </span>
@@ -1185,6 +1159,7 @@ document.addEventListener('click', function() {
                 <div class="tab-panel" data-panel="academic">
                     <table class="bio-details-table">
                         <tr><td><b>PROGRAMME</b></td><td>:<?php echo e($registeredProgramName); ?></td><td><b>YEAR OF STUDY</b></td><td>:<?php echo e($studyProgressLabel); ?></td></tr>
+                        <tr><td><b>STUDY STAGE</b></td><td>:<?php echo e($studyStageLabel); ?></td><td><b>CURRENT CALENDAR</b></td><td>:<?php echo e($currentRolloutStageLabel !== '' ? $currentRolloutStageLabel : '-'); ?></td></tr>
                         <tr><td><b>ENTRY YEAR</b></td><td>:<?php echo e($studentRow['entry_year'] ?? ($studentProfile['entry_year'] ?? '-')); ?></td><td><b>ENTRY MODE</b></td><td>:<?php echo e($studentRow['entry_mode'] ?? ($studentProfile['entry_mode'] ?? '-')); ?></td></tr>
                         <tr><td><b>ENROLLMENT TYPE</b></td><td>:<?php echo e($studentRow['enrollment_type'] ?? ($studentProfile['enrollment_type'] ?? '-')); ?></td><td><b>ACADEMIC STATUS</b></td><td>:<?php echo e($academicStatus); ?></td></tr>
                     </table>

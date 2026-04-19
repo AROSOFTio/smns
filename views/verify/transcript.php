@@ -135,7 +135,7 @@ if ($providedToken !== '') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Transcript Verification - <?php echo e((string)getSetting('institution_name', INSTITUTION_NAME)); ?></title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
 </head>
 <body style="background:#f3f4f6;">
 <div class="container py-5">
@@ -173,7 +173,7 @@ if ($providedToken !== '') {
             <?php if ($student): ?>
                 <div class="border rounded p-3 bg-light">
                     <div><strong>Name:</strong> <?php echo e(trim((string)$student['first_name'] . ' ' . (string)$student['last_name'])); ?></div>
-                    <div><strong>Student ID:</strong> <?php echo e((string)$student['student_id']); ?></div>
+                    <div><strong>Student ID:</strong> <?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $student)); ?></div>
                     <div><strong>Program:</strong> <?php echo e(trim((string)($student['program_code'] ?? '') . ' - ' . (string)($student['program_name'] ?? ''))); ?></div>
                     <?php if ($status === 'valid'): ?>
                         <div><strong>Verified Code:</strong> <?php echo e(implode('-', str_split($generatedCode, 4))); ?></div>
@@ -190,6 +190,6 @@ if ($providedToken !== '') {
         </div>
     </div>
 </div>
-<script src="<?php echo BASE_URL; ?>/assets/js/fold-global.js"></script>
+<script src="<?php echo BASE_URL; ?>/assets/js/fold-global.js?v=<?php echo urlencode((string)APP_VERSION); ?>"></script>
 </body>
 </html>

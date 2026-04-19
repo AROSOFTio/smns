@@ -21,12 +21,31 @@ $lecturerProfile = $currentUser['profile'];
 $db = new Database();
 $conn = $db->getConnection();
 
-// Current semester
-$currentSemester = Helper::getCurrentSemester();
+// Academic year and semester selection
+$window = getAcademicCalendarDisplayWindowBounds();
+$academicYearsStmt = $conn->prepare("SELECT id, year_name, start_date FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY start_date DESC");
+$academicYearsStmt->execute($window);
+$academicYears = $academicYearsStmt->fetchAll();
+$defaultAcademicYearId = Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0);
+$selectedAcademicYearId = isset($_GET['academic_year_id']) ? (int) $_GET['academic_year_id'] : $defaultAcademicYearId;
+$selectedSemesterNumber = isset($_GET['semester_number']) ? (int) $_GET['semester_number'] : (Helper::getCurrentSemester()['semester_number'] ?? 1);
+
+$mapStmt = $conn->prepare('SELECT id, semester_name, semester_number, academic_year_id FROM semesters WHERE academic_year_id = :ay AND semester_number = :sn LIMIT 1');
+$mapStmt->execute([
+    'ay' => $selectedAcademicYearId,
+    'sn' => $selectedSemesterNumber,
+]);
+$selectedSemester = $mapStmt->fetch();
+
+if (!$selectedSemester) {
+    $selectedSemester = Helper::getCurrentSemester();
+}
+
+$currentSemester = $selectedSemester ?: [];
 $currentAcademicYearLabel = 'N/A';
-if (!empty($currentSemester['academic_year_id'])) {
+if (!empty($selectedAcademicYearId)) {
     $ayStmt = $conn->prepare("SELECT year_name FROM academic_years WHERE id = :id LIMIT 1");
-    $ayStmt->execute(['id' => (int)$currentSemester['academic_year_id']]);
+    $ayStmt->execute(['id' => (int)$selectedAcademicYearId]);
     $currentAcademicYearLabel = $ayStmt->fetchColumn() ?: 'N/A';
 }
 
@@ -57,8 +76,12 @@ $totalStudents = $stmt->fetch()['count'];
 // Pending results
 $stmt = $conn->prepare("SELECT COUNT(*) as count FROM results r
                         WHERE r.entered_by = :lecturer_id 
+                        AND r.semester_id = :semester_id
                         AND r.status = 'draft'");
-$stmt->execute(['lecturer_id' => $lecturerProfile['id']]);
+$stmt->execute([
+    'lecturer_id' => $lecturerProfile['id'],
+    'semester_id' => $currentSemester['id'] ?? 0,
+]);
 $pendingResults = $stmt->fetch()['count'];
 
 // My courses
@@ -74,6 +97,62 @@ $stmt->execute([
     'semester_id' => $currentSemester['id'] ?? 0
 ]);
 $myCourses = $stmt->fetchAll();
+
+$courseStudentMap = [];
+if (!empty($myCourses) && !empty($currentSemester['id'])) {
+    $courseIds = array_map(static function ($course) {
+        return (int)($course['id'] ?? 0);
+    }, $myCourses);
+    $courseIds = array_values(array_filter($courseIds));
+
+    if (!empty($courseIds)) {
+        $placeholders = [];
+        $studentParams = [
+            'semester_id' => (int)$currentSemester['id'],
+        ];
+
+        foreach ($courseIds as $index => $courseId) {
+            $key = 'course_id_' . $index;
+            $placeholders[] = ':' . $key;
+            $studentParams[$key] = $courseId;
+        }
+
+        $studentSql = "SELECT cr.course_id, s.first_name, s.last_name, s.student_id, s.level_year
+                       FROM course_registrations cr
+                       INNER JOIN students s ON cr.student_id = s.id
+                       WHERE cr.semester_id = :semester_id
+                       AND cr.status = 'approved'
+                       AND cr.course_id IN (" . implode(', ', $placeholders) . ")
+                       ORDER BY cr.course_id, s.last_name, s.first_name";
+        $studentStmt = $conn->prepare($studentSql);
+        $studentStmt->execute($studentParams);
+
+        foreach ($studentStmt->fetchAll() as $studentRow) {
+            $courseId = (int)($studentRow['course_id'] ?? 0);
+            if (!isset($courseStudentMap[$courseId])) {
+                $courseStudentMap[$courseId] = [];
+            }
+
+            $courseStudentMap[$courseId][] = [
+                'name' => trim(($studentRow['first_name'] ?? '') . ' ' . ($studentRow['last_name'] ?? '')),
+                'student_id' => (string)($studentRow['student_id'] ?? ''),
+                'level_year' => (int)($studentRow['level_year'] ?? 0),
+            ];
+        }
+    }
+}
+
+foreach ($myCourses as &$course) {
+    $courseId = (int)($course['id'] ?? 0);
+    $course['students'] = $courseStudentMap[$courseId] ?? [];
+    $course['student_count'] = count($course['students']);
+}
+unset($course);
+
+$currentSemesterQuery = http_build_query([
+    'academic_year_id' => (int)($currentSemester['academic_year_id'] ?? 0),
+    'semester_number' => (int)($currentSemester['semester_number'] ?? 0),
+]);
 
 // Notifications
 $stmt = $conn->prepare("SELECT * FROM notifications WHERE user_id = :user_id AND read_status = 'unread' ORDER BY created_at DESC LIMIT 5");
@@ -130,6 +209,34 @@ include '../../includes/header.php';
     color: #475569;
     font-size: 0.9rem;
 }
+.dashboard-filter-card {
+    margin-top: 16px;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 14px 16px;
+    background: #f8fafc;
+}
+.dashboard-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: end;
+}
+.dashboard-filter-field {
+    min-width: 180px;
+}
+.dashboard-filter-field label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.dashboard-filter-field select {
+    width: 100%;
+}
 .hero-pill {
     background: #f1f5f9;
     color: #0f172a;
@@ -158,6 +265,24 @@ include '../../includes/header.php';
     gap: 14px;
     align-items: center;
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+.stat-card-link {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+}
+.stat-card-link:hover {
+    color: inherit;
+    text-decoration: none;
+}
+.stat-card-link .stat-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.stat-card-link:hover .stat-card,
+.stat-card-link:focus .stat-card {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+    border-color: #93c5fd;
 }
 .stat-icon {
     width: 48px;
@@ -241,6 +366,83 @@ include '../../includes/header.php';
 .courses-card .table tbody td {
     border-color: #e2e8f0;
 }
+.course-title {
+    font-weight: 700;
+    color: #0f172a;
+}
+.course-student-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #ecfdf5;
+    color: #047857;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+.student-table-wrap {
+    margin-top: 10px;
+    border: 1px solid #dbeafe;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #f8fbff;
+}
+.student-mini-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+}
+.student-mini-table thead th {
+    background: #dbeafe;
+    color: #1e3a8a;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 8px 10px;
+    border-bottom: 1px solid #bfdbfe;
+}
+.student-mini-table tbody td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: top;
+}
+.student-mini-table tbody tr:last-child td {
+    border-bottom: none;
+}
+.student-no {
+    width: 44px;
+    color: #64748b;
+    font-weight: 700;
+}
+.student-name {
+    color: #0f172a;
+    font-weight: 600;
+}
+.student-regno {
+    color: #1d4ed8;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.student-level {
+    color: #475569;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.student-list-empty {
+    margin-top: 8px;
+    color: #64748b;
+    font-size: 0.8rem;
+}
+.student-more-note {
+    padding: 8px 10px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.76rem;
+    font-weight: 700;
+    border-top: 1px solid #bfdbfe;
+}
 @media (max-width: 1200px) {
     .stats-grid { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
 }
@@ -272,8 +474,15 @@ html[data-theme='dark'] .dashboard-hero {
     background: linear-gradient(180deg, rgba(15, 23, 42, 0.8), rgba(15, 23, 42, 0.6));
     box-shadow: 0 12px 30px rgba(2, 6, 23, 0.35);
 }
+html[data-theme='dark'] .dashboard-filter-card {
+    border-color: #1f2937;
+    background: rgba(15, 23, 42, 0.7);
+}
 html[data-theme='dark'] .dashboard-hero h5 { color: #f8fafc; }
 html[data-theme='dark'] .dashboard-hero .meta-line { color: #cbd5e1; }
+html[data-theme='dark'] .dashboard-filter-field label {
+    color: #94a3b8;
+}
 html[data-theme='dark'] .hero-pill {
     background: rgba(255, 255, 255, 0.06);
     color: #e2e8f0;
@@ -284,6 +493,11 @@ html[data-theme='dark'] .stat-card {
     background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.85));
     border-color: #1f2937;
     box-shadow: 0 10px 24px rgba(2, 6, 23, 0.35);
+}
+html[data-theme='dark'] .stat-card-link:hover .stat-card,
+html[data-theme='dark'] .stat-card-link:focus .stat-card {
+    border-color: #2563eb;
+    box-shadow: 0 14px 28px rgba(2, 6, 23, 0.5);
 }
 html[data-theme='dark'] .stat-details h3 { color: #f8fafc; }
 html[data-theme='dark'] .stat-details p { color: #94a3b8; }
@@ -313,6 +527,41 @@ html[data-theme='dark'] .courses-card .table thead th {
 }
 html[data-theme='dark'] .courses-card .table tbody td {
     border-color: #1f2937;
+}
+html[data-theme='dark'] .course-title { color: #f8fafc; }
+html[data-theme='dark'] .course-student-count {
+    background: rgba(16, 185, 129, 0.16);
+    color: #6ee7b7;
+}
+html[data-theme='dark'] .student-table-wrap {
+    background: rgba(15, 23, 42, 0.62);
+    border-color: #1d4ed8;
+}
+html[data-theme='dark'] .student-mini-table thead th {
+    background: rgba(30, 64, 175, 0.35);
+    color: #bfdbfe;
+    border-bottom-color: rgba(96, 165, 250, 0.24);
+}
+html[data-theme='dark'] .student-mini-table tbody td {
+    border-bottom-color: #1f2937;
+}
+html[data-theme='dark'] .student-no,
+html[data-theme='dark'] .student-list-empty {
+    color: #94a3b8;
+}
+html[data-theme='dark'] .student-name {
+    color: #f8fafc;
+}
+html[data-theme='dark'] .student-regno {
+    color: #93c5fd;
+}
+html[data-theme='dark'] .student-level {
+    color: #cbd5e1;
+}
+html[data-theme='dark'] .student-more-note {
+    background: rgba(30, 64, 175, 0.22);
+    color: #bfdbfe;
+    border-top-color: rgba(96, 165, 250, 0.24);
 }
 </style>
 
@@ -390,6 +639,30 @@ html[data-theme='dark'] .courses-card .table tbody td {
                 <span class="hero-pill">CURRENT YR. <span><?php echo e($currentAcademicYearLabel); ?></span></span>
                 <span class="hero-pill">CURRENT SEM. <span><?php echo e($currentSemester['semester_name'] ?? 'N/A'); ?></span></span>
             </div>
+            <div class="dashboard-filter-card">
+                <form method="GET" class="dashboard-filter-row">
+                    <div class="dashboard-filter-field">
+                        <label for="academicYearSelect">Academic Year</label>
+                        <select id="academicYearSelect" name="academic_year_id" class="form-control" onchange="this.form.submit();">
+                            <?php foreach ($academicYears as $ay): ?>
+                                <option value="<?php echo $ay['id']; ?>" <?php echo $selectedAcademicYearId == $ay['id'] ? 'selected' : ''; ?>>
+                                    <?php echo e($ay['year_name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="dashboard-filter-field">
+                        <label for="semesterSelect">Semester</label>
+                        <select id="semesterSelect" name="semester_number" class="form-control" onchange="this.form.submit();">
+                            <?php for ($i = 1; $i <= 4; $i++): ?>
+                                <option value="<?php echo $i; ?>" <?php echo $selectedSemesterNumber === $i ? 'selected' : ''; ?>>
+                                    Semester <?php echo $i; ?>
+                                </option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                </form>
+            </div>
         </div>
         
         <!-- Lecturer Stats Cards -->
@@ -399,18 +672,20 @@ html[data-theme='dark'] .courses-card .table tbody td {
                 <div class="stat-details">
                     <h3><?php echo number_format($totalCourses); ?></h3>
                     <p>Assigned Courses</p>
-                    <div class="stat-change neutral"><?php echo $currentSemester['semester_name'] ?? 'Current Semester'; ?></div>
+                    <div class="stat-change neutral"><?php echo $currentSemester['semester_name'] ?? ('Semester ' . (int)$selectedSemesterNumber); ?></div>
                 </div>
             </div>
             
-            <div class="stat-card students">
-                <div class="stat-icon"><i class="fas fa-users"></i></div>
-                <div class="stat-details">
-                    <h3><?php echo number_format($totalStudents); ?></h3>
-                    <p>Total Students</p>
-                    <div class="stat-change positive">Enrolled</div>
+            <a href="<?php echo BASE_URL; ?>/views/lecturer/class-list.php<?php echo $currentSemesterQuery !== '' ? '?' . $currentSemesterQuery : ''; ?>" class="stat-card-link" title="Open class lists for this semester">
+                <div class="stat-card students">
+                    <div class="stat-icon"><i class="fas fa-users"></i></div>
+                    <div class="stat-details">
+                        <h3><?php echo number_format($totalStudents); ?></h3>
+                        <p>Unique Students Across Your Courses</p>
+                        <div class="stat-change positive">Open class lists</div>
+                    </div>
                 </div>
-            </div>
+            </a>
             
             <div class="stat-card results">
                 <div class="stat-icon"><i class="fas fa-clipboard-check"></i></div>
@@ -443,7 +718,7 @@ html[data-theme='dark'] .courses-card .table tbody td {
                 <a href="<?php echo BASE_URL; ?>/views/lecturer/enter-results.php" class="btn btn-action action-enter btn-sm btn-block"><i class="fas fa-pen-nib"></i> Enter Results</a>
             </div>
             <div class="col-6 col-md-3 mb-2">
-                <a href="<?php echo BASE_URL; ?>/views/lecturer/view-results.php" class="btn btn-action action-view btn-sm btn-block"><i class="fas fa-chart-bar"></i> View Results</a>
+                <a href="<?php echo BASE_URL; ?>/views/lecturer/draft-results.php<?php echo $currentSemesterQuery !== '' ? '?' . $currentSemesterQuery : ''; ?>" class="btn btn-action action-view btn-sm btn-block"><i class="fas fa-chart-bar"></i> View Results</a>
             </div>
             <div class="col-6 col-md-3 mb-2">
                 <a href="<?php echo BASE_URL; ?>/views/lecturer/reports.php" class="btn btn-action action-reports btn-sm btn-block"><i class="fas fa-file-alt"></i> Reports</a>
@@ -453,7 +728,7 @@ html[data-theme='dark'] .courses-card .table tbody td {
         <!-- My Courses -->
         <div class="card courses-card">
             <div class="card-header">
-                My Courses - <?php echo $currentSemester['semester_name'] ?? 'Current Semester'; ?>
+                My Courses - <?php echo e($currentAcademicYearLabel); ?> / <?php echo $currentSemester['semester_name'] ?? ('Semester ' . (int)$selectedSemesterNumber); ?>
             </div>
             <div class="card-body">
                 <?php if (count($myCourses) > 0): ?>
@@ -461,7 +736,7 @@ html[data-theme='dark'] .courses-card .table tbody td {
                         <thead>
                             <tr>
                                 <th>Course Code</th>
-                                <th>Course Name</th>
+                                <th>Course Details</th>
                                 <th>Credits</th>
                                 <th>Level</th>
                                 <th>Actions</th>
@@ -471,12 +746,66 @@ html[data-theme='dark'] .courses-card .table tbody td {
                             <?php foreach($myCourses as $course): ?>
                                 <tr>
                                     <td><?php echo e($course['course_code']); ?></td>
-                                    <td><?php echo e($course['course_name']); ?></td>
-                                    <td><?php echo $course['credit_hours']; ?></td>
-                                    <td>Year <?php echo $course['level_year']; ?></td>
                                     <td>
-                                        <a href="<?php echo BASE_URL; ?>/views/lecturer/course-details.php?id=<?php echo $course['id']; ?>" class="btn btn-sm btn-info py-0 px-2">View</a>
-                                        <a href="<?php echo BASE_URL; ?>/views/lecturer/enter-results.php?course_id=<?php echo $course['id']; ?>" class="btn btn-sm btn-success py-0 px-2">Results</a>
+                                        <div class="course-title"><?php echo e($course['course_name']); ?></div>
+                                        <div class="course-student-count">
+                                            <i class="fas fa-user-graduate"></i>
+                                            <?php echo number_format((int)$course['student_count']); ?> student<?php echo (int)$course['student_count'] === 1 ? '' : 's'; ?>
+                                        </div>
+                                        <?php if (!empty($course['students'])): ?>
+                                            <?php $studentPreview = array_slice($course['students'], 0, 5); ?>
+                                            <div class="student-table-wrap">
+                                                <table class="student-mini-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th style="width:44px;">#</th>
+                                                            <th>Student Name</th>
+                                                            <th style="width:110px;">Student Level</th>
+                                                            <th style="width:160px;">Reg No.</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        <?php foreach ($studentPreview as $studentIndex => $student): ?>
+                                                            <tr>
+                                                                <td class="student-no"><?php echo $studentIndex + 1; ?></td>
+                                                                <td class="student-name">
+                                                                    <a href="<?php echo BASE_URL; ?>/views/lecturer/class-list.php?<?php echo http_build_query([
+                                                                        'academic_year_id' => (int)($currentSemester['academic_year_id'] ?? 0),
+                                                                        'semester_number' => (int)($currentSemester['semester_number'] ?? 0),
+                                                                        'course_id' => (int)$course['id'],
+                                                                    ]); ?>" style="color: inherit; text-decoration: none;">
+                                                                        <?php echo e($student['name']); ?>
+                                                                    </a>
+                                                                </td>
+                                                                <td class="student-level">Year <?php echo e($student['level_year'] > 0 ? (string)$student['level_year'] : '-'); ?></td>
+                                                                <td class="student-regno"><?php echo e(trim((string)($student['student_id'] ?? '')) !== '' ? resolveDisplayedStudentRegistrationNumberFromRow($conn, $student) : '-'); ?></td>
+                                                            </tr>
+                                                        <?php endforeach; ?>
+                                                    </tbody>
+                                                </table>
+                                                <?php if ((int)$course['student_count'] > count($studentPreview)): ?>
+                                                    <div class="student-more-note">
+                                                        Showing <?php echo count($studentPreview); ?> of <?php echo number_format((int)$course['student_count']); ?> students. Use View to open the full class list.
+                                                    </div>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php else: ?>
+                                            <div class="student-list-empty">No approved students registered for this course yet.</div>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?php echo $course['credit_hours']; ?></td>
+                                    <td>Course Level: Year <?php echo $course['level_year']; ?></td>
+                                    <td>
+                                        <a href="<?php echo BASE_URL; ?>/views/lecturer/class-list.php?<?php echo http_build_query([
+                                            'academic_year_id' => (int)($currentSemester['academic_year_id'] ?? 0),
+                                            'semester_number' => (int)($currentSemester['semester_number'] ?? 0),
+                                            'course_id' => (int)$course['id'],
+                                        ]); ?>" class="btn btn-sm btn-info py-0 px-2">View</a>
+                                        <a href="<?php echo BASE_URL; ?>/views/lecturer/enter-results.php?<?php echo http_build_query([
+                                            'academic_year_id' => (int)($currentSemester['academic_year_id'] ?? 0),
+                                            'semester_number' => (int)($currentSemester['semester_number'] ?? 0),
+                                            'course_id' => (int)$course['id'],
+                                        ]); ?>" class="btn btn-sm btn-success py-0 px-2">Results</a>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>

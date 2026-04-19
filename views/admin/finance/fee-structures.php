@@ -252,7 +252,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $programs = $conn->query("SELECT id, program_name FROM programs ORDER BY program_name ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
-$years = $conn->query("SELECT id, year_name FROM academic_years ORDER BY year_name DESC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$window = getAcademicCalendarDisplayWindowBounds();
+$yearsStmt = $conn->prepare("SELECT id, year_name FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY year_name DESC");
+$yearsStmt->execute($window);
+$years = $yearsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 $vStmt = $conn->query("
     SELECT

@@ -167,8 +167,38 @@
 
     // Loading states for navigation
     function initLoadingStates() {
-        // Disabled: this visual "loading" effect made navigation look stuck
-        // and caused confusing cursor/loading feedback for users.
+        const interactiveLinks = document.querySelectorAll('a[href]');
+        interactiveLinks.forEach((link) => {
+            if (link.dataset.smnsLoadingBound === '1') {
+                return;
+            }
+            link.dataset.smnsLoadingBound = '1';
+
+            link.addEventListener('click', (event) => {
+                if (event.defaultPrevented) {
+                    return;
+                }
+
+                const href = (link.getAttribute('href') || '').trim();
+                if (
+                    href === '' ||
+                    href.startsWith('#') ||
+                    href.startsWith('javascript:') ||
+                    link.hasAttribute('download') ||
+                    (link.getAttribute('target') || '').toLowerCase() === '_blank' ||
+                    event.metaKey ||
+                    event.ctrlKey ||
+                    event.shiftKey ||
+                    event.altKey
+                ) {
+                    return;
+                }
+
+                if (typeof showLoading === 'function') {
+                    showLoading();
+                }
+            });
+        });
     }
 
     // Notification handling

@@ -19,6 +19,7 @@ $studentId = (int)($studentProfile['id'] ?? 0);
 
 $db = new Database();
 $conn = $db->getConnection();
+$studentDisplayId = resolveDisplayedStudentRegistrationNumber($conn, $studentProfile);
 
 $currentSemester = [
     'academic_year' => '-',
@@ -94,6 +95,7 @@ $mailUnreadCount = !empty($currentUser['id']) ? getUnreadNotificationCountForUse
 
 $results = [];
 $organizedResults = [];
+$window = getAcademicCalendarDisplayWindowBounds();
 $resolveTranscriptScale = static function ($mark): array {
     if ($mark === null || $mark === '' || !is_numeric($mark)) {
         return ['grade' => '', 'grade_point' => null];
@@ -156,6 +158,8 @@ if ($studentId > 0) {
             AND r.course_id = cr.course_id
             AND r.semester_id = cr.semester_id
         WHERE cr.student_id = :student_id
+          AND ay.start_date >= :start_date
+          AND ay.start_date <= :end_date
           AND EXISTS (
                 SELECT 1
                 FROM results rp
@@ -187,8 +191,23 @@ if ($studentId > 0) {
     ";
 
     $stmt = $conn->prepare($sql);
-    $stmt->execute(['student_id' => $studentId]);
+    $stmt->execute([
+        'student_id' => $studentId,
+        'start_date' => $window['start_date'],
+        'end_date' => $window['end_date'],
+    ]);
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($results as &$row) {
+        $row['academic_year'] = resolveStudentAcademicYearDisplayLabel(
+            $conn,
+            $studentId,
+            (int)($row['year_of_study'] ?? 1),
+            (string)($row['academic_year'] ?? '-'),
+            $studentProfile
+        );
+    }
+    unset($row);
 }
 
 $bestCourses = [];
@@ -446,7 +465,7 @@ html[data-theme='dark'] .table-responsive {
         <div class="sidebar-user-name">
             <?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?>
         </div>
-        <div class="sidebar-user-no"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no"><?php echo e($studentDisplayId); ?></div>
     </div>
     <ul>
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
@@ -557,7 +576,7 @@ html[data-theme='dark'] .table-responsive {
             <div class="results-header">
                 <h4>My Provisional Results</h4>
                 <div class="student-meta">
-                    STUDENT NO: <?php echo e($studentProfile['student_id'] ?? '-'); ?>
+                    STUDENT NO: <?php echo e($studentDisplayId); ?>
                 </div>
             </div>
 

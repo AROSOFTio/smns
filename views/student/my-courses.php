@@ -23,6 +23,7 @@ if (!in_array($resultView, ['results', 'provisional'], true)) {
 
 $db = new Database();
 $conn = $db->getConnection();
+$studentDisplayId = resolveDisplayedStudentRegistrationNumber($conn, $studentProfile);
 
 $currentSemester = [
     'academic_year' => '-',
@@ -35,6 +36,11 @@ if (!empty($studentSemesterContext['id'])) {
     $currentSemester['id'] = (int)($studentSemesterContext['id'] ?? 0);
     $currentSemester['academic_year'] = $studentSemesterContext['academic_year'] ?? '-';
 }
+$currentRolloutStageLabel = getRolloutStageLabel(
+    (string)($currentSemester['academic_year'] ?? ''),
+    (int)($studentSemesterContext['semester_number'] ?? 0),
+    (string)($currentSemester['semester_name'] ?? '')
+);
 
 $approvedFeesAmount = 0.0;
 $outstandingBalance = 0.0;
@@ -161,15 +167,37 @@ if ($studentId > 0) {
         ORDER BY COALESCE(c.level_year, 1) ASC, course_semester ASC, c.course_code ASC
     ";
     $stmt = $conn->prepare($sql);
-    $stmt->execute(['student_id' => $studentId]);
+    $stmt->execute([
+        'student_id' => $studentId,
+    ]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($rows as &$row) {
+        $row['academic_year'] = resolveStudentAcademicYearDisplayLabel(
+            $conn,
+            $studentId,
+            (int)($row['year_of_study'] ?? 1),
+            (string)($row['academic_year'] ?? '-'),
+            $studentProfile
+        );
+    }
+    unset($row);
+}
+
+$hasProvisionalRows = false;
+foreach ($rows as $row) {
+    $status = strtolower((string)($row['result_status'] ?? ''));
+    if (in_array($status, ['approved', 'submitted', 'draft'], true)) {
+        $hasProvisionalRows = true;
+        break;
+    }
 }
 
 $best = [];
 foreach ($rows as $row) {
     $status = strtolower((string)($row['result_status'] ?? ''));
     $isPublished = ($status === 'published');
-    if ($resultView === 'provisional' && $isPublished) {
+    if ($resultView === 'provisional' && $isPublished && $hasProvisionalRows) {
         continue;
     }
 
@@ -403,7 +431,7 @@ html[data-theme='dark'] .badge-provisional {
             <img src="/assets/img/student_sample.jpg" alt="Profile">
         <?php endif; ?>
         <div class="sidebar-user-name"><?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?></div>
-        <div class="sidebar-user-no"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no"><?php echo e($studentDisplayId); ?></div>
     </div>
     <ul>
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
@@ -457,7 +485,7 @@ html[data-theme='dark'] .badge-provisional {
     </div>
     <div class="chip-row">
         <span class="chip gray">CURRENT YR. <span style="color:#2563eb;"><?php echo e($currentSemester['academic_year']); ?></span></span>
-        <span class="chip gray">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span>
+        <span class="chip gray">CURRENT CALENDAR. <span style="color:#2563eb;"><?php echo e($currentRolloutStageLabel); ?></span></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span>
         <span class="chip gray">APPROVED FEES AMOUNT: <?php echo number_format($approvedFeesAmount); ?>/=</span>
@@ -500,11 +528,15 @@ html[data-theme='dark'] .badge-provisional {
                                         <?php
                                         $creditHours = (float)($c['credit_hours'] ?? 0);
                                         $resolvedScale = $resolveTranscriptScale($c['total_marks'] ?? null);
-                                        $displayGrade = $isPublished && $resolvedScale['grade'] !== ''
-                                            ? (string)$resolvedScale['grade']
+                                        $storedGrade = trim((string)($c['grade'] ?? ''));
+                                        $storedGradePoint = ($c['grade_points'] !== null && $c['grade_points'] !== '')
+                                            ? (float)$c['grade_points']
+                                            : null;
+                                        $displayGrade = $isPublished
+                                            ? ($storedGrade !== '' ? $storedGrade : (string)$resolvedScale['grade'])
                                             : '';
                                         $gradePoints = $isPublished
-                                            ? $resolvedScale['grade_point']
+                                            ? ($storedGradePoint !== null ? $storedGradePoint : $resolvedScale['grade_point'])
                                             : null;
                                         if ($isPublished && $gradePoints !== null && $creditHours > 0) {
                                             $semesterCredits += $creditHours;

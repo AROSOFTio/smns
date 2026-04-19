@@ -28,7 +28,10 @@ if ($currentPage <= 0) {
 
 $totalYears = 0;
 try {
-    $totalYears = (int)$conn->query("SELECT COUNT(*) FROM academic_years")->fetchColumn();
+    $window = getAcademicCalendarDisplayWindowBounds();
+    $countStmt = $conn->prepare("SELECT COUNT(*) FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date");
+    $countStmt->execute($window);
+    $totalYears = (int)$countStmt->fetchColumn();
 } catch (Exception $e) {
     $totalYears = 0;
 }
@@ -39,7 +42,10 @@ if ($currentPage > $totalPages) {
 $offset = ($currentPage - 1) * $rowsPerPage;
 $years = [];
 try {
-    $stmt = $conn->prepare("SELECT * FROM academic_years ORDER BY start_date DESC LIMIT :limit_rows OFFSET :offset_rows");
+    $window = $window ?? getAcademicCalendarDisplayWindowBounds();
+    $stmt = $conn->prepare("SELECT * FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY start_date DESC LIMIT :limit_rows OFFSET :offset_rows");
+    $stmt->bindValue(':start_date', $window['start_date']);
+    $stmt->bindValue(':end_date', $window['end_date']);
     $stmt->bindValue(':limit_rows', $rowsPerPage, PDO::PARAM_INT);
     $stmt->bindValue(':offset_rows', $offset, PDO::PARAM_INT);
     $stmt->execute();

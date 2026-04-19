@@ -25,13 +25,18 @@ $studentProfile = $currentUser['profile'];
 
 $db = new Database();
 $conn = $db->getConnection();
+$studentDisplayId = resolveDisplayedStudentRegistrationNumber($conn, $studentProfile);
 
 // Semesters for selection
-$sstmt = $conn->query("SELECT s.*, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id ORDER BY ay.year_name DESC, s.semester_number DESC");
+$window = getAcademicCalendarDisplayWindowBounds();
+$sstmt = $conn->prepare("SELECT s.*, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id WHERE ay.start_date >= :start_date AND ay.start_date <= :end_date ORDER BY ay.year_name DESC, s.semester_number DESC");
+$sstmt->execute($window);
 $semesters = $sstmt->fetchAll();
 
 // Academic years for dropdown
-$academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_years ORDER BY start_date DESC")->fetchAll();
+$ayStmt = $conn->prepare("SELECT id, year_name, start_date FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY start_date DESC");
+$ayStmt->execute($window);
+$academicYears = $ayStmt->fetchAll();
 
 // Default semester & academic year context.
 // Mixed cohorts: default each student to institutional current semester context.
@@ -2347,7 +2352,7 @@ include '../../includes/header.php';
         <div class="sidebar-user-name">
             <?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?>
         </div>
-        <div class="sidebar-user-no"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no"><?php echo e($studentDisplayId); ?></div>
     </div>
     <ul>
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>

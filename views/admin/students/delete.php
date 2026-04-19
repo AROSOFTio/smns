@@ -200,9 +200,9 @@ $pageTitle = 'Delete or Anonymize Student - ' . APP_NAME;
     <title><?php echo $pageTitle; ?></title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../../../assets/css/style.css">
+    <link rel="stylesheet" href="../../../assets/css/style.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
     <link rel="stylesheet" href="../../../assets/css/theme-shared.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
-    <link rel="stylesheet" href="../../../assets/css/responsive-nav.css">
+    <link rel="stylesheet" href="../../../assets/css/responsive-nav.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
 </head>
 <body>
 <style>
@@ -267,7 +267,7 @@ $pageTitle = 'Delete or Anonymize Student - ' . APP_NAME;
 
                         <div class="student-info">
                             <h5><?php echo e(($student['first_name'] ?? '') . ' ' . ($student['last_name'] ?? '')); ?></h5>
-                            <p class="mb-1"><strong>Student ID:</strong> <?php echo e($student['student_id'] ?? '-'); ?></p>
+                            <p class="mb-1"><strong>Student ID:</strong> <?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $student)); ?></p>
                             <p class="mb-1"><strong>Program:</strong> <?php echo e($student['program_name'] ?? '-'); ?></p>
                             <p class="mb-1"><strong>Student Email:</strong> <?php echo e($student['email'] ?? '-'); ?></p>
                             <p class="mb-1"><strong>User Email:</strong> <?php echo e($student['user_email'] ?? '-'); ?></p>

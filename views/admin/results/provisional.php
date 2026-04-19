@@ -24,7 +24,10 @@ $db   = new Database();
 $conn = $db->getConnection();
 
 // Filters: Academic Year, Semester, Program, Year of Study, Course
-$academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_years ORDER BY start_date DESC")->fetchAll();
+$window = getAcademicCalendarDisplayWindowBounds();
+$academicYearsStmt = $conn->prepare("SELECT id, year_name, start_date FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY start_date DESC");
+$academicYearsStmt->execute($window);
+$academicYears = $academicYearsStmt->fetchAll();
 $defaultAcademicYearId  = Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0);
 $selectedAcademicYearId = isset($_REQUEST['academic_year_id']) ? (int) $_REQUEST['academic_year_id'] : $defaultAcademicYearId;
 $selectedSemesterNumber = isset($_REQUEST['semester_number']) ? (int) $_REQUEST['semester_number'] : (Helper::getCurrentSemester()['semester_number'] ?? 1);
@@ -775,7 +778,7 @@ html[data-theme='dark'] .results-filter .form-control {
                                             <tr>
                                                 <td><?php echo $i++; ?></td>
                                                 <td><?php echo e($r['first_name'] . ' ' . $r['last_name']); ?></td>
-                                                <td><?php echo e($r['reg_no']); ?></td>
+                                                <td><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $r)); ?></td>
                                                 <td class="text-center"><?php echo $r['assignment_marks'] !== null ? number_format($r['assignment_marks'], 2) : '-'; ?></td>
                                                 <td class="text-center"><?php echo $r['final_exam_marks'] !== null ? number_format($r['final_exam_marks'], 2) : '-'; ?></td>
                                                 <td class="text-center"><?php echo $r['total_marks'] !== null ? number_format($r['total_marks'], 2) : '-'; ?></td>

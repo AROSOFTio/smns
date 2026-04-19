@@ -1176,7 +1176,7 @@ class Auth {
     private function resolveAccountReference($user, $profile, $moduleName) {
         $module = strtolower((string)$moduleName);
         if ($module === 'student' && !empty($profile['student_id'])) {
-            return ['label' => 'Student ID', 'value' => (string)$profile['student_id']];
+            return ['label' => 'Student ID', 'value' => resolveDisplayedStudentRegistrationNumber($this->db, (array)$profile)];
         }
         if ($module === 'lecturer' && !empty($profile['lecturer_id'])) {
             return ['label' => 'Lecturer ID', 'value' => (string)$profile['lecturer_id']];

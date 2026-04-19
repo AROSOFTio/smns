@@ -220,7 +220,7 @@ if ($search !== '' && $totalStudents === 0 && $status !== '') {
             $match = $hintMatches[0];
             $searchFilterHint = 'Search found '
                 . trim((string)($match['first_name'] ?? '') . ' ' . (string)($match['last_name'] ?? ''))
-                . ' (' . (string)($match['student_id'] ?? '') . ')'
+                . ' (' . resolveDisplayedStudentRegistrationNumberFromRow($conn, $match) . ')'
                 . ', but the current status filter "' . $status . '" excludes this record. '
                 . 'Current student status is "' . (string)($match['status'] ?? 'n/a') . '"'
                 . (!empty($match['academic_status']) ? ' and academic status is "' . (string)$match['academic_status'] . '"' : '')
@@ -306,13 +306,12 @@ select.form-control-sm option {
 }
 .btn-group .btn { padding: 0.25rem 0.5rem; font-size: 0.82rem; }
 .dropdown-menu { min-width: 180px; z-index: 9999; box-shadow: 0 4px 8px rgba(0,0,0,0.1); border: 1px solid #dee2e6; }
-.student-action-group { position: relative; }
-.student-action-menu {
-    display: none;
-    min-width: 190px;
-}
-.student-action-menu.show {
-    display: block;
+.student-actions-inline {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex-wrap: wrap;
 }
 .students-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .students-pagination .pagination { margin-bottom: 0; }
@@ -474,8 +473,9 @@ select.form-control-sm option {
                             </thead>
                             <tbody>
                                 <?php foreach($students as $student): ?>
+                                    <?php $presenterProgress = getStudentPresenterProgressMeta($conn, (int)($student['id'] ?? 0), $student); ?>
                                     <tr>
-                                        <td><strong><?php echo e($student['student_id']); ?></strong></td>
+                                        <td><strong><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $student)); ?></strong></td>
                                         <td>
                                             <div class="students-name-wrap" title="<?php echo e($student['first_name'] . ' ' . $student['last_name']); ?>">
                                                 <?php echo e($student['first_name'] . ' ' . $student['last_name']); ?>
@@ -489,7 +489,10 @@ select.form-control-sm option {
                                             </div>
                                             <small class="text-muted d-block"><?php echo e($student['program_name']); ?></small>
                                         </td>
-                                        <td><span class="badge badge-secondary">Y<?php echo $student['level_year']; ?></span></td>
+                                        <td>
+                                            <span class="badge badge-secondary"><?php echo e((string)($presenterProgress['progress_label'] ?? ('Y' . (int)($student['level_year'] ?? 1)))); ?></span>
+                                            <small class="text-muted d-block"><?php echo e((string)($presenterProgress['stage_label'] ?? 'In Progress')); ?></small>
+                                        </td>
                                         <td>
                                             <span class="badge badge-<?php echo Helper::getStatusColor($student['status']); ?>">
                                                 <?php echo e(ucfirst($student['status'])); ?>
@@ -506,25 +509,19 @@ select.form-control-sm option {
                                                 <a href="audit.php?id=<?php echo $student['id']; ?>" class="btn btn-dark" title="Profile Audit">
                                                     <i class="fas fa-history"></i>
                                                 </a>
-                                                <div class="btn-group btn-group-sm student-action-group" role="group">
-                                                    <button type="button" class="btn btn-secondary dropdown-toggle student-action-toggle" title="More Actions" aria-expanded="false">
-                                                        <i class="fas fa-ellipsis-v"></i>
-                                                    </button>
-                                                    <div class="dropdown-menu dropdown-menu-right student-action-menu">
-                                                        <a class="dropdown-item" href="reset_password.php?id=<?php echo $student['id']; ?>">
-                                                            <i class="fas fa-key"></i> Reset Password
-                                                        </a>
-                                                        <a class="dropdown-item" href="send_invite.php?id=<?php echo $student['id']; ?>">
-                                                            <i class="fas fa-envelope"></i> Send Invite
-                                                        </a>
-                                                        <a class="dropdown-item" href="graduation-awards.php?id=<?php echo $student['id']; ?>">
-                                                            <i class="fas fa-certificate"></i> Graduation & Awards
-                                                        </a>
-                                                        <div class="dropdown-divider"></div>
-                                                        <a class="dropdown-item text-danger" href="delete.php?id=<?php echo $student['id']; ?>" onclick="return confirm('Are you sure you want to delete this student?')">
-                                                            <i class="fas fa-trash"></i> Delete
-                                                        </a>
-                                                    </div>
+                                                <div class="student-actions-inline">
+                                                    <a href="reset_password.php?id=<?php echo $student['id']; ?>" class="btn btn-secondary" title="Reset Password">
+                                                        <i class="fas fa-key"></i>
+                                                    </a>
+                                                    <a href="send_invite.php?id=<?php echo $student['id']; ?>" class="btn btn-primary" title="Send Invite">
+                                                        <i class="fas fa-envelope"></i>
+                                                    </a>
+                                                    <a href="graduation-awards.php?id=<?php echo $student['id']; ?>" class="btn btn-success" title="Graduation & Awards">
+                                                        <i class="fas fa-certificate"></i>
+                                                    </a>
+                                                    <a href="delete.php?id=<?php echo $student['id']; ?>" class="btn btn-danger" title="Delete Student" onclick="return confirm('Are you sure you want to delete this student?')">
+                                                        <i class="fas fa-trash"></i>
+                                                    </a>
                                                 </div>
                                             </div>
                                         </td>
@@ -565,45 +562,5 @@ select.form-control-sm option {
         </div>
     </div>
 </div>
-
-<script>
-// Student actions dropdowns
-$(document).ready(function() {
-    $('.student-action-toggle').on('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        var button = $(this);
-        var dropdown = button.siblings('.student-action-menu');
-
-        $('.student-action-menu').not(dropdown).removeClass('show');
-        $('.student-action-toggle').not(button).attr('aria-expanded', 'false');
-        dropdown.toggleClass('show');
-
-        if (dropdown.hasClass('show')) {
-            var buttonOffset = button.offset();
-            var buttonHeight = button.outerHeight();
-            var buttonWidth = button.outerWidth();
-
-            dropdown.css({
-                'position': 'fixed',
-                'top': (buttonOffset.top + buttonHeight) + 'px',
-                'left': (buttonOffset.left + buttonWidth - dropdown.outerWidth()) + 'px',
-                'z-index': '9999'
-            });
-            button.attr('aria-expanded', 'true');
-        } else {
-            button.attr('aria-expanded', 'false');
-        }
-    });
-
-    $(document).on('click', function(e) {
-        if (!$(e.target).closest('.student-action-group').length) {
-            $('.student-action-menu').removeClass('show');
-            $('.student-action-toggle').attr('aria-expanded', 'false');
-        }
-    });
-});
-</script>
 
 <?php include '../../../includes/footer.php'; ?>

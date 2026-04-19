@@ -12,7 +12,7 @@ $conn = $db->getConnection();
 
 echo "Database connected.\n";
 
-$password = 'Password@2026';
+$password = 'Password@' . date('Y');
 $hash = password_hash($password, PASSWORD_DEFAULT);
 echo "Hash generated: $hash\n";
 

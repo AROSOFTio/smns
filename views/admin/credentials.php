@@ -9,6 +9,8 @@ require_once __DIR__ . '/../../config.php';
 
 $session = new Session('admin');
 $auth = new Auth('admin');
+$db = new Database();
+$conn = $db->getConnection();
 
 // Verify admin access
 if (!$auth->isLoggedIn() || $auth->getRole() !== 'admin') {
@@ -360,7 +362,7 @@ body {
                     <?php if (isset($credentials['student_id'])): ?>
                         <div class="credential-item">
                             <div class="credential-label">Student ID</div>
-                            <div class="credential-value"><?php echo e($credentials['student_id']); ?></div>
+                            <div class="credential-value"><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, ['student_id' => (string)$credentials['student_id']])); ?></div>
                         </div>
                     <?php endif; ?>
 

@@ -1093,7 +1093,7 @@ include '../../includes/header.php';
                                     <option value="">Select student</option>
                                     <?php foreach ($activeStudents as $studentOption): ?>
                                         <option value="<?php echo (int)$studentOption['id']; ?>">
-                                            <?php echo e((string)$studentOption['student_id']); ?> - <?php echo e(trim((string)$studentOption['first_name'] . ' ' . (string)$studentOption['last_name'])); ?>
+                                            <?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $studentOption)); ?> - <?php echo e(trim((string)$studentOption['first_name'] . ' ' . (string)$studentOption['last_name'])); ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
@@ -1135,7 +1135,7 @@ include '../../includes/header.php';
                                             <option value="">No linked invoice</option>
                                             <?php foreach ($openInvoices as $invoiceOption): ?>
                                                 <option value="<?php echo (int)$invoiceOption['id']; ?>" data-student="<?php echo (int)$invoiceOption['student_id']; ?>">
-                                                    <?php echo e((string)$invoiceOption['invoice_number']); ?> - <?php echo e(trim((string)$invoiceOption['registration_number'] . ' ' . (string)$invoiceOption['first_name'] . ' ' . (string)$invoiceOption['last_name'])); ?>
+                                                    <?php echo e((string)$invoiceOption['invoice_number']); ?> - <?php echo e(trim(resolveDisplayedStudentRegistrationNumberFromRow($conn, $invoiceOption) . ' ' . (string)$invoiceOption['first_name'] . ' ' . (string)$invoiceOption['last_name'])); ?>
                                                 </option>
                                             <?php endforeach; ?>
                                         </select>
@@ -1171,7 +1171,7 @@ include '../../includes/header.php';
                                     <option value="">Select student</option>
                                     <?php foreach ($activeStudents as $studentOption): ?>
                                         <option value="<?php echo (int)$studentOption['id']; ?>">
-                                            <?php echo e((string)$studentOption['student_id']); ?> - <?php echo e(trim((string)$studentOption['first_name'] . ' ' . (string)$studentOption['last_name'])); ?>
+                                            <?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $studentOption)); ?> - <?php echo e(trim((string)$studentOption['first_name'] . ' ' . (string)$studentOption['last_name'])); ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
@@ -1231,7 +1231,7 @@ include '../../includes/header.php';
                                     ?>
                                     <tr>
                                         <td><?php echo e((string)$payment['payment_id']); ?></td>
-                                        <td><?php echo e((string)$payment['first_name'] . ' ' . (string)$payment['last_name']); ?><br><small><?php echo e((string)$payment['student_id']); ?></small></td>
+                                        <td><?php echo e((string)$payment['first_name'] . ' ' . (string)$payment['last_name']); ?><br><small><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $payment)); ?></small></td>
                                         <td><?php echo e((string)($payment['invoice_number'] ?? '-')); ?></td>
                                         <td><strong><?php echo e(Helper::formatCurrency((float)$payment['amount'], 'UGX', 0)); ?></strong></td>
                                         <td><?php echo e(ucfirst(str_replace('_', ' ', (string)$payment['payment_method']))); ?></td>
@@ -1314,7 +1314,7 @@ include '../../includes/header.php';
                                     <tr data-method="<?php echo e((string)($bankRow['payment_method_label'] ?? 'bank_agent')); ?>">
                                         <td>
                                             <?php echo e((string)$bankRow['first_name'] . ' ' . (string)$bankRow['last_name']); ?><br>
-                                            <small><?php echo e((string)$bankRow['student_id']); ?></small>
+                                            <small><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $bankRow)); ?></small>
                                         </td>
                                         <td>
                                             <?php echo e((string)$bankRow['reference_number']); ?><br>
@@ -1729,7 +1729,7 @@ include '../../includes/header.php';
                                     ?>
                                     <tr>
                                         <td><?php echo e((string)$invoice['invoice_number']); ?></td>
-                                        <td><?php echo e((string)$invoice['first_name'] . ' ' . (string)$invoice['last_name']); ?><br><small><?php echo e((string)$invoice['student_id']); ?></small></td>
+                                        <td><?php echo e((string)$invoice['first_name'] . ' ' . (string)$invoice['last_name']); ?><br><small><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $invoice)); ?></small></td>
                                         <td><?php echo e(Helper::formatCurrency((float)$invoice['total_amount'], 'UGX', 0)); ?></td>
                                         <td><?php echo e(Helper::formatCurrency((float)$invoice['amount_paid'], 'UGX', 0)); ?></td>
                                         <td><?php echo e(Helper::formatCurrency((float)$invoice['balance'], 'UGX', 0)); ?></td>
@@ -1789,7 +1789,7 @@ include '../../includes/header.php';
                                 <?php foreach ($studentBalances as $balance): ?>
                                     <?php $displayCurrency = (string)($balance['display_currency'] ?? 'UGX'); ?>
                                     <tr>
-                                        <td><?php echo e((string)$balance['first_name'] . ' ' . (string)$balance['last_name']); ?><br><small><?php echo e((string)$balance['student_id']); ?></small></td>
+                                        <td><?php echo e((string)$balance['first_name'] . ' ' . (string)$balance['last_name']); ?><br><small><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $balance)); ?></small></td>
                                         <td><?php echo e($displayCurrency); ?></td>
                                         <td><?php echo e(formatAmountFromUgxForDisplayCurrency((float)$balance['total_fees'], $displayCurrency, $usdUgxRate)); ?></td>
                                         <td><?php echo e(formatAmountFromUgxForDisplayCurrency((float)$balance['total_paid'], $displayCurrency, $usdUgxRate)); ?></td>

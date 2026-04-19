@@ -20,6 +20,7 @@ $studentDbId = (int)($studentProfile['id'] ?? 0);
 
 $db = new Database();
 $conn = $db->getConnection();
+$studentDisplayId = resolveDisplayedStudentRegistrationNumber($conn, $studentProfile);
 $financeMessagingService = null;
 try {
     $financeMessagingService = new FinanceMessagingService($conn);
@@ -1747,7 +1748,7 @@ html[data-theme='dark'] .ledger-amount-negative {
         <div class="sidebar-user-name">
             <?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?>
         </div>
-        <div class="sidebar-user-no"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no"><?php echo e($studentDisplayId); ?></div>
     </div>
     <ul>
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
@@ -2162,7 +2163,7 @@ html[data-theme='dark'] .ledger-amount-negative {
 
                         <div class="ledger-info-wrap">
                             <div class="ledger-meta">
-                                <div><strong>TO:</strong> <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?> (<?php echo e($studentProfile['student_id'] ?? '-'); ?>)</div>
+                                <div><strong>TO:</strong> <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?> (<?php echo e($studentDisplayId); ?>)</div>
                                 <div><strong>AS OF:</strong> <?php echo e(date('D, M j, Y g:i A')); ?></div>
                                 <br>
                                 <div><strong><?php echo e(strtoupper($registeredProgramDepartment !== '' ? $registeredProgramDepartment : 'FACULTY')); ?></strong></div>

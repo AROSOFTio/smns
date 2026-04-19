@@ -20,7 +20,10 @@ $conn = $db->getConnection();
 
 // Filters
 $searchQuery = trim($_GET['search'] ?? '');
-$academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_years ORDER BY start_date DESC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$window = getAcademicCalendarDisplayWindowBounds();
+$academicYearsStmt = $conn->prepare("SELECT id, year_name, start_date FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY start_date DESC");
+$academicYearsStmt->execute($window);
+$academicYears = $academicYearsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 $defaultAcademicYearId  = Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0);
 $selectedAcademicYearId = isset($_GET['academic_year_id']) ? (int)$_GET['academic_year_id'] : (int)$defaultAcademicYearId;
 $selectedSemesterNumber = isset($_GET['semester_number']) ? (int)$_GET['semester_number'] : (int)(Helper::getCurrentSemester()['semester_number'] ?? 1);
@@ -232,7 +235,7 @@ include '../../../includes/header.php';
                                     <tr>
                                         <td><?php echo $rowNo++; ?></td>
                                         <td><?php echo e($student['first_name'] . ' ' . $student['last_name']); ?></td>
-                                        <td><?php echo e($student['reg_no']); ?></td>
+                                        <td><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $student)); ?></td>
                                         <td><?php echo e($student['program_name']); ?></td>
                                         <td><?php echo e($student['smns_email']); ?></td>
                                         <td>

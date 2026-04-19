@@ -67,8 +67,13 @@ $to = normDate($to, $today);
 
 // Fetch auxiliaries
 $programs = $conn->query("SELECT id, program_name FROM programs ORDER BY program_name")->fetchAll();
-$semesters = $conn->query("SELECT s.id, CONCAT(ay.year_name, ' - ', s.semester_name) AS label FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id ORDER BY ay.year_name DESC, s.semester_number DESC")->fetchAll();
-$academicYears = $conn->query("SELECT id, year_name FROM academic_years ORDER BY year_name DESC")->fetchAll();
+$window = getAcademicCalendarDisplayWindowBounds();
+$semestersStmt = $conn->prepare("SELECT s.id, CONCAT(ay.year_name, ' - ', s.semester_name) AS label FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id WHERE ay.start_date >= :start_date AND ay.start_date <= :end_date ORDER BY ay.year_name DESC, s.semester_number DESC");
+$semestersStmt->execute($window);
+$semesters = $semestersStmt->fetchAll();
+$academicYearsStmt = $conn->prepare("SELECT id, year_name FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY year_name DESC");
+$academicYearsStmt->execute($window);
+$academicYears = $academicYearsStmt->fetchAll();
 
 // DATA QUERIES
 $data = [];

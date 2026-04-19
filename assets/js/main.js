@@ -367,9 +367,59 @@ function formatCurrency(amount) {
     return '$' + formatNumber(amount, 2);
 }
 
-// Show loading spinner
+// Show branded loading overlay
+function discoverLoadingBaseUrl() {
+    if (typeof window !== 'undefined' && typeof window.SMNS_BASE_URL === 'string' && window.SMNS_BASE_URL !== '') {
+        return window.SMNS_BASE_URL.replace(/\/+$/, '');
+    }
+
+    var script = document.currentScript || document.querySelector('script[src*="/assets/js/main.js"]');
+    var src = script && script.src ? script.src : '';
+    if (src) {
+        var match = src.match(/^(.*)\/assets\/js\/main\.js(?:\?.*)?$/i);
+        if (match && match[1]) {
+            return match[1].replace(/\/+$/, '');
+        }
+    }
+
+    return '';
+}
+
+function getLoadingLogoSrc() {
+    var sharedLogo = document.getElementById('smnsSharedLogoAsset');
+    if (sharedLogo) {
+        return sharedLogo.currentSrc || sharedLogo.src || sharedLogo.getAttribute('src') || '';
+    }
+
+    if (typeof window !== 'undefined' && typeof window.SMNS_LOGO_URL === 'string' && window.SMNS_LOGO_URL !== '') {
+        return window.SMNS_LOGO_URL;
+    }
+
+    var baseUrl = discoverLoadingBaseUrl();
+    var version = (typeof window !== 'undefined' && typeof window.SMNS_APP_VERSION === 'string' && window.SMNS_APP_VERSION !== '')
+        ? window.SMNS_APP_VERSION
+        : '';
+    return (baseUrl ? baseUrl : '') + '/assets/img/sem.PNG' + (version ? ('?v=' + encodeURIComponent(version)) : '');
+}
+
 function showLoading() {
-    $('body').append('<div class="loading-overlay"><div class="spinner"></div></div>');
+    if ($('.loading-overlay').length) {
+        return;
+    }
+
+    var logoSrc = getLoadingLogoSrc();
+
+    $('body').append(
+        '<div class="loading-overlay" aria-live="polite" aria-label="Loading">' +
+            '<div class="loading-brand-card">' +
+                '<img src="' + logoSrc + '" alt="SMNS Logo" class="loading-brand-logo">' +
+                '<div class="loading-brand-title">SMNS</div>' +
+                '<div class="loading-brand-ring"><img src="' + logoSrc + '" alt="" class="loading-brand-ring-logo"></div>' +
+                '<div class="loading-brand-text">Loading...</div>' +
+                '<div class="loading-brand-dots"><span></span><span></span><span></span></div>' +
+            '</div>' +
+        '</div>'
+    );
 }
 
 // Hide loading spinner

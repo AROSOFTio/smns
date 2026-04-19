@@ -319,7 +319,7 @@ include '../../../includes/header.php';
                                 <div class="form-group col-md-4">
                                     <label>Admission Prefix</label>
                                     <input type="text" name="admission_prefix" class="form-control" placeholder="ADM-XXX" value="<?php echo e($settings['admission_prefix'] ?: 'ADM-'); ?>">
-                                    <small class="form-text text-muted">Prefix used when generating admission numbers (example: <code>ADM-</code> → <code>ADM-2026-0001</code>).</small>
+                                    <small class="form-text text-muted">Prefix used when generating admission numbers (example: <code>ADM-</code> → <code>ADM-<?php echo date('Y'); ?>-0001</code>).</small>
                                 </div>
                                 <div class="form-group col-md-4 align-self-end">
                                     <button type="submit" name="save_general" class="btn btn-primary">Save General</button>

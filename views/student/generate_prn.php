@@ -20,6 +20,7 @@ $studentDbId = (int)($studentProfile['id'] ?? 0);
 
 $db = new Database();
 $conn = $db->getConnection();
+$studentDisplayId = resolveDisplayedStudentRegistrationNumber($conn, $studentProfile);
 $paymentGatewayMode = strtolower(trim((string)(defined('PAYMENT_GATEWAY_MODE') ? PAYMENT_GATEWAY_MODE : 'mock')));
 if (!in_array($paymentGatewayMode, ['live', 'sandbox', 'mock'], true)) {
     $paymentGatewayMode = 'mock';
@@ -43,6 +44,11 @@ if (!empty($studentSemesterContext['id'])) {
     $currentSemester['id'] = (int)($studentSemesterContext['id'] ?? 0);
     $currentSemester['academic_year'] = $studentSemesterContext['academic_year'] ?? '-';
 }
+$currentRolloutStageLabel = getRolloutStageLabel(
+    (string)($currentSemester['academic_year'] ?? ''),
+    (int)($studentSemesterContext['semester_number'] ?? 0),
+    (string)($currentSemester['semester_name'] ?? '')
+);
 
 $approvedFeesAmount = 0.0;
 $totalPaidAmount = 0.0;
@@ -1499,7 +1505,7 @@ html[data-theme='dark'] .chip.balance-chip {
         <div class="sidebar-user-name">
             <?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?>
         </div>
-        <div class="sidebar-user-no"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no"><?php echo e($studentDisplayId); ?></div>
     </div>
     <ul>
         <li class="active"><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
@@ -1594,7 +1600,7 @@ html[data-theme='dark'] .chip.balance-chip {
 
     <div class="chip-row">
         <span class="chip gray">CURRENT YR. <span style="color:#2563eb;"><?php echo e($currentSemester['academic_year']); ?></span></span>
-        <span class="chip gray">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span>
+        <span class="chip gray">CURRENT CALENDAR. <span style="color:#2563eb;"><?php echo e($currentRolloutStageLabel); ?></span></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span>
         <span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span>
         <span id="approvedFeesChip" class="chip gray">APPROVED FEES AMOUNT: <?php echo $formatCurrencyForDisplay((float)$approvedFeesAmount); ?></span>

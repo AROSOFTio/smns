@@ -21,55 +21,11 @@ $currentUser = $auth->getCurrentUser();
 $db = new Database();
 $conn = $db->getConnection();
 
-// Keep academic years/semesters normalized (Aug/Jan intake model) and extend future years.
+// Keep academic years/semesters normalized and ready for upcoming years too.
 try {
-    AcademicCalendarManager::ensureStandardCalendar($conn, 2025, 5);
+    AcademicCalendarManager::ensureStandardCalendar($conn);
 } catch (Exception $e) {
     // Non-fatal: dashboard can still render if sync is temporarily unavailable.
-}
-
-// Apply calendar rule:
-// Jan-Jul: January intake active (Semester 1)
-// Aug-Dec: August intake active (Semester 2)
-try {
-    $month = (int)gmdate('n');
-    $year = (int)gmdate('Y');
-    $targetStartYear = $month >= 8 ? $year : ($year - 1);
-    $targetSemesterNumber = $month >= 8 ? 2 : 1;
-    $targetYearName = $targetStartYear . '/' . ($targetStartYear + 1);
-
-    $targetSemStmt = $conn->prepare("
-        SELECT s.id, ay.id AS academic_year_id
-        FROM semesters s
-        INNER JOIN academic_years ay ON ay.id = s.academic_year_id
-        WHERE ay.year_name = :year_name
-          AND s.semester_number = :semester_number
-        LIMIT 1
-    ");
-    $targetSemStmt->execute([
-        'year_name' => $targetYearName,
-        'semester_number' => $targetSemesterNumber
-    ]);
-    $targetSem = $targetSemStmt->fetch(PDO::FETCH_ASSOC) ?: null;
-    $activeYearIdForSemesters = (int)($targetSem['academic_year_id'] ?? 0);
-    $activeSemesterId = (int)($targetSem['id'] ?? 0);
-
-    if ($activeYearIdForSemesters > 0) {
-        $deactivateOtherYearsStmt = $conn->prepare("UPDATE academic_years SET status = 'inactive' WHERE status = 'active' AND id <> :id");
-        $deactivateOtherYearsStmt->execute(['id' => $activeYearIdForSemesters]);
-
-        $activateTargetYearStmt = $conn->prepare("UPDATE academic_years SET status = 'active' WHERE id = :id");
-        $activateTargetYearStmt->execute(['id' => $activeYearIdForSemesters]);
-    }
-
-    if ($activeSemesterId > 0) {
-        $deactivateOtherSemestersStmt = $conn->prepare("UPDATE semesters SET status = 'inactive' WHERE status = 'active' AND id <> :id");
-        $deactivateOtherSemestersStmt->execute(['id' => $activeSemesterId]);
-        $activateTargetSemesterStmt = $conn->prepare("UPDATE semesters SET status = 'active' WHERE id = :id");
-        $activateTargetSemesterStmt->execute(['id' => $activeSemesterId]);
-    }
-} catch (Exception $e) {
-    // Non-fatal: avoid blocking dashboard for calendar consistency issues.
 }
 
 // Total students
@@ -660,7 +616,7 @@ include '../../includes/header.php';
                                 <tr>
                                     <td>
                                         <?php echo e(trim((string)$balanceRow['first_name'] . ' ' . (string)$balanceRow['last_name'])); ?><br>
-                                        <small><?php echo e((string)($balanceRow['student_id'] ?? '-')); ?></small>
+                                        <small><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $balanceRow)); ?></small>
                                     </td>
                                     <td><?php echo e($displayCurrency); ?></td>
                                     <td><?php echo e(formatAmountFromUgxForDisplayCurrency((float)($balanceRow['total_fees'] ?? 0), $displayCurrency, $usdUgxRate)); ?></td>

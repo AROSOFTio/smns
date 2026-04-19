@@ -215,7 +215,7 @@ include '../../../includes/header.php';
                         <tbody>
                             <?php foreach($students as $s): ?>
                                 <tr>
-                                    <td><?php echo e($s['student_id']); ?></td>
+                                    <td><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $s)); ?></td>
                                     <td><?php echo e($s['first_name'] . ' ' . $s['last_name']); ?></td>
                                     <td><?php echo e($s['level_year']); ?></td>
                                     <td><?php echo e($s['enrolled_on']); ?></td>

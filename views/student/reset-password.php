@@ -65,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Reset Student Password</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="../../assets/css/theme-shared.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
-    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
 </head>
 <body>
 <div class="container mt-5">
@@ -102,6 +102,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 </div>
-<script src="<?php echo BASE_URL; ?>/assets/js/fold-global.js"></script>
+<script src="<?php echo BASE_URL; ?>/assets/js/fold-global.js?v=<?php echo urlencode((string)APP_VERSION); ?>"></script>
 </body>
 </html>

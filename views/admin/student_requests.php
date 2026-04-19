@@ -571,7 +571,9 @@ try {
 
 // fetch semesters for bulk-approve selector
 try {
-    $sstmt = $conn->query("SELECT s.id, s.semester_name, s.semester_number, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id ORDER BY ay.start_date DESC, s.semester_number DESC");
+    $window = getAcademicCalendarDisplayWindowBounds();
+    $sstmt = $conn->prepare("SELECT s.id, s.semester_name, s.semester_number, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id WHERE ay.start_date >= :start_date AND ay.start_date <= :end_date ORDER BY ay.start_date DESC, s.semester_number DESC");
+    $sstmt->execute($window);
     $semesterOptions = $sstmt->fetchAll();
 } catch (Exception $e) {
     $semesterOptions = [];
@@ -827,6 +829,9 @@ html[data-theme='dark'] .unfulfilled-panel {
                     <?php if ($requestView === 'transcript'): ?>
                         <div class="alert alert-info mb-3">
                             Transcript requests are processed here. Approve only when the checklist is fully met to release transcript access to the student portal.
+                            <a href="<?php echo e(BASE_URL . '/views/admin/students/issued-transcripts.php'); ?>" class="btn btn-sm btn-outline-primary ml-2">
+                                Open Issued / Distribution Tracker
+                            </a>
                         </div>
                     <?php else: ?>
                         <div class="alert alert-info mb-3">
@@ -868,7 +873,7 @@ html[data-theme='dark'] .unfulfilled-panel {
                                     <tr>
                                         <td><?php echo e(Helper::formatDateTime($r['created_at'], 'M d, Y H:i')); ?></td>
                                         <td><?php echo e(trim(($r['first_name'] ?? '') . ' ' . ($r['last_name'] ?? ''))); ?></td>
-                                        <td><?php echo e($r['reg_no'] ?? '-'); ?></td>
+                                        <td><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $r)); ?></td>
                                         <?php if ($showTypeColumn): ?><td><?php echo e($formatRequestType((string)$r['request_type'])); ?></td><?php endif; ?>
                                         <?php if ($showSemesterColumn): ?><td><?php echo e($r['semester_label'] ?: '-'); ?></td><?php endif; ?>
                                         <td><p class="request-reason"><?php echo e(mb_substr((string)($r['reason'] ?? ''), 0, 120)); ?><?php echo mb_strlen((string)($r['reason'] ?? '')) > 120 ? '...' : ''; ?></p></td>

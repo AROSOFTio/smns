@@ -11,6 +11,7 @@ class Database {
     private $conn;
     private $charset = 'utf8mb4';
     private static $auditInfraEnsured = false;
+    private static $academicCalendarEnsured = false;
     
     public function __construct($host = null, $db_name = null, $username = null, $password = null) {
         $this->host = $host ?? DB_HOST;
@@ -53,6 +54,20 @@ class Database {
                     ensureAuditTraceabilityInfrastructure($this->conn);
                 } catch (Exception $e) {
                     error_log('Audit infrastructure bootstrap failed: ' . $e->getMessage());
+                }
+            }
+            if (!self::$academicCalendarEnsured && class_exists('AcademicCalendarManager')) {
+                self::$academicCalendarEnsured = true;
+                try {
+                    $rolloutStartYear = defined('ACADEMIC_CALENDAR_ROLLOUT_START_YEAR')
+                        ? (int)ACADEMIC_CALENDAR_ROLLOUT_START_YEAR
+                        : AcademicCalendarManager::ROLLOUT_START_YEAR;
+                    $yearsAhead = defined('ACADEMIC_CALENDAR_YEARS_AHEAD')
+                        ? (int)ACADEMIC_CALENDAR_YEARS_AHEAD
+                        : AcademicCalendarManager::DEFAULT_YEARS_AHEAD;
+                    AcademicCalendarManager::ensureStandardCalendar($this->conn, $rolloutStartYear, $yearsAhead);
+                } catch (Exception $e) {
+                    error_log('Academic calendar bootstrap failed: ' . $e->getMessage());
                 }
             }
         } catch(PDOException $exception) {

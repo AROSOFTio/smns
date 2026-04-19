@@ -169,7 +169,7 @@ include '../../../includes/header.php';
                         <tbody>
                             <?php foreach($students as $s): ?>
                                 <tr>
-                                    <td><?php echo e($s['student_id']); ?></td>
+                                    <td><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $s)); ?></td>
                                     <td><?php echo e($s['first_name'] . ' ' . $s['last_name']); ?></td>
                                     <td><?php echo e($s['status']); ?></td>
                                     <td><?php echo e($s['registration_date']); ?></td>

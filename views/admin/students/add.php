@@ -16,13 +16,15 @@ $db = new Database();
 $conn = $db->getConnection();
 $progStmt = $conn->query("SELECT * FROM programs WHERE status = 'active' ORDER BY program_name");
 $programs = $progStmt->fetchAll();
-$semStmt = $conn->query("SELECT s.*, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id ORDER BY s.start_date DESC");
+$window = getAcademicCalendarDisplayWindowBounds();
+$semStmt = $conn->prepare("SELECT s.*, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id WHERE ay.start_date >= :start_date AND ay.start_date <= :end_date ORDER BY s.start_date DESC");
+$semStmt->execute($window);
 $semesters = $semStmt->fetchAll();
 $errors = [];
 $formData = $_POST;
 $success = '';
 $mailStatus = '';
-$defaultStudentPassword = 'Password@2026';
+$defaultStudentPassword = 'Password@' . date('Y');
 
 function generateAdmissionNumber($conn) {
     $year = date('Y');

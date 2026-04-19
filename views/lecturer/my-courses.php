@@ -20,7 +20,10 @@ $db   = new Database();
 $conn = $db->getConnection();
 
 // Academic years + default selection (mirror student my-courses behaviour)
-$academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_years ORDER BY start_date DESC")->fetchAll();
+$window = getAcademicCalendarDisplayWindowBounds();
+$academicYearsStmt = $conn->prepare("SELECT id, year_name, start_date FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY start_date DESC");
+$academicYearsStmt->execute($window);
+$academicYears = $academicYearsStmt->fetchAll();
 $defaultAcademicYearId = Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0);
 $selectedAcademicYearId = isset($_GET['academic_year_id']) ? (int) $_GET['academic_year_id'] : $defaultAcademicYearId;
 $selectedSemesterNumber = isset($_GET['semester_number']) ? (int) $_GET['semester_number'] : (Helper::getCurrentSemester()['semester_number'] ?? 1);
@@ -167,8 +170,16 @@ include '../../includes/header.php';
                                             <td><?php echo $course['credit_hours']; ?></td>
                                             <td>Year <?php echo $course['level_year']; ?></td>
                                             <td>
-                                                <a href="<?php echo BASE_URL; ?>/views/lecturer/enter-results.php?course_id=<?php echo $course['id']; ?>" class="btn btn-sm btn-success py-0 px-2">Enter Results</a>
-                                                <a href="<?php echo BASE_URL; ?>/views/lecturer/view-results.php?course_id=<?php echo $course['id']; ?>" class="btn btn-sm btn-info py-0 px-2">View Results</a>
+                                                <a href="<?php echo BASE_URL; ?>/views/lecturer/enter-results.php?<?php echo http_build_query([
+                                                    'academic_year_id' => (int)$selectedAcademicYearId,
+                                                    'semester_number' => (int)$selectedSemesterNumber,
+                                                    'course_id' => (int)$course['id'],
+                                                ]); ?>" class="btn btn-sm btn-success py-0 px-2">Enter Results</a>
+                                                <a href="<?php echo BASE_URL; ?>/views/lecturer/draft-results.php?<?php echo http_build_query([
+                                                    'academic_year' => (int)$selectedAcademicYearId,
+                                                    'semester' => (int)$semesterId,
+                                                    'course' => (int)$course['id'],
+                                                ]); ?>" class="btn btn-sm btn-info py-0 px-2">View Results</a>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>

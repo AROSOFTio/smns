@@ -19,6 +19,7 @@ $studentId = (int)($studentProfile['id'] ?? 0);
 
 $db = new Database();
 $conn = $db->getConnection();
+$studentDisplayId = resolveDisplayedStudentRegistrationNumber($conn, $studentProfile);
 
 $tab = $_GET['tab'] ?? 'apply';
 $validTabs = ['apply', 'history', 'new_id'];
@@ -306,7 +307,7 @@ html[data-theme='dark'] .status-pill.rejected {
             <img src="/assets/img/student_sample.jpg" alt="Profile">
         <?php endif; ?>
         <div class="sidebar-user-name"><?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?></div>
-        <div class="sidebar-user-no"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no"><?php echo e($studentDisplayId); ?></div>
     </div>
     <ul>
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>

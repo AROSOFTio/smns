@@ -66,11 +66,12 @@ try {
         throw new RuntimeException('An admin account is required to approve transcript backfill records.');
     }
 
+    $targetAcademicYears = ['2023/2024', '2024/2025'];
     $semesterRows = $conn->query("
         SELECT s.id, s.semester_number, ay.id AS academic_year_id, ay.year_name, ay.start_date
         FROM semesters s
         INNER JOIN academic_years ay ON ay.id = s.academic_year_id
-        WHERE ay.year_name IN ('2025/2026', '2026/2027')
+        WHERE ay.year_name IN ('2023/2024', '2024/2025')
         ORDER BY ay.start_date ASC, s.semester_number ASC, s.id ASC
     ")->fetchAll(PDO::FETCH_ASSOC);
 
@@ -85,9 +86,9 @@ try {
     }
 
     $targetSlots = [
-        ['year_of_study' => 1, 'semester_number' => 1, 'year_name' => '2025/2026'],
-        ['year_of_study' => 1, 'semester_number' => 2, 'year_name' => '2025/2026'],
-        ['year_of_study' => 2, 'semester_number' => 1, 'year_name' => '2026/2027'],
+        ['year_of_study' => 1, 'semester_number' => 1, 'year_name' => '2023/2024'],
+        ['year_of_study' => 1, 'semester_number' => 2, 'year_name' => '2023/2024'],
+        ['year_of_study' => 2, 'semester_number' => 1, 'year_name' => '2024/2025'],
     ];
 
     foreach ($targetSlots as &$slot) {
@@ -150,14 +151,14 @@ try {
     $studentsStmt = $conn->prepare("
         SELECT id, user_id, student_id, first_name, middle_name, last_name
         FROM students
-        WHERE student_id LIKE '2026-STU-%'
+        WHERE student_id LIKE '2023-STU-%'
           AND program_id = :program_id
         ORDER BY student_id ASC
     ");
     $studentsStmt->execute(['program_id' => $programId]);
     $students = $studentsStmt->fetchAll(PDO::FETCH_ASSOC);
     if (!$students) {
-        throw new RuntimeException('No 2026-STU FVT students were found for backfill.');
+        throw new RuntimeException('No normalized FVT students were found for backfill.');
     }
 
     $semesterRegistrationStmt = $conn->prepare("
@@ -215,7 +216,7 @@ try {
             year_of_study = 2,
             level_year = 2,
             current_semester = :current_semester,
-            entry_year = COALESCE(entry_year, 2025),
+            entry_year = COALESCE(entry_year, 2023),
             entry_semester_id = COALESCE(entry_semester_id, :entry_semester_id),
             academic_status = CASE
                 WHEN academic_status IS NULL OR academic_status = '' OR LOWER(academic_status) = 'pending' THEN 'Active'
@@ -278,9 +279,10 @@ try {
                 throw new RuntimeException('No courses were found for slot ' . $slotKey . '.');
             }
 
-            $requestDate = sprintf('%04d-%02d-01 08:00:00', 2025 + ($yearOfStudy - 1), $semesterNumber === 1 ? 2 : 8);
-            $approvalDate = sprintf('%04d-%02d-03 10:00:00', 2025 + ($yearOfStudy - 1), $semesterNumber === 1 ? 2 : 8);
-            $publishDate = sprintf('%04d-%02d-20 09:30:00', 2025 + ($yearOfStudy - 1), $semesterNumber === 1 ? 7 : 12);
+            $termCalendarYear = 2023 + ($yearOfStudy - 1) + ($semesterNumber === 1 ? 1 : 0);
+            $requestDate = sprintf('%04d-%02d-01 08:00:00', $termCalendarYear, $semesterNumber === 1 ? 2 : 8);
+            $approvalDate = sprintf('%04d-%02d-03 10:00:00', $termCalendarYear, $semesterNumber === 1 ? 2 : 8);
+            $publishDate = sprintf('%04d-%02d-20 09:30:00', $termCalendarYear, $semesterNumber === 1 ? 7 : 12);
 
             $semesterRegistrationStmt->execute([
                 'student_id' => $studentId,
@@ -301,7 +303,7 @@ try {
                     'registration_date' => substr($requestDate, 0, 10),
                     'approved_by' => $adminId,
                     'approved_date' => $approvalDate,
-                    'remarks' => 'Backfilled approved registration for 2026 FVT transcript cohort.',
+                    'remarks' => 'Backfilled approved registration for normalized FVT transcript cohort.',
                 ]);
                 $stats['course_registrations']++;
 
@@ -322,7 +324,7 @@ try {
                     'submitted_date' => date('Y-m-d H:i:s', strtotime($publishDate . ' -7 days')),
                     'approved_date' => date('Y-m-d H:i:s', strtotime($publishDate . ' -3 days')),
                     'published_date' => $publishDate,
-                    'remarks' => 'Backfilled published result for 2026 FVT transcript cohort.',
+                    'remarks' => 'Backfilled published result for normalized FVT transcript cohort.',
                 ]);
                 $stats['results']++;
             }
@@ -339,7 +341,7 @@ try {
 
     $conn->commit();
 
-    echo "2026 FVT transcript marks backfilled successfully.\n";
+    echo "Normalized FVT transcript marks backfilled successfully.\n";
     echo 'Students processed: ' . $stats['students_processed'] . "\n";
     echo 'Semester registrations upserted: ' . $stats['semester_registrations'] . "\n";
     echo 'Course registrations upserted: ' . $stats['course_registrations'] . "\n";

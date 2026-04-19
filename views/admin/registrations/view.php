@@ -191,7 +191,7 @@ include '../../../includes/header.php';
         <div class="card">
             <div class="card-body">
                 <h5><?php echo e($student['first_name'] . ' ' . $student['last_name']); ?> — <?php echo e($semester['semester_name'] ?? 'Semester'); ?></h5>
-                <p class="text-muted">Student ID: <?php echo e($student['student_id']); ?></p>
+                <p class="text-muted">Student ID: <?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $student)); ?></p>
                 <div class="mb-3">
                     <span class="badge badge-<?php echo e($progressDecision['tone'] ?? 'secondary'); ?>"><?php echo e($progressDecision['title'] ?? 'No GPA evidence'); ?></span>
                     <div class="small text-muted mt-1"><?php echo e($progressDecision['detail'] ?? 'Manual review advised.'); ?></div>

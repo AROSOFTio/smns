@@ -19,9 +19,9 @@ $conn = $db->getConnection();
 $logger = new Logger();
 $communicationService = new AdminCommunicationService($conn, $logger);
 
-// Keep academic years/semesters normalized (Aug/Jan intake model) and extend future years.
+// Keep academic years/semesters normalized and ready for upcoming years too.
 try {
-    AcademicCalendarManager::ensureStandardCalendar($conn, 2025, 5);
+    AcademicCalendarManager::ensureStandardCalendar($conn);
 } catch (Exception $e) {
     // Non-fatal: manual semester operations below remain available.
 }
@@ -431,15 +431,19 @@ $announcements = [];
 $auditLogs = [];
 
 try {
-    $yearsStmt = $conn->query('SELECT id, year_name, status FROM academic_years ORDER BY start_date DESC, id DESC');
-    $academicYears = $yearsStmt ? ($yearsStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+    $window = getAcademicCalendarDisplayWindowBounds();
+    $yearsStmt = $conn->prepare('SELECT id, year_name, status FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY start_date DESC, id DESC');
+    $yearsStmt->execute($window);
+    $academicYears = $yearsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 } catch (Exception $e) {
     $academicYears = [];
 }
 
 try {
-    $semStmt = $conn->query("SELECT s.*, ay.year_name FROM semesters s INNER JOIN academic_years ay ON s.academic_year_id = ay.id ORDER BY ay.start_date DESC, s.semester_number ASC, s.id DESC");
-    $semesters = $semStmt ? ($semStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+    $window = $window ?? getAcademicCalendarDisplayWindowBounds();
+    $semStmt = $conn->prepare("SELECT s.*, ay.year_name FROM semesters s INNER JOIN academic_years ay ON s.academic_year_id = ay.id WHERE ay.start_date >= :start_date AND ay.start_date <= :end_date ORDER BY ay.start_date DESC, s.semester_number ASC, s.id DESC");
+    $semStmt->execute($window);
+    $semesters = $semStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 } catch (Exception $e) {
     $semesters = [];
 }

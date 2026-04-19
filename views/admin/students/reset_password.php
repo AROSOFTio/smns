@@ -135,7 +135,7 @@ include '../../../includes/header.php';
                         <p><strong>Name:</strong> <?php echo e($student['first_name'] . ' ' . $student['last_name']); ?></p>
                         <p><strong>Email:</strong> <?php echo e($student['email']); ?></p>
                         <p><strong>Username:</strong> <?php echo e($student['username']); ?></p>
-                        <p><strong>Student ID:</strong> <?php echo e($student['student_id']); ?></p>
+                        <p><strong>Student ID:</strong> <?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $student)); ?></p>
                     </div>
                 </div>
             </div>

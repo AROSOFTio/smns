@@ -8,19 +8,27 @@
  */
 class AcademicCalendarManager
 {
+    public const ROLLOUT_START_YEAR = 2023;
+    public const DEFAULT_YEARS_AHEAD = 3;
+
     /**
-     * Ensure normalized academic years and semesters exist from a minimum year to N years ahead.
+     * Ensure normalized academic years and semesters exist from the rollout year to the current window.
      */
-    public static function ensureStandardCalendar(PDO $conn, $minimumStartYear = 2025, $yearsAhead = 5)
+    public static function ensureStandardCalendar(PDO $conn, $minimumStartYear = self::ROLLOUT_START_YEAR, $yearsAhead = self::DEFAULT_YEARS_AHEAD)
     {
+        if (defined('ACADEMIC_CALENDAR_ROLLOUT_START_YEAR')) {
+            $minimumStartYear = (int)ACADEMIC_CALENDAR_ROLLOUT_START_YEAR;
+        }
+        if (defined('ACADEMIC_CALENDAR_YEARS_AHEAD') && $yearsAhead === self::DEFAULT_YEARS_AHEAD) {
+            $yearsAhead = (int)ACADEMIC_CALENDAR_YEARS_AHEAD;
+        }
+
         $minimumStartYear = max(2000, (int)$minimumStartYear);
-        $yearsAhead = max(1, min(12, (int)$yearsAhead));
+        $yearsAhead = max(0, min(12, (int)$yearsAhead));
 
-        $nowYear = (int)gmdate('Y');
-        $nowMonth = (int)gmdate('n');
-        $currentAcademicStartYear = $nowMonth >= 8 ? $nowYear : ($nowYear - 1);
+        $currentAcademicStartYear = self::getCurrentAcademicStartYear();
 
-        // Always include the requested baseline year (2025/2026) and extend into future years.
+        // Always include the real rollout baseline and only extend up to the requested visible window.
         $startYear = min($minimumStartYear, $currentAcademicStartYear);
         $endYear = max($minimumStartYear, $currentAcademicStartYear + $yearsAhead);
 
@@ -46,6 +54,18 @@ class AcademicCalendarManager
             }
             throw $e;
         }
+    }
+
+    public static function getCurrentAcademicStartYear()
+    {
+        $nowYear = (int)date('Y');
+        $nowMonth = (int)date('n');
+        return $nowMonth >= 8 ? $nowYear : ($nowYear - 1);
+    }
+
+    public static function getCurrentAcademicStartDate()
+    {
+        return sprintf('%04d-08-01', self::getCurrentAcademicStartYear());
     }
 
     private static function upsertAcademicYear(PDO $conn, $startYear)
@@ -183,8 +203,8 @@ class AcademicCalendarManager
      */
     private static function syncActiveIntakeByCalendarMonth(PDO $conn)
     {
-        $year = (int)gmdate('Y');
-        $month = (int)gmdate('n');
+        $year = (int)date('Y');
+        $month = (int)date('n');
         $targetStartYear = ($month >= 8) ? $year : ($year - 1);
         $targetSemesterNumber = ($month >= 8) ? 2 : 1;
 

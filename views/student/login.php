@@ -183,6 +183,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             } catch (e) {}
         })();
+        window.SMNS_BASE_URL = <?php echo json_encode(BASE_URL); ?>;
+        window.SMNS_APP_VERSION = <?php echo json_encode((string)APP_VERSION); ?>;
+        window.SMNS_LOGO_URL = <?php echo json_encode(BASE_URL . '/assets/img/sem.PNG?v=' . urlencode((string)APP_VERSION)); ?>;
     </script>
     <title>Student Login - <?php echo APP_NAME; ?></title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
@@ -191,14 +194,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <style>
         body { background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%); }
     </style>
-    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
 </head>
 
 <body style="background: url('../../uploads/seminary.jpeg') no-repeat center center fixed; background-size: cover;">
     <div class="login-container">
         <div class="login-card student-theme">
             <div class="login-header">
-                <img src="../../assets/img/sem.PNG" alt="Logo" class="logo mb-2" style="max-width:80px;">
+                <img src="<?php echo BASE_URL; ?>/assets/img/sem.PNG?v=<?php echo urlencode((string)APP_VERSION); ?>" alt="Logo" class="logo mb-2" style="max-width:80px;">
                 <h2><?php echo APP_SHORT_NAME; ?></h2>
                
                 <span class="role-badge">Student Portal</span>
@@ -296,9 +299,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }, 30000);
             </script>
-            <script src="../../assets/js/login-theme.js?v=<?php echo urlencode((string)APP_VERSION); ?>"></script>
+<script src="../../assets/js/login-theme.js?v=<?php echo urlencode((string)APP_VERSION); ?>" defer></script>
         </div>
     </div>
-<script src="<?php echo BASE_URL; ?>/assets/js/fold-global.js"></script>
+<script src="<?php echo BASE_URL; ?>/assets/js/fold-global.js?v=<?php echo urlencode((string)APP_VERSION); ?>" defer></script>
 </body>
 </html>

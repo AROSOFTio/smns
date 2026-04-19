@@ -19,6 +19,7 @@ $studentId = (int)($studentProfile['id'] ?? 0);
 
 $db = new Database();
 $conn = $db->getConnection();
+$studentDisplayId = resolveDisplayedStudentRegistrationNumber($conn, $studentProfile);
 
 $currentSemester = [
     'academic_year' => '-',
@@ -94,7 +95,6 @@ $mailUnreadCount = !empty($currentUser['id']) ? getUnreadNotificationCountForUse
 
 $results = [];
 $organizedResults = [];
-$activePublishedSemesterId = 0;
 $resolveTranscriptScale = static function ($mark): array {
     if ($mark === null || $mark === '' || !is_numeric($mark)) {
         return ['grade' => '', 'grade_point' => null];
@@ -127,24 +127,6 @@ $resolveTranscriptScale = static function ($mark): array {
 };
 
 if ($studentId > 0) {
-    try {
-        $latestPublishedStmt = $conn->prepare("
-            SELECT s.id
-            FROM results r
-            INNER JOIN semesters s ON s.id = r.semester_id
-            INNER JOIN academic_years ay ON ay.id = s.academic_year_id
-            WHERE r.student_id = :student_id
-              AND r.status = 'published'
-            ORDER BY ay.start_date DESC, s.semester_number DESC, s.start_date DESC, s.id DESC
-            LIMIT 1
-        ");
-        $latestPublishedStmt->execute(['student_id' => $studentId]);
-        $activePublishedSemesterId = (int)$latestPublishedStmt->fetchColumn();
-    } catch (Exception $e) {
-        $activePublishedSemesterId = 0;
-    }
-
-    if ($activePublishedSemesterId > 0) {
     $sql = "
         SELECT
             cr.semester_id,
@@ -175,7 +157,6 @@ if ($studentId > 0) {
             AND r.course_id = cr.course_id
             AND r.semester_id = cr.semester_id
         WHERE cr.student_id = :student_id
-          AND cr.semester_id = :active_semester_id
           AND EXISTS (
                 SELECT 1
                 FROM results rp
@@ -208,10 +189,8 @@ if ($studentId > 0) {
     $stmt = $conn->prepare($sql);
     $stmt->execute([
         'student_id' => $studentId,
-        'active_semester_id' => $activePublishedSemesterId
     ]);
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
 }
 
 $bestCourses = [];
@@ -486,7 +465,7 @@ html[data-theme='dark'] .table-responsive {
         <div class="sidebar-user-name">
             <?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?>
         </div>
-        <div class="sidebar-user-no"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no"><?php echo e($studentDisplayId); ?></div>
     </div>
     <ul>
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
@@ -595,9 +574,9 @@ html[data-theme='dark'] .table-responsive {
     <div class="results-wrap">
         <div class="results-card">
             <div class="results-header">
-                <h4>View Results (Current Semester)</h4>
+                <h4>View Published Results</h4>
                 <div class="student-meta">
-                    STUDENT NO: <?php echo e($studentProfile['student_id'] ?? '-'); ?>
+                    STUDENT NO: <?php echo e($studentDisplayId); ?>
                 </div>
             </div>
 
@@ -648,11 +627,15 @@ html[data-theme='dark'] .table-responsive {
                                                 $isPublished = (($course['result_status'] ?? '') === 'published');
                                                 $cu = (int)($course['credit_hours'] ?? 0);
                                                 $resolvedScale = $resolveTranscriptScale($course['total_marks'] ?? null);
-                                                $displayGrade = $isPublished && $resolvedScale['grade'] !== ''
-                                                    ? (string)$resolvedScale['grade']
+                                                $storedGrade = trim((string)($course['grade'] ?? ''));
+                                                $storedGradePoint = ($course['grade_points'] !== null && $course['grade_points'] !== '')
+                                                    ? (float)$course['grade_points']
+                                                    : null;
+                                                $displayGrade = $isPublished
+                                                    ? ($storedGrade !== '' ? $storedGrade : (string)$resolvedScale['grade'])
                                                     : '';
                                                 $displayGradePoint = $isPublished
-                                                    ? $resolvedScale['grade_point']
+                                                    ? ($storedGradePoint !== null ? $storedGradePoint : $resolvedScale['grade_point'])
                                                     : null;
 
                                                 if ($isPublished && $displayGradePoint !== null) {

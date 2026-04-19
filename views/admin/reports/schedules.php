@@ -381,8 +381,13 @@ $schedules = $conn->query("SELECT * FROM scheduled_reports ORDER BY active DESC,
 
 // Helpers for select options
 $programs = $conn->query("SELECT id, program_name FROM programs ORDER BY program_name")->fetchAll(PDO::FETCH_ASSOC);
-$semesters = $conn->query("SELECT s.id, CONCAT(ay.year_name,' - ', s.semester_name) AS label FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id ORDER BY ay.year_name DESC, s.semester_number DESC")->fetchAll(PDO::FETCH_ASSOC);
-$academicYears = $conn->query("SELECT id, year_name FROM academic_years ORDER BY year_name DESC")->fetchAll(PDO::FETCH_ASSOC);
+$window = getAcademicCalendarDisplayWindowBounds();
+$semestersStmt = $conn->prepare("SELECT s.id, CONCAT(ay.year_name,' - ', s.semester_name) AS label FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id WHERE ay.start_date >= :start_date AND ay.start_date <= :end_date ORDER BY ay.year_name DESC, s.semester_number DESC");
+$semestersStmt->execute($window);
+$semesters = $semestersStmt->fetchAll(PDO::FETCH_ASSOC);
+$academicYearsStmt = $conn->prepare("SELECT id, year_name FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY year_name DESC");
+$academicYearsStmt->execute($window);
+$academicYears = $academicYearsStmt->fetchAll(PDO::FETCH_ASSOC);
 
 $pageTitle = 'Scheduled Reports - ' . APP_NAME;
 include '../../../includes/header.php';

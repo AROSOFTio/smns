@@ -191,9 +191,9 @@ $pageTitle = 'Student Profile Audit - ' . APP_NAME;
     <title><?php echo e($pageTitle); ?></title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../../../assets/css/style.css">
+    <link rel="stylesheet" href="../../../assets/css/style.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
     <link rel="stylesheet" href="../../../assets/css/theme-shared.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
-    <link rel="stylesheet" href="../../../assets/css/responsive-nav.css">
+    <link rel="stylesheet" href="../../../assets/css/responsive-nav.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
 </head>
 <body>
 <?php include '../../../includes/admin/sidebar.php'; ?>
@@ -258,7 +258,7 @@ html[data-theme='dark'] .audit-stat {
                     <div class="col-md-8">
                         <h5 class="mb-1"><?php echo e(trim(($student['first_name'] ?? '') . ' ' . ($student['middle_name'] ?? '') . ' ' . ($student['last_name'] ?? ''))); ?></h5>
                         <div class="text-muted">
-                            <strong><?php echo e($student['student_id'] ?? ''); ?></strong>
+                            <strong><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $student)); ?></strong>
                             <?php if (!empty($student['program_code']) || !empty($student['program_name'])): ?>
                                 | <?php echo e(($student['program_code'] ?? '') . ' ' . ($student['program_name'] ?? '')); ?>
                             <?php endif; ?>

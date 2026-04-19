@@ -16,6 +16,7 @@ $userId = (int)($currentUser['id'] ?? 0);
 
 $db = new Database();
 $conn = $db->getConnection();
+$studentDisplayId = resolveDisplayedStudentRegistrationNumber($conn, $studentProfile);
 
 $currentSemester = ['academic_year' => '-', 'semester_name' => '-', 'id' => 0, 'academic_year_id' => 0];
 $activeSemester = getStudentCurrentSemesterContext($conn, $studentId);
@@ -25,6 +26,11 @@ if (!empty($activeSemester)) {
     $currentSemester['academic_year'] = $activeSemester['academic_year'] ?? '-';
     $currentSemester['academic_year_id'] = (int)($activeSemester['academic_year_id'] ?? 0);
 }
+$currentRolloutStageLabel = getRolloutStageLabel(
+    (string)($currentSemester['academic_year'] ?? ''),
+    (int)($activeSemester['semester_number'] ?? 0),
+    (string)($currentSemester['semester_name'] ?? '')
+);
 
 $selectedAcademicYearId = isset($_GET['academic_year_id']) ? (int)$_GET['academic_year_id'] : (int)($currentSemester['academic_year_id'] ?? 0);
 $selectedAcademicYearName = '-';
@@ -32,8 +38,10 @@ $selectedAcademicYearStart = null;
 $selectedAcademicYearEnd = null;
 $allAcademicYears = [];
 try {
-    $yStmt = $conn->query("SELECT id, year_name FROM academic_years ORDER BY start_date DESC, id DESC");
-    $allAcademicYears = $yStmt ? ($yStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+    $window = getAcademicCalendarDisplayWindowBounds();
+    $yStmt = $conn->prepare("SELECT id, year_name FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY start_date DESC, id DESC");
+    $yStmt->execute($window);
+    $allAcademicYears = $yStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 } catch (Exception $e) {}
 if ($selectedAcademicYearId <= 0 && !empty($allAcademicYears)) {
     $selectedAcademicYearId = (int)$allAcademicYears[0]['id'];
@@ -238,7 +246,7 @@ body{background:#f2f4f7}.student-sidebar{width:230px;background:linear-gradient(
         <div class="sidebar-portal-title">SMNS-STUDENT PORTAL</div>
     <?php if (!empty($studentProfile['photo'])): ?><img src="<?php echo BASE_URL . '/' . $studentProfile['photo']; ?>" alt="Profile"><?php else: ?><img src="/assets/img/student_sample.jpg" alt="Profile"><?php endif; ?>
     <div class="sidebar-user-name"><?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?></div>
-    <div class="sidebar-user-no"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+    <div class="sidebar-user-no"><?php echo e($studentDisplayId); ?></div>
   </div>
   <ul>
     <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
@@ -278,10 +286,10 @@ body{background:#f2f4f7}.student-sidebar{width:230px;background:linear-gradient(
   </div>
 
   <div class="chip-row"><span style="font-size:1rem;color:#1f7aa8;">PROGRAMME:</span><span style="font-size:1rem;"><?php echo e($registeredProgramName); ?></span><span class="chip" style="background:#16a34a;color:#fff;">ACTIVE</span><span style="margin-left:auto;font-size:1rem;color:#1f7aa8;">ACADEMIC STATUS:</span><span class="chip red" style="<?php echo e($academicStatusStyle); ?>"><?php echo e($academicStatus); ?></span></div>
-  <div class="chip-row"><span class="chip gray">CURRENT YR. <span style="color:#2563eb;"><?php echo e($currentSemester['academic_year']); ?></span></span><span class="chip gray">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span><span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span><span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span><span class="chip gray">APPROVED FEES AMOUNT: <?php echo $formatCurrencyForDisplay((float)$approvedFeesAmount); ?></span><span class="chip blue">BALANCE ON ACCOUNT: <?php echo $formatCurrencyForDisplay((float)$balanceOnAccount); ?></span></div>
+  <div class="chip-row"><span class="chip gray">CURRENT YR. <span style="color:#2563eb;"><?php echo e($currentSemester['academic_year']); ?></span></span><span class="chip gray">CURRENT CALENDAR. <span style="color:#2563eb;"><?php echo e($currentRolloutStageLabel); ?></span></span><span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?></span><span class="chip red" style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; ?>"><?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?></span><span class="chip gray">APPROVED FEES AMOUNT: <?php echo $formatCurrencyForDisplay((float)$approvedFeesAmount); ?></span><span class="chip blue">BALANCE ON ACCOUNT: <?php echo $formatCurrencyForDisplay((float)$balanceOnAccount); ?></span></div>
 
   <div class="cal-wrap"><div class="cal-card">
-    <form method="GET" class="cal-head"><div style="min-width:220px;"><select class="cal-year-pick" name="academic_year_id" onchange="this.form.submit()"><?php foreach ($allAcademicYears as $y): ?><option value="<?php echo (int)$y['id']; ?>" <?php echo (int)$selectedAcademicYearId === (int)$y['id'] ? 'selected' : ''; ?>><?php echo e($y['year_name']); ?></option><?php endforeach; ?></select></div><h2 class="cal-title">ACADEMIC YEAR - <?php echo e($selectedAcademicYearName); ?></h2><div style="min-width:220px;"></div></form>
+    <form method="GET" class="cal-head"><div style="min-width:220px;"><select class="cal-year-pick" name="academic_year_id" onchange="this.form.submit()"><?php foreach ($allAcademicYears as $y): ?><option value="<?php echo (int)$y['id']; ?>" <?php echo (int)$selectedAcademicYearId === (int)$y['id'] ? 'selected' : ''; ?>><?php echo e(getRolloutStageLabel((string)$y['year_name'], 1)); ?></option><?php endforeach; ?></select></div><h2 class="cal-title">ACADEMIC YEAR - <?php echo e(getRolloutStageLabel((string)$selectedAcademicYearName, 1)); ?></h2><div style="min-width:220px;"></div></form>
 
     <div class="cal-block"><div class="cal-block-head"><span>SEMESTER I</span><?php if ($semesterOneCurrent): ?><span class="cal-current">Current</span><?php endif; ?></div><table class="cal-table"><thead><tr><th>EVENT</th><th>DESCRIPTION</th><th>START DATE</th><th>END DATE</th><th>STATUS</th></tr></thead><tbody><?php if (empty($semesterOneRows)): ?><tr><td colspan="5">No semester I events found.</td></tr><?php else: foreach ($semesterOneRows as $row): ?><tr><td><?php echo e($row['event']); ?></td><td><?php echo e($row['description']); ?></td><td><?php echo e($fmtDate($row['start_date'])); ?></td><td><?php echo e($fmtDate($row['end_date'])); ?></td><td><span class="status-pill <?php echo e($row['status']['class']); ?>"><i class="<?php echo e($row['status']['icon']); ?>"></i> <?php echo e($row['status']['label']); ?></span></td></tr><?php endforeach; endif; ?></tbody></table></div>
 

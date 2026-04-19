@@ -235,7 +235,10 @@ foreach ($courseMap as $c) {
 ksort($groupedCourses);
 
 // Years dropdown based on semesters table (not assignments)
-$years = $conn->query("SELECT year_name FROM academic_years ORDER BY start_date DESC")->fetchAll(PDO::FETCH_COLUMN);
+$window = getAcademicCalendarDisplayWindowBounds();
+$yearsStmt = $conn->prepare("SELECT year_name FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY start_date DESC");
+$yearsStmt->execute($window);
+$years = $yearsStmt->fetchAll(PDO::FETCH_COLUMN);
 
 // Lecturers dropdown (active)
 $lecturerList = $conn->query("

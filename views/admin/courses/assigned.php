@@ -75,7 +75,9 @@ $stmt = $conn->query("SELECT * FROM lecturers WHERE status = 'active' ORDER BY f
 $lecturers = $stmt->fetchAll();
 
 // Get semesters for filter
-$stmt = $conn->query("SELECT s.*, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id ORDER BY ay.year_name DESC, s.semester_number DESC");
+$window = getAcademicCalendarDisplayWindowBounds();
+$stmt = $conn->prepare("SELECT s.*, ay.year_name FROM semesters s JOIN academic_years ay ON s.academic_year_id = ay.id WHERE ay.start_date >= :start_date AND ay.start_date <= :end_date ORDER BY ay.year_name DESC, s.semester_number DESC");
+$stmt->execute($window);
 $semesters = $stmt->fetchAll();
 
 // Notifications (per-user + broadcast aware)

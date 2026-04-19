@@ -119,6 +119,9 @@ if ($mfaCodeLength > 8) {
                 }
             } catch (e) {}
         })();
+        window.SMNS_BASE_URL = <?php echo json_encode(BASE_URL); ?>;
+        window.SMNS_APP_VERSION = <?php echo json_encode((string)APP_VERSION); ?>;
+        window.SMNS_LOGO_URL = <?php echo json_encode(BASE_URL . '/assets/img/sem.PNG?v=' . urlencode((string)APP_VERSION)); ?>;
     </script>
     <title>MFA Verification - <?php echo APP_NAME; ?></title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
@@ -181,7 +184,7 @@ if ($mfaCodeLength > 8) {
             }
         }
     </style>
-    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
 </head>
 <body>
 <?php
@@ -197,7 +200,7 @@ $moduleLabel = ucfirst($module);
 <div class="login-container">
     <div class="login-card <?php echo e($cardThemeClass); ?>">
         <div class="login-header">
-            <img src="../../assets/img/sem.PNG" alt="Logo" class="logo mb-2">
+            <img src="<?php echo BASE_URL; ?>/assets/img/sem.PNG?v=<?php echo urlencode((string)APP_VERSION); ?>" alt="Logo" class="logo mb-2">
             <h2>Security Verification</h2>
             <span class="role-badge"><?php echo e($moduleLabel); ?> OTP</span>
         </div>
@@ -245,7 +248,7 @@ $moduleLabel = ucfirst($module);
         </div>
     </div>
 </div>
-<script src="../../assets/js/login-theme.js?v=<?php echo urlencode((string)APP_VERSION); ?>"></script>
+<script src="../../assets/js/login-theme.js?v=<?php echo urlencode((string)APP_VERSION); ?>" defer></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     var verifyForm = document.getElementById('mfaVerifyForm');
@@ -283,6 +286,6 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 </script>
-<script src="<?php echo BASE_URL; ?>/assets/js/fold-global.js"></script>
+<script src="<?php echo BASE_URL; ?>/assets/js/fold-global.js?v=<?php echo urlencode((string)APP_VERSION); ?>" defer></script>
 </body>
 </html>

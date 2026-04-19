@@ -218,6 +218,11 @@ try {
         ];
     }
 
+    $cohortEntryYear = (int)substr((string)$semesterPlan[1]['year_name'], 0, 4);
+    if ($cohortEntryYear < 1900) {
+        throw new RuntimeException('Unable to resolve FVT cohort entry year from academic year setup.');
+    }
+
     $existingFvtCourseCount = (int)fetchSingleValue(
         $conn,
         "SELECT COUNT(*) FROM courses WHERE program_id = :program_id AND level_year BETWEEN 1 AND 3",
@@ -541,7 +546,7 @@ try {
         $group = $groupMembership[$normalizedName] ?? 'group_one';
         $nameParts = splitStudentName($fullName);
         $sequence = str_pad((string)($index + 1), 3, '0', STR_PAD_LEFT);
-        $studentCode = 'FVT2026' . $sequence;
+        $studentCode = 'FVT' . $cohortEntryYear . $sequence;
         $username = 'fvt' . strtolower($sequence);
         $email = strtolower($studentCode) . '@student.smns.local';
         $smnsEmail = strtolower($studentCode) . '@smns.local';
@@ -625,7 +630,7 @@ try {
             'nationality' => 'Ugandan',
             'school_college' => 'School of Theology',
             'department' => 'Theology',
-            'intake' => 'August 2025',
+            'intake' => 'August ' . $cohortEntryYear,
             'academic_status' => $isGraduated ? 'Graduated' : 'Active',
             'discipline_status' => 'Good Standing',
             'address' => 'FIAT VOLUNTAS TUA Cohort',
@@ -644,7 +649,7 @@ try {
             'current_semester' => $currentSemesterId,
             'year_of_study' => $highestYear,
             'level_year' => $highestYear,
-            'entry_year' => 2025,
+            'entry_year' => $cohortEntryYear,
             'entry_semester_id' => (int)$semesterPlan[1][1],
             'entry_mode' => 'Regular',
             'enrollment_type' => 'Day',
@@ -705,8 +710,9 @@ try {
         foreach ($completedThrough as $slot) {
             [$yearOfStudy, $semesterNumber] = $slot;
             $semesterId = (int)$semesterPlan[$yearOfStudy][$semesterNumber];
-            $requestDate = sprintf('%04d-%02d-01 08:00:00', 2025 + ($yearOfStudy - 1), $semesterNumber === 1 ? 2 : 8);
-            $approvalDate = sprintf('%04d-%02d-03 10:00:00', 2025 + ($yearOfStudy - 1), $semesterNumber === 1 ? 2 : 8);
+            $termCalendarYear = $cohortEntryYear + ($yearOfStudy - 1) + ($semesterNumber === 1 ? 1 : 0);
+            $requestDate = sprintf('%04d-%02d-01 08:00:00', $termCalendarYear, $semesterNumber === 1 ? 2 : 8);
+            $approvalDate = sprintf('%04d-%02d-03 10:00:00', $termCalendarYear, $semesterNumber === 1 ? 2 : 8);
 
             $insertSemesterRegistration->execute([
                 'student_id' => $studentId,
@@ -734,7 +740,7 @@ try {
 
                 $marks = buildMarks($index + 1, $courseIndex + 1, $yearOfStudy, $semesterNumber);
                 $enteredBy = (int)($assignmentLecturerMap[$semesterId . ':' . (int)$course['id']] ?? $lecturerIds[0]);
-                $publishDate = sprintf('%04d-%02d-20 09:30:00', 2025 + ($yearOfStudy - 1), $semesterNumber === 1 ? 7 : 12);
+                $publishDate = sprintf('%04d-%02d-20 09:30:00', $termCalendarYear, $semesterNumber === 1 ? 7 : 12);
 
                 $insertResult->execute([
                     'student_id' => $studentId,

@@ -28,6 +28,7 @@ if ($studentId <= 0) {
 
 $db = new Database();
 $conn = $db->getConnection();
+$studentDisplayId = resolveDisplayedStudentRegistrationNumber($conn, $studentProfile);
 $transcriptIssuanceService = new TranscriptIssuanceService($conn);
 $transcriptIssuanceService->ensureSchema();
 $currentIssuedTranscript = null;
@@ -122,6 +123,7 @@ if (!empty($student)) {
 }
 
 // Pull all registrations with best-available result rows.
+$window = getAcademicCalendarDisplayWindowBounds();
 $transcriptStmt = $conn->prepare("
     SELECT
         cr.semester_id,
@@ -153,6 +155,8 @@ $transcriptStmt = $conn->prepare("
        AND r.course_id = cr.course_id
        AND r.semester_id = cr.semester_id
     WHERE cr.student_id = :student_id
+      AND ay.start_date >= :start_date
+      AND ay.start_date <= :end_date
       AND COALESCE(LOWER(cr.status), '') <> 'dropped'
       AND (c.semester_offered = sem.semester_number OR c.semester_offered = 3)
       AND (
@@ -175,8 +179,23 @@ $transcriptStmt = $conn->prepare("
       )
     ORDER BY ay.start_date ASC, sem.semester_number ASC, c.course_code ASC
 ");
-$transcriptStmt->execute(['student_id' => $studentId]);
+$transcriptStmt->execute([
+    'student_id' => $studentId,
+    'start_date' => $window['start_date'],
+    'end_date' => $window['end_date'],
+]);
 $rawRows = $transcriptStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+foreach ($rawRows as &$row) {
+    $row['academic_year'] = resolveStudentAcademicYearDisplayLabel(
+        $conn,
+        $studentId,
+        (int)($row['year_of_study'] ?? 1),
+        (string)($row['academic_year'] ?? '-'),
+        $student
+    );
+}
+unset($row);
 
 // Keep one best row per semester/course to avoid duplicate attempts in transcript output.
 $statusRank = [
@@ -394,7 +413,7 @@ $institutionName = (string)getSetting('institution_name', INSTITUTION_NAME);
 $institutionEmail = (string)getSetting('institution_email', '');
 $institutionPhone = (string)getSetting('institution_phone', '');
 $institutionAddress = (string)getSetting('institution_address', '');
-$institutionLogoPath = BASE_URL . '/assets/img/sem.PNG';
+$institutionLogoPath = BASE_URL . '/assets/img/sem.PNG?v=' . urlencode((string)APP_VERSION);
 
 $academicYearGroups = [];
 foreach ($terms as $term) {
@@ -924,7 +943,7 @@ include '../../includes/header.php';
         <div class="sidebar-user-name">
             <?php echo e(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? ''))); ?>
         </div>
-        <div class="sidebar-user-no"><?php echo e($studentProfile['student_id'] ?? '-'); ?></div>
+        <div class="sidebar-user-no"><?php echo e($studentDisplayId); ?></div>
     </div>
     <ul>
         <li><a href="<?php echo BASE_URL; ?>/views/student/generate_prn.php">GENERATE PRN</a></li>
@@ -1851,7 +1870,7 @@ html[data-theme='dark'] .services-submenu {
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Reg No</span>
-                        <div class="meta-value"><?php echo e((string)($student['student_id'] ?? ($student['admission_number'] ?? 'N/A'))); ?></div>
+                        <div class="meta-value"><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $student)); ?></div>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Sex</span>

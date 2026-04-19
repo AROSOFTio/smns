@@ -40,7 +40,7 @@ $currentUser = $auth->getCurrentUser();
 
 $success = '';
 $error = '';
-$defaultStudentPassword = 'Password@2026';
+$defaultStudentPassword = 'Password@' . date('Y');
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

@@ -45,7 +45,10 @@ if (!$studentProfile) {
 // Filters: Academic Year + Semester (map to semester_id)
 // ---------------------------------------------------------------------
 
-$academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_years ORDER BY start_date DESC")->fetchAll();
+$window = getAcademicCalendarDisplayWindowBounds();
+$academicYearsStmt = $conn->prepare("SELECT id, year_name, start_date FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY start_date DESC");
+$academicYearsStmt->execute($window);
+$academicYears = $academicYearsStmt->fetchAll();
 $studentDefaultAcademicYearId = 0;
 $studentDefaultSemesterNumber = 0;
 try {
@@ -498,7 +501,7 @@ include '../../../includes/header.php';
         <div class="card" id="results-slip">
             <div class="card-body">
                 <div class="results-header text-center mb-4">
-                    <img src="<?php echo BASE_URL; ?>/uploads/students/Sem.PNG" alt="University Logo" style="max-width: 100px;">
+                    <img src="<?php echo BASE_URL; ?>/assets/img/sem.PNG?v=<?php echo urlencode((string)APP_VERSION); ?>" alt="University Logo" style="max-width: 100px;">
                     <h4 class="mt-2 mb-0"><?php echo e(APP_NAME); ?></h4>
                     <p class="mb-0">Office of the Academic Registrar</p>
                     <h5>PROVISIONAL SEMESTER RESULTS</h5>
@@ -511,7 +514,7 @@ include '../../../includes/header.php';
                             <th>Student Name:</th>
                             <td><?php echo e(strtoupper($studentProfile['first_name'] . ' ' . $studentProfile['other_name'] . ' ' . $studentProfile['last_name'])); ?></td>
                             <th>Reg No:</th>
-                            <td><?php echo e(strtoupper($studentProfile['student_id'])); ?></td>
+                            <td><?php echo e(strtoupper(resolveDisplayedStudentRegistrationNumber($conn, $studentProfile))); ?></td>
                         </tr>
                         <tr>
                             <th>Program:</th>

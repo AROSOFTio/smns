@@ -18,7 +18,10 @@ $currentUser  = $auth->getCurrentUser();
 $db   = new Database();
 $conn = $db->getConnection();
 
-$academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_years ORDER BY start_date DESC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$window = getAcademicCalendarDisplayWindowBounds();
+$academicYearsStmt = $conn->prepare("SELECT id, year_name, start_date FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY start_date DESC");
+$academicYearsStmt->execute($window);
+$academicYears = $academicYearsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 $defaultAcademicYearId  = Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0);
 $selectedAcademicYearId = isset($_GET['academic_year_id']) ? (int)$_GET['academic_year_id'] : (int)$defaultAcademicYearId;
 $selectedSemesterNumber = isset($_GET['semester_number']) ? (int)$_GET['semester_number'] : (int)(Helper::getCurrentSemester()['semester_number'] ?? 1);
@@ -691,7 +694,7 @@ include '../../../includes/header.php';
                                             <small class="text-muted">Course: <?php echo e($courseLabel); ?></small><br>
                                             <small class="text-muted"><?php echo e($semesterLabel); ?></small>
                                         </td>
-                                        <td><?php echo e($pr['reg_no']); ?></td>
+                                        <td><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $pr)); ?></td>
                                         <td class="text-center"><?php echo $pr['assignment_marks'] !== null ? round($pr['assignment_marks'], 1) : '-'; ?></td>
                                         <td class="text-center"><?php echo $pr['final_exam_marks'] !== null ? round($pr['final_exam_marks'], 1) : '-'; ?></td>
                                         <td class="text-center"><strong><?php echo $pr['total_marks'] !== null ? round($pr['total_marks']) : '-'; ?></strong></td>
@@ -856,7 +859,7 @@ include '../../../includes/header.php';
                                             <?php endif; ?>
                                         </td>
                                         <td>
-                                            <?php echo e($record['reg_no']); ?>
+                                            <?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $record)); ?>
                                         </td>
                                         <td class="text-center">
                                             <div><small class="text-muted">Old:</small> <?php echo e($formatMark($oldMarks['assignment_marks'] ?? null)); ?></div>

@@ -156,9 +156,10 @@ function smnsFindStudentProfileByStudentId($studentId) {
             return null;
         }
         $fullName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
+        $displayStudentId = resolveDisplayedStudentRegistrationNumber($conn, $student);
         return [
-            'student_id' => (string)($student['student_id'] ?? ''),
-            'full_name' => $fullName !== '' ? $fullName : (string)($student['student_id'] ?? ''),
+            'student_id' => $displayStudentId,
+            'full_name' => $fullName !== '' ? $fullName : $displayStudentId,
         ];
     } catch (Exception $e) {
         return null;
@@ -288,14 +289,18 @@ if (!empty($loggedModules)) {
                 }
             } catch (e) {}
         })();
+        window.SMNS_BASE_URL = <?php echo json_encode(BASE_URL); ?>;
+        window.SMNS_APP_VERSION = <?php echo json_encode((string)APP_VERSION); ?>;
+        window.SMNS_LOGO_URL = <?php echo json_encode(BASE_URL . '/assets/img/sem.PNG?v=' . urlencode((string)APP_VERSION)); ?>;
     </script>
     <title><?php echo e(APP_NAME); ?></title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../../assets/css/login.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
     <style>
         body {
-            background: url('../../uploads/seminary.jpeg') no-repeat center center fixed;
+            background: url('../../uploads/seminary.jpeg') no-repeat center center;
             background-size: cover;
         }
         .login-container {
@@ -402,11 +407,11 @@ if (!empty($loggedModules)) {
         }
     </style>
 </head>
-<body style="background: url('../../uploads/seminary.jpeg') no-repeat center center fixed; background-size: cover;">
+<body style="background: url('../../uploads/seminary.jpeg') no-repeat center center; background-size: cover;">
 <div class="login-container">
     <div class="login-card unified-theme">
         <div class="login-header">
-            <img src="../../assets/img/sem.PNG" alt="Logo" class="logo mb-2">
+            <img src="<?php echo BASE_URL; ?>/assets/img/sem.PNG?v=<?php echo urlencode((string)APP_VERSION); ?>" alt="Logo" class="logo mb-2">
             <h2><?php echo e(APP_SHORT_NAME); ?></h2>
             <span class="role-badge">Login</span>
         </div>
@@ -482,7 +487,8 @@ if (!empty($loggedModules)) {
 
     </div>
 </div>
-<script src="../../assets/js/login-theme.js?v=<?php echo urlencode((string)APP_VERSION); ?>"></script>
+<script src="../../assets/js/login-theme.js?v=<?php echo urlencode((string)APP_VERSION); ?>" defer></script>
+<script src="<?php echo BASE_URL; ?>/assets/js/fold-global.js?v=<?php echo urlencode((string)APP_VERSION); ?>" defer></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     var alerts = document.querySelectorAll('.auto-dismiss-alert');
@@ -508,6 +514,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var activeRequest = 0;
     var debounceTimer = null;
+    var lookupCache = {};
+    var activeController = null;
+
+    function shouldLookupStudent(value) {
+        return value.length >= 5 && !/\s/.test(value);
+    }
 
     function setPreview(message, visible) {
         previewBox.textContent = message || '';
@@ -520,11 +532,28 @@ document.addEventListener('DOMContentLoaded', function () {
             setPreview('', false);
             return;
         }
+        if (!shouldLookupStudent(value)) {
+            if (activeController) {
+                activeController.abort();
+                activeController = null;
+            }
+            setPreview('', false);
+            return;
+        }
+        if (Object.prototype.hasOwnProperty.call(lookupCache, value)) {
+            setPreview(lookupCache[value], !!lookupCache[value]);
+            return;
+        }
 
         activeRequest += 1;
         var requestId = activeRequest;
+        if (activeController) {
+            activeController.abort();
+        }
+        activeController = typeof AbortController !== 'undefined' ? new AbortController() : null;
         fetch('<?php echo e(BASE_URL . '/views/auth/login.php?lookup_student=1&student_id='); ?>' + encodeURIComponent(value), {
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            signal: activeController ? activeController.signal : undefined
         })
         .then(function (response) { return response.json(); })
         .then(function (data) {
@@ -532,12 +561,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
             if (data && data.found && data.full_name) {
-                setPreview('Student: ' + data.full_name, true);
+                lookupCache[value] = 'Student: ' + data.full_name;
+                setPreview(lookupCache[value], true);
             } else {
+                lookupCache[value] = '';
                 setPreview('', false);
             }
         })
-        .catch(function () {
+        .catch(function (error) {
+            if (error && error.name === 'AbortError') {
+                return;
+            }
             if (requestId === activeRequest) {
                 setPreview('', false);
             }
@@ -548,7 +582,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (debounceTimer) {
             clearTimeout(debounceTimer);
         }
-        debounceTimer = setTimeout(lookupStudent, 180);
+        debounceTimer = setTimeout(lookupStudent, 350);
     });
 
     if ((usernameInput.value || '').trim() !== '') {

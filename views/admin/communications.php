@@ -466,7 +466,7 @@ include '../../includes/header.php';
                                 <?php foreach ($recipientRows as $recipient): ?>
                                     <tr>
                                         <td><?php echo e($recipient['recipient_name'] ?? ($recipient['username'] ?? '-')); ?></td>
-                                        <td><?php echo e($recipient['registration_number'] ?? '-'); ?></td>
+                                        <td><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $recipient)); ?></td>
                                         <td><?php echo e($recipient['recipient_email'] ?? '-'); ?></td>
                                         <td>
                                             <span class="badge badge-<?php echo ((int)($recipient['portal_notified'] ?? 0) === 1) ? 'success' : 'secondary'; ?>">

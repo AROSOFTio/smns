@@ -21,7 +21,10 @@ $db   = new Database();
 $conn = $db->getConnection();
 
 // Academic years & semester selection (similar to my-courses)
-$academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_years ORDER BY start_date DESC")->fetchAll();
+$window = getAcademicCalendarDisplayWindowBounds();
+$academicYearsStmt = $conn->prepare("SELECT id, year_name, start_date FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY start_date DESC");
+$academicYearsStmt->execute($window);
+$academicYears = $academicYearsStmt->fetchAll();
 $defaultAcademicYearId  = Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0);
 $selectedAcademicYearId = isset($_GET['academic_year_id']) ? (int) $_GET['academic_year_id'] : $defaultAcademicYearId;
 $selectedSemesterNumber = isset($_GET['semester_number']) ? (int) $_GET['semester_number'] : (Helper::getCurrentSemester()['semester_number'] ?? 1);
@@ -133,6 +136,15 @@ include '../../includes/header.php';
                     <?php if (empty($classList)): ?>
                         <p class="text-muted mb-0">No students registered for this course yet.</p>
                     <?php else: ?>
+                        <div class="student-search-bar mb-3">
+                            <div class="student-search-input-wrap">
+                                <i class="fas fa-search student-search-icon"></i>
+                                <input type="text" class="form-control student-search-input" data-student-search-input="class-list-table" placeholder="Search student name, reg number, program, year, or status">
+                            </div>
+                            <div class="student-search-meta">
+                                Showing <span data-student-search-count="class-list-table"><?php echo count($classList); ?></span> of <?php echo count($classList); ?> students
+                            </div>
+                        </div>
                         <div class="table-responsive">
                             <table class="table table-sm table-hover">
                                 <thead>
@@ -159,10 +171,10 @@ include '../../includes/header.php';
                                             $academicStatusLabel = (string)($academicStatusMeta['label'] ?? 'Status Pending');
                                             $academicStatusStyle = (string)($academicStatusMeta['style'] ?? getAcademicStatusChipStyle('neutral'));
                                         ?>
-                                        <tr>
+                                        <tr data-student-search-row="class-list-table">
                                             <td><?php echo $i++; ?></td>
                                             <td><?php echo e($s['first_name'] . ' ' . $s['last_name']); ?></td>
-                                            <td><?php echo e($s['reg_no']); ?></td>
+                                            <td><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $s)); ?></td>
                                             <td><?php echo e($s['program_name'] ?? '-'); ?></td>
                                             <td><?php echo 'Year ' . e($s['level_year'] ?? '-'); ?></td>
                                             <td>
@@ -194,5 +206,70 @@ include '../../includes/header.php';
         </div>
     </div>
 </div>
+
+<style>
+.student-search-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+}
+.student-search-input-wrap {
+    position: relative;
+    flex: 1 1 320px;
+    max-width: 520px;
+}
+.student-search-input {
+    padding-left: 38px;
+    border-radius: 10px;
+}
+.student-search-icon {
+    position: absolute;
+    left: 13px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #64748b;
+}
+.student-search-meta {
+    color: #64748b;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+html[data-theme='dark'] .student-search-input {
+    background: #0b1220;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+html[data-theme='dark'] .student-search-icon,
+html[data-theme='dark'] .student-search-meta {
+    color: #94a3b8;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-student-search-input]').forEach(function (input) {
+        var tableId = input.getAttribute('data-student-search-input');
+        var rows = Array.prototype.slice.call(document.querySelectorAll('[data-student-search-row="' + tableId + '"]'));
+        var countNode = document.querySelector('[data-student-search-count="' + tableId + '"]');
+        var applyFilter = function () {
+            var query = input.value.trim().toLowerCase();
+            var visible = 0;
+            rows.forEach(function (row) {
+                var matches = query === '' || row.textContent.toLowerCase().indexOf(query) !== -1;
+                row.style.display = matches ? '' : 'none';
+                if (matches) {
+                    visible++;
+                }
+            });
+            if (countNode) {
+                countNode.textContent = String(visible);
+            }
+        };
+        input.addEventListener('input', applyFilter);
+    });
+});
+</script>
 
 <?php include '../../includes/footer.php'; ?>

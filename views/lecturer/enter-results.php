@@ -43,7 +43,10 @@ $conn->exec("CREATE TABLE IF NOT EXISTS `results_audit` (
 // Filters: Academic Year, Semester, Course (assigned to this lecturer)
 // ---------------------------------------------------------------------------
 
-$academicYears = $conn->query("SELECT id, year_name, start_date FROM academic_years ORDER BY start_date DESC")->fetchAll();
+$window = getAcademicCalendarDisplayWindowBounds();
+$academicYearsStmt = $conn->prepare("SELECT id, year_name, start_date FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY start_date DESC");
+$academicYearsStmt->execute($window);
+$academicYears = $academicYearsStmt->fetchAll();
 $defaultAcademicYearId  = Helper::getCurrentAcademicYear()['id'] ?? ($academicYears[0]['id'] ?? 0);
 $selectedAcademicYearId = isset($_REQUEST['academic_year_id']) ? (int) $_REQUEST['academic_year_id'] : $defaultAcademicYearId;
 $selectedSemesterNumber = isset($_REQUEST['semester_number']) ? (int) $_REQUEST['semester_number'] : (Helper::getCurrentSemester()['semester_number'] ?? 1);
@@ -524,6 +527,15 @@ include '../../includes/header.php';
                             If students are expected, confirm course registration and assignment mappings.
                         </div>
                     <?php else: ?>
+                        <div class="student-search-bar mb-3">
+                            <div class="student-search-input-wrap">
+                                <i class="fas fa-search student-search-icon"></i>
+                                <input type="text" class="form-control student-search-input" data-student-search-input="enter-results-table" placeholder="Search student name, reg number, mark, or status">
+                            </div>
+                            <div class="student-search-meta">
+                                Showing <span data-student-search-count="enter-results-table"><?php echo count($students); ?></span> of <?php echo count($students); ?> students
+                            </div>
+                        </div>
                         <form method="POST" autocomplete="off" data-lpignore="true">
                             <?php echo csrfField(); ?>
                             <input type="hidden" name="academic_year_id" value="<?php echo $selectedAcademicYearId; ?>">
@@ -543,10 +555,10 @@ include '../../includes/header.php';
                                     </thead>
                                     <tbody>
                                         <?php $i = 1; foreach ($students as $s): ?>
-                                            <tr class="<?php echo $s['cw_marks'] !== null ? 'has-cw-row' : ''; ?>">
+                                            <tr class="<?php echo $s['cw_marks'] !== null ? 'has-cw-row' : ''; ?>" data-student-search-row="enter-results-table">
                                                 <td><?php echo $i++; ?></td>
                                                 <td><?php echo e($s['first_name'] . ' ' . $s['last_name']); ?></td>
-                                                <td><?php echo e($s['reg_no']); ?></td>
+                                                <td><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $s)); ?></td>
                                                 <td class="text-center" style="max-width:140px;">
                                                     <input type="number" name="cw[<?php echo $s['id']; ?>]" class="form-control form-control-sm text-center" min="0" max="40" step="0.01" value="<?php echo $s['cw_marks'] !== null ? htmlspecialchars($s['cw_marks']) : ''; ?>" <?php echo in_array((string)($s['status'] ?? ''), ['approved','published'], true) ? 'readonly' : ''; ?> />
                                                 </td>
@@ -619,6 +631,34 @@ include '../../includes/header.php';
 }
 .status-badges {
     gap: 8px;
+}
+.student-search-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+}
+.student-search-input-wrap {
+    position: relative;
+    flex: 1 1 320px;
+    max-width: 520px;
+}
+.student-search-input {
+    padding-left: 38px;
+    border-radius: 10px;
+}
+.student-search-icon {
+    position: absolute;
+    left: 13px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #64748b;
+}
+.student-search-meta {
+    color: #64748b;
+    font-size: 0.82rem;
+    font-weight: 600;
 }
 .status-badges .badge {
     font-size: 0.72rem;
@@ -727,6 +767,35 @@ html[data-theme='dark'] .marks-filter .form-control {
     border-color: #334155;
     color: #e2e8f0;
 }
+html[data-theme='dark'] .student-search-icon,
+html[data-theme='dark'] .student-search-meta {
+    color: #94a3b8;
+}
 </style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-student-search-input]').forEach(function (input) {
+        var tableId = input.getAttribute('data-student-search-input');
+        var rows = Array.prototype.slice.call(document.querySelectorAll('[data-student-search-row="' + tableId + '"]'));
+        var countNode = document.querySelector('[data-student-search-count="' + tableId + '"]');
+        var applyFilter = function () {
+            var query = input.value.trim().toLowerCase();
+            var visible = 0;
+            rows.forEach(function (row) {
+                var matches = query === '' || row.textContent.toLowerCase().indexOf(query) !== -1;
+                row.style.display = matches ? '' : 'none';
+                if (matches) {
+                    visible++;
+                }
+            });
+            if (countNode) {
+                countNode.textContent = String(visible);
+            }
+        };
+        input.addEventListener('input', applyFilter);
+    });
+});
+</script>
 
 <?php include '../../includes/footer.php'; ?>

@@ -34,6 +34,36 @@ class TranscriptIssuanceService {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         ");
 
+        $columnsStmt = $this->conn->query("SHOW COLUMNS FROM transcript_issuances");
+        $existingColumns = [];
+        foreach (($columnsStmt ? $columnsStmt->fetchAll(PDO::FETCH_ASSOC) : []) as $column) {
+            $existingColumns[(string)($column['Field'] ?? '')] = true;
+        }
+        if (!isset($existingColumns['distribution_status'])) {
+            $this->conn->exec("ALTER TABLE transcript_issuances ADD COLUMN distribution_status ENUM('to_be_distributed','dispatched','distributed') NOT NULL DEFAULT 'to_be_distributed' AFTER status");
+        }
+        if (!isset($existingColumns['dispatch_method'])) {
+            $this->conn->exec("ALTER TABLE transcript_issuances ADD COLUMN dispatch_method VARCHAR(32) NULL AFTER distribution_status");
+        }
+        if (!isset($existingColumns['dispatch_reference'])) {
+            $this->conn->exec("ALTER TABLE transcript_issuances ADD COLUMN dispatch_reference VARCHAR(120) NULL AFTER dispatch_method");
+        }
+        if (!isset($existingColumns['dispatch_notes'])) {
+            $this->conn->exec("ALTER TABLE transcript_issuances ADD COLUMN dispatch_notes TEXT NULL AFTER dispatch_reference");
+        }
+        if (!isset($existingColumns['dispatched_by_user_id'])) {
+            $this->conn->exec("ALTER TABLE transcript_issuances ADD COLUMN dispatched_by_user_id INT NULL AFTER dispatch_notes");
+        }
+        if (!isset($existingColumns['dispatched_at'])) {
+            $this->conn->exec("ALTER TABLE transcript_issuances ADD COLUMN dispatched_at DATETIME NULL AFTER dispatched_by_user_id");
+        }
+        if (!isset($existingColumns['distributed_by_user_id'])) {
+            $this->conn->exec("ALTER TABLE transcript_issuances ADD COLUMN distributed_by_user_id INT NULL AFTER dispatched_at");
+        }
+        if (!isset($existingColumns['distributed_at'])) {
+            $this->conn->exec("ALTER TABLE transcript_issuances ADD COLUMN distributed_at DATETIME NULL AFTER distributed_by_user_id");
+        }
+
         $this->conn->exec("
             CREATE TABLE IF NOT EXISTS transcript_issuance_ledger (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -141,6 +171,84 @@ class TranscriptIssuanceService {
         $row['verification_url'] = $this->buildVerificationUrl((string)$row['verification_token']);
         $row['ledger_valid'] = $this->isLedgerChainValid((int)($row['id'] ?? 0));
         return $row;
+    }
+
+    public function markDispatched(int $issuanceId, ?int $actorUserId = null, string $method = '', string $reference = '', string $notes = ''): bool
+    {
+        $issuanceId = (int)$issuanceId;
+        if ($issuanceId <= 0) {
+            return false;
+        }
+
+        $stmt = $this->conn->prepare("
+            UPDATE transcript_issuances
+            SET distribution_status = 'dispatched',
+                dispatch_method = :dispatch_method,
+                dispatch_reference = :dispatch_reference,
+                dispatch_notes = :dispatch_notes,
+                dispatched_by_user_id = :dispatched_by_user_id,
+                dispatched_at = NOW()
+            WHERE id = :id
+              AND status = 'active'
+              AND distribution_status = 'to_be_distributed'
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'dispatch_method' => $method !== '' ? $method : null,
+            'dispatch_reference' => $reference !== '' ? $reference : null,
+            'dispatch_notes' => $notes !== '' ? $notes : null,
+            'dispatched_by_user_id' => $actorUserId > 0 ? $actorUserId : null,
+            'id' => $issuanceId,
+        ]);
+        if ($stmt->rowCount() <= 0) {
+            return false;
+        }
+
+        $this->appendLedgerEntry($issuanceId, 'dispatched', [
+            'dispatch_method' => trim($method),
+            'dispatch_reference' => trim($reference),
+            'dispatch_notes' => trim($notes),
+        ], $actorUserId);
+
+        return true;
+    }
+
+    public function markDistributed(int $issuanceId, ?int $actorUserId = null, string $notes = ''): bool
+    {
+        $issuanceId = (int)$issuanceId;
+        if ($issuanceId <= 0) {
+            return false;
+        }
+
+        $stmt = $this->conn->prepare("
+            UPDATE transcript_issuances
+            SET distribution_status = 'distributed',
+                dispatch_notes = CASE
+                    WHEN :distribution_notes IS NULL OR :distribution_notes = '' THEN dispatch_notes
+                    WHEN dispatch_notes IS NULL OR dispatch_notes = '' THEN :distribution_notes
+                    ELSE CONCAT(dispatch_notes, '\n', :distribution_notes)
+                END,
+                distributed_by_user_id = :distributed_by_user_id,
+                distributed_at = NOW()
+            WHERE id = :id
+              AND status = 'active'
+              AND distribution_status IN ('to_be_distributed', 'dispatched')
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'distribution_notes' => $notes !== '' ? $notes : null,
+            'distributed_by_user_id' => $actorUserId > 0 ? $actorUserId : null,
+            'id' => $issuanceId,
+        ]);
+        if ($stmt->rowCount() <= 0) {
+            return false;
+        }
+
+        $this->appendLedgerEntry($issuanceId, 'distributed', [
+            'notes' => trim($notes),
+        ], $actorUserId);
+
+        return true;
     }
 
     public function revokeIssuance(int $issuanceId, ?int $actorUserId = null, string $reason = ''): bool

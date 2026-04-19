@@ -47,8 +47,12 @@ $isStudentPortalPage = (strpos($requestPath, '/views/student/') !== false);
                 }
             } catch (e) {}
         })();
+        window.SMNS_BASE_URL = <?php echo json_encode(BASE_URL); ?>;
+        window.SMNS_APP_VERSION = <?php echo json_encode((string)APP_VERSION); ?>;
+        window.SMNS_LOGO_URL = <?php echo json_encode(BASE_URL . '/assets/img/sem.PNG?v=' . urlencode((string)APP_VERSION)); ?>;
     </script>
     <title><?php echo $pageTitle ?? APP_NAME; ?></title>
+    <link rel="preload" as="image" href="<?php echo BASE_URL; ?>/assets/img/sem.PNG?v=<?php echo urlencode((string)APP_VERSION); ?>">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/style.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
@@ -85,3 +89,10 @@ $isStudentPortalPage = (strpos($requestPath, '/views/student/') !== false);
 </head>
 <body>
     <div class="wrapper">
+        <img
+            id="smnsSharedLogoAsset"
+            src="<?php echo BASE_URL; ?>/assets/img/sem.PNG?v=<?php echo urlencode((string)APP_VERSION); ?>"
+            alt=""
+            aria-hidden="true"
+            style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;left:-9999px;top:-9999px;"
+        >

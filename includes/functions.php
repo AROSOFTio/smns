@@ -117,6 +117,220 @@ function generateStudentRegistrationNumber(PDO $conn, $year = null) {
 }
 
 /**
+ * Resolve the intake/admission start year for a student profile.
+ */
+function resolveStudentAdmissionStartYear($conn, array $student = []) {
+    if ($conn instanceof PDO) {
+        $studentRowId = (int)($student['id'] ?? 0);
+        $entrySemesterId = (int)($student['entry_semester_id'] ?? 0);
+
+        if ($entrySemesterId > 0) {
+            try {
+                $entrySemesterStmt = $conn->prepare("
+                    SELECT ay.year_name, ay.start_date
+                    FROM semesters s
+                    INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+                    WHERE s.id = :semester_id
+                    LIMIT 1
+                ");
+                $entrySemesterStmt->execute(['semester_id' => $entrySemesterId]);
+                $entrySemesterRow = $entrySemesterStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+                if (!empty($entrySemesterRow['start_date'])) {
+                    return (int)date('Y', strtotime((string)$entrySemesterRow['start_date']));
+                }
+                if (!empty($entrySemesterRow['year_name']) && preg_match('/(\d{4})/', (string)$entrySemesterRow['year_name'], $matches)) {
+                    return (int)$matches[1];
+                }
+            } catch (Exception $e) {
+                // Fall through to historical activity hints.
+            }
+        }
+
+        if ($studentRowId > 0) {
+            $historicalYearQueries = [
+                "
+                    SELECT ay.year_name, ay.start_date, sem.semester_number
+                    FROM semester_registrations sr
+                    INNER JOIN semesters sem ON sem.id = sr.semester_id
+                    INNER JOIN academic_years ay ON ay.id = sem.academic_year_id
+                    WHERE sr.student_id = :student_id
+                      AND COALESCE(LOWER(sr.status), '') <> 'rejected'
+                    ORDER BY ay.start_date ASC, sem.semester_number ASC, sr.id ASC
+                    LIMIT 1
+                ",
+                "
+                    SELECT ay.year_name, ay.start_date, sem.semester_number
+                    FROM course_registrations cr
+                    INNER JOIN semesters sem ON sem.id = cr.semester_id
+                    INNER JOIN academic_years ay ON ay.id = sem.academic_year_id
+                    WHERE cr.student_id = :student_id
+                      AND COALESCE(LOWER(cr.status), '') <> 'dropped'
+                    ORDER BY ay.start_date ASC, sem.semester_number ASC, cr.id ASC
+                    LIMIT 1
+                "
+            ];
+
+            foreach ($historicalYearQueries as $historicalYearSql) {
+                try {
+                    $historicalYearStmt = $conn->prepare($historicalYearSql);
+                    $historicalYearStmt->execute(['student_id' => $studentRowId]);
+                    $historicalYearRow = $historicalYearStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+                    if (!empty($historicalYearRow['start_date'])) {
+                        return (int)date('Y', strtotime((string)$historicalYearRow['start_date']));
+                    }
+                    if (!empty($historicalYearRow['year_name']) && preg_match('/(\d{4})/', (string)$historicalYearRow['year_name'], $matches)) {
+                        return (int)$matches[1];
+                    }
+                } catch (Exception $e) {
+                    // Try the next historical source.
+                }
+            }
+        }
+    }
+
+    $entryYear = $student['entry_year'] ?? null;
+
+    if (is_numeric($entryYear)) {
+        $entryYearInt = (int)$entryYear;
+        if ($entryYearInt >= 1900) {
+            return $entryYearInt;
+        }
+
+        if ($entryYearInt > 0 && ($conn instanceof PDO)) {
+            try {
+                $stmt = $conn->prepare("SELECT year_name, start_date FROM academic_years WHERE id = :id LIMIT 1");
+                $stmt->execute(['id' => $entryYearInt]);
+                $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+                if (!empty($row['start_date'])) {
+                    return (int)date('Y', strtotime((string)$row['start_date']));
+                }
+                if (!empty($row['year_name']) && preg_match('/(\d{4})/', (string)$row['year_name'], $matches)) {
+                    return (int)$matches[1];
+                }
+            } catch (Exception $e) {
+                // Fall through to other hints.
+            }
+        }
+    }
+
+    foreach (['admission_date', 'created_at'] as $dateField) {
+        $dateValue = trim((string)($student[$dateField] ?? ''));
+        if ($dateValue !== '' && strtotime($dateValue) !== false) {
+            return (int)date('Y', strtotime($dateValue));
+        }
+    }
+
+    $rawStudentId = trim((string)($student['student_id'] ?? ''));
+    if (preg_match('/^(\d{4})-STU-\d+$/i', $rawStudentId, $matches)) {
+        return (int)$matches[1];
+    }
+
+    return 0;
+}
+
+/**
+ * Present a student ID using the student's admission year while keeping the
+ * allocated sequence unchanged.
+ */
+function resolveDisplayedStudentRegistrationNumber($conn, array $student = []) {
+    $rawStudentId = trim((string)($student['student_id'] ?? ''));
+    if ($rawStudentId === '') {
+        return '-';
+    }
+
+    if (!preg_match('/^(?:\d{4}-)?STU-(\d+)$/i', $rawStudentId, $matches) && !preg_match('/^(\d{4})-STU-(\d+)$/i', $rawStudentId, $matches)) {
+        return $rawStudentId;
+    }
+
+    $sequence = (string)end($matches);
+    $admissionYear = resolveStudentAdmissionStartYear($conn, $student);
+    if ($admissionYear < 1900) {
+        return $rawStudentId;
+    }
+
+    return buildStudentRegistrationPrefix($admissionYear) . str_pad($sequence, 3, '0', STR_PAD_LEFT);
+}
+
+/**
+ * Resolve a display-safe student registration number from partial row data.
+ * Accepts rows that may use aliases like reg_no, registration_number, or
+ * student_identifier, and can hydrate missing admission metadata from DB.
+ */
+function resolveDisplayedStudentRegistrationNumberFromRow($conn, array $row = [], array $options = []) {
+    $student = $row;
+    $rawKeys = $options['raw_keys'] ?? ['student_id', 'reg_no', 'registration_number', 'student_identifier'];
+    $rowIdKeys = $options['row_id_keys'] ?? ['student_row_id', 'student_record_id', 'student_db_id'];
+
+    $rawStudentId = '';
+    foreach ($rawKeys as $key) {
+        $candidate = trim((string)($row[$key] ?? ''));
+        if ($candidate !== '') {
+            $rawStudentId = $candidate;
+            break;
+        }
+    }
+
+    if ($rawStudentId !== '') {
+        $student['student_id'] = $rawStudentId;
+    }
+
+    $studentRowId = 0;
+    foreach ($rowIdKeys as $key) {
+        $candidate = (int)($row[$key] ?? 0);
+        if ($candidate > 0) {
+            $studentRowId = $candidate;
+            break;
+        }
+    }
+
+    $hasAdmissionHints = !empty($student['entry_year'])
+        || !empty($student['entry_semester_id'])
+        || !empty($student['admission_date'])
+        || !empty($student['created_at']);
+
+    if (!$hasAdmissionHints && $conn instanceof PDO) {
+        try {
+            $lookupSql = '';
+            $lookupParams = [];
+
+            if ($studentRowId > 0) {
+                $lookupSql = "
+                    SELECT id, student_id, entry_year, entry_semester_id, admission_date, created_at
+                    FROM students
+                    WHERE id = :student_id
+                    LIMIT 1
+                ";
+                $lookupParams = ['student_id' => $studentRowId];
+            } elseif ($rawStudentId !== '') {
+                $lookupSql = "
+                    SELECT id, student_id, entry_year, entry_semester_id, admission_date, created_at
+                    FROM students
+                    WHERE student_id = :student_id
+                    LIMIT 1
+                ";
+                $lookupParams = ['student_id' => $rawStudentId];
+            }
+
+            if ($lookupSql !== '') {
+                $lookupStmt = $conn->prepare($lookupSql);
+                $lookupStmt->execute($lookupParams);
+                $resolvedStudent = $lookupStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+                if (!empty($resolvedStudent)) {
+                    $student = array_merge($resolvedStudent, $student);
+                    if ($rawStudentId !== '') {
+                        $student['student_id'] = $rawStudentId;
+                    }
+                }
+            }
+        } catch (Exception $e) {
+            // Leave the best-effort row untouched.
+        }
+    }
+
+    return resolveDisplayedStudentRegistrationNumber($conn, $student);
+}
+
+/**
  * Resolve the student's effective programme from the most reliable academic source.
  * Preference order:
  * 1. Dominant programme found in the student's registered course history.
@@ -985,6 +1199,225 @@ function getStudentAcademicStatusMeta($conn, $studentId, $semesterId = 0, $fallb
 }
 
 /**
+ * Academic-year window for UI listings across the system:
+ * previous four academic years up to the current academic year.
+ */
+function getAcademicCalendarDisplayStartDate() {
+    if (class_exists('AcademicCalendarManager') && method_exists('AcademicCalendarManager', 'getCurrentAcademicStartYear')) {
+        $startYear = (int)AcademicCalendarManager::getCurrentAcademicStartYear() - 4;
+        return sprintf('%04d-08-01', $startYear);
+    }
+
+    $year = (int)date('Y');
+    $month = (int)date('n');
+    $currentAcademicStartYear = $month >= 8 ? $year : ($year - 1);
+    return sprintf('%04d-08-01', $currentAcademicStartYear - 4);
+}
+
+/**
+ * Academic years visible in UI pages should stop at the current academic year.
+ */
+function getAcademicCalendarDisplayCutoffDate() {
+    if (class_exists('AcademicCalendarManager') && method_exists('AcademicCalendarManager', 'getCurrentAcademicStartYear')) {
+        $startYear = (int)AcademicCalendarManager::getCurrentAcademicStartYear();
+        return sprintf('%04d-08-01', $startYear);
+    }
+
+    $year = (int)date('Y');
+    $month = (int)date('n');
+    $startYear = $month >= 8 ? $year : ($year - 1);
+    return sprintf('%04d-08-01', $startYear);
+}
+
+function getAcademicCalendarDisplayWindowBounds() {
+    return [
+        'start_date' => getAcademicCalendarDisplayStartDate(),
+        'end_date' => getAcademicCalendarDisplayCutoffDate(),
+    ];
+}
+
+/**
+ * Format an academic calendar label without converting it into student study progress.
+ * Kept under the existing function name because many screens already depend on it.
+ */
+function getRolloutStageLabel($academicYearName, $semesterNumber = 0, $fallbackSemesterName = '') {
+    $academicYearName = trim((string)$academicYearName);
+    $semesterNumber = (int)$semesterNumber;
+    $fallbackSemesterName = trim((string)$fallbackSemesterName);
+
+    if ($academicYearName === '' && $fallbackSemesterName === '') {
+        return '';
+    }
+
+    $semesterLabel = '';
+    if ($semesterNumber > 0) {
+        $romanSemester = $semesterNumber === 2 ? 'II' : (string)$semesterNumber;
+        $semesterLabel = 'Semester ' . $romanSemester;
+    } elseif ($fallbackSemesterName !== '') {
+        $semesterLabel = $fallbackSemesterName;
+    }
+
+    if ($academicYearName === '') {
+        return $semesterLabel;
+    }
+
+    if ($semesterLabel === '') {
+        return $academicYearName;
+    }
+
+    return $academicYearName . ' - ' . $semesterLabel;
+}
+
+/**
+ * Format an academic year label from its start year.
+ */
+function formatAcademicYearLabelFromStartYear($startYear) {
+    $startYear = (int)$startYear;
+    if ($startYear < 1900) {
+        return '-';
+    }
+
+    return sprintf('%04d/%04d', $startYear, $startYear + 1);
+}
+
+/**
+ * Remap study-year rows onto the current system academic-year window so
+ * transcript-style pages do not keep showing stale future labels.
+ */
+function resolveStudentAcademicYearDisplayLabel($conn, $studentId, $studyYear = 0, $fallbackAcademicYear = '-', array $student = []) {
+    static $memo = [];
+
+    $studentId = (int)$studentId;
+    $studyYear = max(1, (int)$studyYear);
+    $fallbackAcademicYear = trim((string)$fallbackAcademicYear);
+    $studentLevelYear = max(1, (int)($student['level_year'] ?? ($student['year_of_study'] ?? 1)));
+    $memoKey = implode(':', [$studentId, $studyYear, $studentLevelYear, $fallbackAcademicYear]);
+
+    if (isset($memo[$memoKey])) {
+        return $memo[$memoKey];
+    }
+
+    $currentAcademicStartYear = 0;
+    if (class_exists('AcademicCalendarManager') && method_exists('AcademicCalendarManager', 'getCurrentAcademicStartYear')) {
+        $currentAcademicStartYear = (int)AcademicCalendarManager::getCurrentAcademicStartYear();
+    }
+    if ($currentAcademicStartYear <= 0) {
+        $currentAcademicStartYear = (int)substr(getAcademicCalendarDisplayCutoffDate(), 0, 4);
+    }
+    if ($currentAcademicStartYear <= 0) {
+        return $memo[$memoKey] = ($fallbackAcademicYear !== '' ? $fallbackAcademicYear : '-');
+    }
+
+    $referenceStudyYear = $studentLevelYear;
+    if ($studentId > 0 && ($conn instanceof PDO)) {
+        $progressMeta = getStudentPresenterProgressMeta($conn, $studentId, $student);
+        $referenceStudyYear = max(1, (int)($progressMeta['study_year'] ?? $referenceStudyYear));
+    }
+
+    $targetStartYear = $currentAcademicStartYear - ($referenceStudyYear - $studyYear);
+    if ($targetStartYear < 1900) {
+        return $memo[$memoKey] = ($fallbackAcademicYear !== '' ? $fallbackAcademicYear : '-');
+    }
+
+    return $memo[$memoKey] = formatAcademicYearLabelFromStartYear($targetStartYear);
+}
+
+/**
+ * Build a presenter-friendly study progress / completion summary.
+ * This keeps demonstrations grounded in the real three-year rollout window.
+ */
+function getStudentPresenterProgressMeta($conn, $studentId, array $student = [], $semesterId = 0) {
+    $studentId = (int)$studentId;
+    $semesterId = (int)$semesterId;
+    $resolvedYear = max(1, (int)($student['level_year'] ?? ($student['year_of_study'] ?? 1)));
+    $resolvedSemester = 0;
+
+    if ($studentId > 0 && ($conn instanceof PDO)) {
+        try {
+            $stmt = $conn->prepare("
+                SELECT
+                    COALESCE(sr.year_of_study, st.level_year, st.year_of_study, 0) AS study_year,
+                    COALESCE(sem.semester_number, 0) AS semester_number
+                FROM semester_registrations sr
+                INNER JOIN students st ON st.id = sr.student_id
+                INNER JOIN semesters sem ON sem.id = sr.semester_id
+                WHERE sr.student_id = :student_id
+                  AND sr.status = 'approved'
+                ORDER BY
+                    CASE WHEN :semester_id > 0 AND sr.semester_id = :semester_id THEN 0 ELSE 1 END ASC,
+                    COALESCE(sr.updated_at, sr.approval_date, sr.request_date, sr.created_at) DESC,
+                    sr.id DESC
+                LIMIT 1
+            ");
+            $stmt->execute([
+                'student_id' => $studentId,
+                'semester_id' => $semesterId
+            ]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+            if (!empty($row)) {
+                $resolvedYear = max(1, (int)($row['study_year'] ?? $resolvedYear));
+                $resolvedSemester = max(0, (int)($row['semester_number'] ?? 0));
+            }
+        } catch (Exception $e) {
+            // Keep fallback data.
+        }
+    }
+
+    if ($resolvedSemester <= 0) {
+        if ($semesterId > 0 && ($conn instanceof PDO)) {
+            try {
+                $semStmt = $conn->prepare("SELECT semester_number FROM semesters WHERE id = :semester_id LIMIT 1");
+                $semStmt->execute(['semester_id' => $semesterId]);
+                $resolvedSemester = max(0, (int)$semStmt->fetchColumn());
+            } catch (Exception $e) {
+                $resolvedSemester = 0;
+            }
+        }
+
+        if ($resolvedSemester <= 0) {
+            $ctx = ($conn instanceof PDO) ? getStudentCurrentSemesterContext($conn, $studentId) : [];
+            $resolvedSemester = max(0, (int)($ctx['semester_number'] ?? 0));
+        }
+    }
+
+    $displayYear = min(3, max(1, $resolvedYear));
+    $progressLabel = 'Year ' . $displayYear;
+    if ($resolvedSemester > 0) {
+        $progressLabel .= ' Sem ' . $resolvedSemester;
+    }
+
+    $academicStatus = strtolower(trim((string)($student['academic_status'] ?? '')));
+    $studentStatus = strtolower(trim((string)($student['status'] ?? '')));
+    $hasGraduationRecord = !empty($student['graduation_date']) || !empty($student['graduation_award_title']);
+    $completed = $hasGraduationRecord || in_array($academicStatus, ['graduated', 'completed', 'complete'], true) || in_array($studentStatus, ['graduated', 'completed', 'complete'], true);
+
+    $stageLabel = 'In Progress';
+    $tone = 'info';
+    if ($completed) {
+        $stageLabel = 'Graduation Processing';
+        $tone = 'success';
+        $progressLabel = 'Year 3 Sem 2';
+    } elseif ($displayYear >= 3 && $resolvedSemester >= 2) {
+        $stageLabel = 'Graduating Soon';
+        $tone = 'warning';
+    } elseif ($displayYear >= 3) {
+        $stageLabel = 'Final Year';
+        $tone = 'warning';
+    }
+
+    return [
+        'study_year' => $resolvedYear,
+        'display_year' => $displayYear,
+        'semester_number' => $resolvedSemester,
+        'progress_label' => $progressLabel,
+        'stage_label' => $stageLabel,
+        'stage_tone' => $tone,
+        'stage_style' => getAcademicStatusChipStyle($tone),
+        'completed' => $completed,
+    ];
+}
+
+/**
  * Resolve the semester context to display for a student.
  * Student-first context for continuous intake:
  * 1) Latest approved semester enrollment for this student
@@ -1008,6 +1441,12 @@ function getStudentCurrentSemesterContext($conn, $studentId) {
     }
 
     try {
+        $displayStartDate = getAcademicCalendarDisplayStartDate();
+        $displayEndDate = sprintf(
+            '%04d-12-31',
+            (int)substr(getAcademicCalendarDisplayCutoffDate(), 0, 4)
+        );
+
         // 1) Latest approved semester enrollment for this student
         if ($studentId > 0) {
             $stmt = $conn->prepare("
@@ -1015,11 +1454,18 @@ function getStudentCurrentSemesterContext($conn, $studentId) {
                 FROM semester_registrations sr
                 INNER JOIN semesters s ON s.id = sr.semester_id
                 INNER JOIN academic_years ay ON ay.id = s.academic_year_id
-                WHERE sr.student_id = :student_id AND sr.status = 'approved'
+                WHERE sr.student_id = :student_id
+                  AND sr.status = 'approved'
+                  AND ay.start_date >= :display_start_date
+                  AND ay.start_date <= :display_end_date
                 ORDER BY COALESCE(sr.updated_at, sr.request_date, sr.created_at) DESC, sr.id DESC
                 LIMIT 1
             ");
-            $stmt->execute(['student_id' => $studentId]);
+            $stmt->execute([
+                'student_id' => $studentId,
+                'display_start_date' => $displayStartDate,
+                'display_end_date' => $displayEndDate,
+            ]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
             if ($row) {
                 return [
@@ -1040,10 +1486,16 @@ function getStudentCurrentSemesterContext($conn, $studentId) {
                 INNER JOIN semesters s ON s.id = cr.semester_id
                 INNER JOIN academic_years ay ON ay.id = s.academic_year_id
                 WHERE cr.student_id = :student_id
+                  AND ay.start_date >= :display_start_date
+                  AND ay.start_date <= :display_end_date
                 ORDER BY COALESCE(cr.updated_at, cr.registration_date, cr.created_at) DESC, cr.id DESC
                 LIMIT 1
             ");
-            $stmt->execute(['student_id' => $studentId]);
+            $stmt->execute([
+                'student_id' => $studentId,
+                'display_start_date' => $displayStartDate,
+                'display_end_date' => $displayEndDate,
+            ]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
             if ($row) {
                 return [

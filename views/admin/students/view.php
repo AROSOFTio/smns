@@ -183,6 +183,43 @@ try {
     $transcriptRights = null;
 }
 $transcriptRightsGranted = (bool)($transcriptRights && ($transcriptRights['status'] ?? '') === 'granted');
+$presenterProgress = getStudentPresenterProgressMeta($conn, (int)($student['id'] ?? 0), $student);
+$studentCurrentContext = getStudentCurrentSemesterContext($conn, (int)($student['id'] ?? 0));
+$displayStudentId = resolveDisplayedStudentRegistrationNumber($conn, $student);
+$summaryStatusLabel = (string)($presenterProgress['stage_label'] ?? '');
+$summaryStatusTone = (string)($presenterProgress['stage_tone'] ?? 'info');
+$summaryStatusClassMap = [
+    'success' => 'success',
+    'warning' => 'warning',
+    'danger' => 'danger',
+    'info' => 'primary',
+    'neutral' => 'secondary',
+];
+$summaryStatusBadgeClass = $summaryStatusClassMap[$summaryStatusTone] ?? 'secondary';
+$studentLifecycle = getStudentLifecycleStatus(
+    $conn,
+    (int)($student['id'] ?? 0),
+    (int)($studentCurrentContext['id'] ?? 0)
+);
+$hasRegistration = !empty($studentLifecycle['has_registration']);
+$hasEnrollment = !empty($studentLifecycle['has_enrollment']);
+if ($summaryStatusLabel === '') {
+    if ($hasRegistration) {
+        $summaryStatusLabel = 'Registered';
+        $summaryStatusBadgeClass = 'success';
+    } elseif ($hasEnrollment) {
+        $summaryStatusLabel = 'Enrolled';
+        $summaryStatusBadgeClass = 'primary';
+    } else {
+        $summaryStatusLabel = ucfirst((string)($student['status'] ?? 'Active'));
+        $summaryStatusBadgeClass = Helper::getStatusColor((string)($student['status'] ?? 'active'));
+    }
+}
+$currentRolloutStageLabel = getRolloutStageLabel(
+    (string)($studentCurrentContext['academic_year'] ?? ''),
+    (int)($studentCurrentContext['semester_number'] ?? 0),
+    (string)($studentCurrentContext['semester_name'] ?? '')
+);
 
 // Check if student is registered for the current semester
 $currentSemester = Helper::getCurrentSemester();
@@ -216,9 +253,9 @@ $pageTitle = 'View Student - ' . APP_NAME;
     <title><?php echo $pageTitle; ?></title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../../../assets/css/style.css">
+    <link rel="stylesheet" href="../../../assets/css/style.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
     <link rel="stylesheet" href="../../../assets/css/theme-shared.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
-    <link rel="stylesheet" href="../../../assets/css/responsive-nav.css">
+    <link rel="stylesheet" href="../../../assets/css/responsive-nav.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
 </head>
 <body>
 <style>
@@ -300,9 +337,9 @@ $pageTitle = 'View Student - ' . APP_NAME;
                         <?php endif; ?>
 
                         <h5 class="mb-1"><?php echo e($student['first_name'] . ' ' . $student['last_name']); ?></h5>
-                        <p class="text-muted mb-2"><?php echo e($student['student_id']); ?></p>
-                        <span class="badge status-badge badge-<?php echo Helper::getStatusColor($student['status']); ?>">
-                            <?php echo e(ucfirst($student['status'])); ?>
+                        <p class="text-muted mb-2"><?php echo e($displayStudentId); ?></p>
+                        <span class="badge status-badge badge-<?php echo e($summaryStatusBadgeClass); ?>">
+                            <?php echo e($summaryStatusLabel); ?>
                         </span>
                     </div>
                 </div>
@@ -370,7 +407,7 @@ $pageTitle = 'View Student - ' . APP_NAME;
                             <div class="col-md-6">
                                 <div class="mb-3">
                                     <span class="info-label">Student ID:</span>
-                                    <strong><?php echo e($student['student_id']); ?></strong>
+                                    <strong><?php echo e($displayStudentId); ?></strong>
                                 </div>
                                 <div class="mb-3">
                                     <span class="info-label">Admission Number:</span>
@@ -382,7 +419,7 @@ $pageTitle = 'View Student - ' . APP_NAME;
                                 </div>
                                 <div class="mb-3">
                                     <span class="info-label">Level:</span>
-                                    Year <?php echo e($student['level_year']); ?>
+                                    <?php echo e((string)($presenterProgress['progress_label'] ?? ('Year ' . (int)($student['level_year'] ?? 1)))); ?>
                                 </div>
                             </div>
                             <div class="col-md-6">
@@ -393,6 +430,10 @@ $pageTitle = 'View Student - ' . APP_NAME;
                                 <div class="mb-3">
                                     <span class="info-label">Graduation Date:</span>
                                     <?php echo e(!empty($student['graduation_date']) ? Helper::formatDate($student['graduation_date'], 'M d, Y') : 'N/A'); ?>
+                                </div>
+                                <div class="mb-3">
+                                    <span class="info-label">Current Calendar:</span>
+                                    <?php echo e($currentRolloutStageLabel !== '' ? $currentRolloutStageLabel : 'N/A'); ?>
                                 </div>
                                 <div class="mb-3">
                                     <span class="info-label">Specialization:</span>
