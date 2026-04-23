@@ -146,7 +146,16 @@ $studentSql = "SELECT s.id, s.student_id, s.first_name, s.last_name, s.status, s
     WHERE u.status = 'active'";
 $params = [];
 if ($q !== '') {
-    $studentSql .= " AND (s.student_id LIKE :q OR s.first_name LIKE :q OR s.last_name LIKE :q OR CONCAT(s.first_name,' ',s.last_name) LIKE :q)";
+    $studentSql .= " AND (
+        s.student_id LIKE :q
+        OR s.first_name LIKE :q
+        OR s.last_name LIKE :q
+        OR CONCAT(s.first_name,' ',s.last_name) LIKE :q
+        OR CONCAT(s.last_name,' ',s.first_name) LIKE :q
+        OR COALESCE(p.program_name, '') LIKE :q
+        OR COALESCE(s.academic_status, '') LIKE :q
+        OR COALESCE(s.status, '') LIKE :q
+    )";
     $params['q'] = '%' . $q . '%';
 }
 $studentSql .= " ORDER BY s.first_name, s.last_name LIMIT 200";
@@ -274,11 +283,11 @@ include '../../includes/header.php';
         <?php if (!empty($flashError)): ?><div class="alert alert-danger"><?php echo e($flashError); ?></div><?php endif; ?>
         <div class="card mb-3"><div class="card-header">Student Lookup</div><div class="card-body">
             <form method="GET" class="row">
-                <div class="col-md-5 form-group"><label>Search</label><input class="form-control" name="q" value="<?php echo e($q); ?>" placeholder="Student No, first or last name"></div>
+                <div class="col-md-5 form-group"><label>Search</label><input class="form-control" name="q" value="<?php echo e($q); ?>" placeholder="Student No, name, programme, status, or academic status"></div>
                 <div class="col-md-4 form-group"><label>Semester Scope</label><select class="form-control" name="semester_id"><option value="0" <?php echo $selectedSemesterId <= 0 ? 'selected' : ''; ?>>All Semesters</option><?php foreach ($semesters as $sem): ?><option value="<?php echo (int)$sem['id']; ?>" <?php echo (int)$sem['id'] === (int)$selectedSemesterId ? 'selected' : ''; ?>><?php echo e((string)$sem['year_name'] . ' - ' . (string)$sem['semester_name']); ?></option><?php endforeach; ?></select></div>
                 <div class="col-md-3 form-group d-flex align-items-end"><button type="submit" class="btn btn-primary btn-block">Search</button></div>
             </form>
-            <div class="table-responsive"><table class="table table-sm table-hover mb-0"><thead><tr><th>Student No</th><th>Name</th><th>Programme</th><th>Status</th><th></th></tr></thead><tbody><?php foreach ($students as $s): ?><tr><td><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $s)); ?></td><td><?php echo e(trim((string)$s['first_name'] . ' ' . (string)$s['last_name'])); ?></td><td><?php echo e((string)($s['program_name'] ?? '-')); ?></td><td><?php echo e(strtoupper((string)($s['status'] ?? '-'))); ?></td><td class="text-right"><a class="btn btn-sm btn-outline-primary" href="<?php echo e(BASE_URL . '/views/finance/student-profile.php?' . http_build_query(['student_id' => (int)$s['id'], 'semester_id' => (int)$selectedSemesterId, 'q' => $q])); ?>">Open</a></td></tr><?php endforeach; ?></tbody></table></div>
+            <div class="table-responsive"><table class="table table-sm table-hover mb-0"><thead><tr><th>Student No</th><th>Name</th><th>Programme</th><th>Status</th><th></th></tr></thead><tbody><?php if (empty($students)): ?><tr><td colspan="5" class="text-center text-muted py-3">No students matched the current search.</td></tr><?php else: ?><?php foreach ($students as $s): ?><tr><td><?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $s)); ?></td><td><?php echo e(trim((string)$s['first_name'] . ' ' . (string)$s['last_name'])); ?></td><td><?php echo e((string)($s['program_name'] ?? '-')); ?></td><td><?php echo e(strtoupper((string)($s['status'] ?? '-'))); ?></td><td class="text-right"><a class="btn btn-sm btn-outline-primary" href="<?php echo e(BASE_URL . '/views/finance/student-profile.php?' . http_build_query(['student_id' => (int)$s['id'], 'semester_id' => (int)$selectedSemesterId, 'q' => $q])); ?>">Open</a></td></tr><?php endforeach; ?><?php endif; ?></tbody></table></div>
         </div></div>
         <?php if ($selectedStudent): ?>
         <div class="card mb-3"><div class="card-body"><div class="row"><div class="col-md-3"><strong>No:</strong> <?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $selectedStudent)); ?></div><div class="col-md-3"><strong>Name:</strong> <?php echo e(trim((string)$selectedStudent['first_name'] . ' ' . (string)$selectedStudent['last_name'])); ?></div><div class="col-md-3"><strong>Programme:</strong> <?php echo e((string)($selectedStudent['program_name'] ?? '-')); ?></div><div class="col-md-3"><strong>Academic:</strong> <?php echo e((string)($selectedStudent['academic_status'] ?? '-')); ?></div></div><hr><div class="row"><div class="col-md-3"><strong>Invoice Total:</strong> <?php echo e(Helper::formatCurrency($invoiceTotal, 'UGX', 0)); ?></div><div class="col-md-3"><strong>Payments:</strong> <?php echo e(Helper::formatCurrency($paymentTotal, 'UGX', 0)); ?></div><div class="col-md-3"><strong>Net Adj:</strong> <?php echo e(Helper::formatCurrency($netAdjustments, 'UGX', 0)); ?></div><div class="col-md-3"><strong>Effective Balance:</strong> <?php echo e(Helper::formatCurrency($effectiveBalance, 'UGX', 0)); ?></div></div></div></div>

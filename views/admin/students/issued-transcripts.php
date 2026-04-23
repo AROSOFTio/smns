@@ -154,10 +154,16 @@ if ($search !== '') {
         s.student_id LIKE :search
         OR s.first_name LIKE :search
         OR s.last_name LIKE :search
+        OR CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, '')) LIKE :search
+        OR CONCAT(COALESCE(s.last_name, ''), ' ', COALESCE(s.first_name, '')) LIKE :search
+        OR COALESCE(p.program_code, '') LIKE :search
+        OR COALESCE(p.program_name, '') LIKE :search
         OR ti.verification_code LIKE :search
         OR ti.verification_token LIKE :search
         OR ti.dispatch_reference LIKE :search
         OR ti.dispatch_method LIKE :search
+        OR COALESCE(ti.distribution_status, '') LIKE :search
+        OR COALESCE(ti.status, '') LIKE :search
     )";
     $params['search'] = '%' . $search . '%';
 }

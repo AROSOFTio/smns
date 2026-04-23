@@ -16,6 +16,15 @@ if (!$auth->isLoggedIn() || $auth->getRole() !== 'lecturer') {
 
 $currentUser = $auth->getCurrentUser();
 $lecturerProfile = $currentUser['profile'];
+$lecturerResultOwnerIds = array_values(array_unique(array_filter([
+    (int)($lecturerProfile['id'] ?? 0),
+    (int)($lecturerProfile['user_id'] ?? 0),
+    (int)($currentUser['id'] ?? 0),
+])));
+if (empty($lecturerResultOwnerIds)) {
+    $lecturerResultOwnerIds = [(int)($lecturerProfile['id'] ?? 0)];
+}
+$lecturerResultOwnerPlaceholders = implode(',', array_fill(0, count($lecturerResultOwnerIds), '?'));
 
 // Get statistics
 $db = new Database();
@@ -75,13 +84,12 @@ $totalStudents = $stmt->fetch()['count'];
 
 // Pending results
 $stmt = $conn->prepare("SELECT COUNT(*) as count FROM results r
-                        WHERE r.entered_by = :lecturer_id 
-                        AND r.semester_id = :semester_id
+                        WHERE r.entered_by IN ($lecturerResultOwnerPlaceholders)
+                        AND r.semester_id = ?
                         AND r.status = 'draft'");
-$stmt->execute([
-    'lecturer_id' => $lecturerProfile['id'],
-    'semester_id' => $currentSemester['id'] ?? 0,
-]);
+$stmt->execute(array_merge($lecturerResultOwnerIds, [
+    (int)($currentSemester['id'] ?? 0),
+]));
 $pendingResults = $stmt->fetch()['count'];
 
 // My courses

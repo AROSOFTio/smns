@@ -88,6 +88,37 @@ async function resolveSmtpHostCandidates(hostname) {
   };
 }
 
+function normalizeProvidedCandidates(rawCandidates, fallbackHostname) {
+  if (!Array.isArray(rawCandidates) || !rawCandidates.length) {
+    return [];
+  }
+
+  const normalized = [];
+  const seen = new Set();
+
+  for (const candidate of rawCandidates) {
+    if (!candidate || !candidate.host) continue;
+
+    const host = String(candidate.host).trim();
+    const tlsServername = candidate.tls_servername === null || candidate.tls_servername === undefined
+      ? null
+      : String(candidate.tls_servername).trim();
+    const source = candidate.source ? String(candidate.source).trim() : 'php';
+    const key = `${host}|${tlsServername || ''}`;
+
+    if (!host || seen.has(key)) continue;
+    seen.add(key);
+
+    normalized.push({
+      host,
+      tlsServername: tlsServername || fallbackHostname || null,
+      source
+    });
+  }
+
+  return normalized;
+}
+
 async function main() {
   const encodedPayload = process.argv[2];
   if (!encodedPayload) {
@@ -137,7 +168,13 @@ async function main() {
     fail('From email is missing');
   }
 
-  const resolved = await resolveSmtpHostCandidates(smtpHost);
+  const providedCandidates = normalizeProvidedCandidates(smtp.host_candidates, smtpHost);
+  const resolved = providedCandidates.length
+    ? {
+        candidates: providedCandidates,
+        lookupErrors: Array.isArray(smtp.lookup_warnings) ? smtp.lookup_warnings : []
+      }
+    : await resolveSmtpHostCandidates(smtpHost);
   const attemptErrors = [];
 
   for (const candidate of resolved.candidates) {

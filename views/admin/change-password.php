@@ -83,28 +83,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         if (empty($error)) {
-            $db = new Database();
-            $conn = $db->getConnection();
-            $stmt = $conn->prepare('SELECT password_hash FROM users WHERE id = :id');
-            $stmt->execute(['id' => $userId]);
-            $row = $stmt->fetch();
-            if (!$row || !Security::verifyPassword($current_password, $row['password_hash'])) {
-                $error = 'Current password is incorrect.';
-            } elseif (Security::isPasswordReused($conn, (int)$userId, $new_password)) {
-                $error = 'You cannot reuse a recent password.';
-            } else {
-                $hash = Security::hashPassword($new_password);
-                $ust = $conn->prepare('UPDATE users SET password_hash = :hash, require_password_change = 0 WHERE id = :id');
-                $ust->execute(['hash' => $hash, 'id' => $userId]);
-
-                // Add to password history
-                $ph = $conn->prepare('INSERT INTO password_history (user_id, password_hash) VALUES (:user_id, :password_hash)');
-                $ph->execute(['user_id' => $userId, 'password_hash' => $hash]);
-
-                $success = 'Password changed successfully.';
+            $result = $auth->changeCurrentUserPassword($current_password, $new_password, $confirm_password);
+            if (!empty($result['success'])) {
+                $success = (string)($result['message'] ?? 'Password changed successfully.');
                 header('Location: ' . $postChangeTarget);
                 exit;
             }
+            $error = (string)($result['message'] ?? 'Failed to change password.');
         } else {
             // keep validation error
         }

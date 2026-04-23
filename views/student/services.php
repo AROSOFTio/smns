@@ -117,10 +117,11 @@ if ($studentId > 0) {
 }
 
 $serviceHistory = [];
+$highlightRequestId = isset($_GET['request_id']) ? (int)$_GET['request_id'] : 0;
 if ($studentId > 0) {
     try {
         $historyStmt = $conn->prepare("
-            SELECT request_type, reason, status, admin_response, created_at, updated_at
+            SELECT id, request_type, reason, status, admin_response, created_at, updated_at
             FROM student_requests
             WHERE student_id = :student_id
             ORDER BY created_at DESC
@@ -424,13 +425,15 @@ html[data-theme='dark'] .status-pill.rejected {
                         <tbody>
                             <?php foreach ($serviceHistory as $h): ?>
                                 <?php $st = strtolower((string)($h['status'] ?? 'pending')); ?>
-                                <tr>
+                                <tr<?php echo (int)($h['id'] ?? 0) === $highlightRequestId ? ' style="background:#fff7d6;"' : ''; ?>>
                                     <td><?php echo !empty($h['created_at']) ? e(date('d M Y H:i', strtotime($h['created_at']))) : '-'; ?></td>
                                     <td><?php echo e($formatRequestType((string)($h['request_type'] ?? ''))); ?></td>
                                     <td><?php echo e($h['reason'] ?? '-'); ?></td>
                                     <td><span class="status-pill <?php echo e($st); ?>"><?php echo e(strtoupper($st)); ?></span></td>
                                     <td>
-                                        <?php echo e($h['admin_response'] ?? '-'); ?>
+                                        <div><strong>Request ID:</strong> <?php echo (int)($h['id'] ?? 0); ?></div>
+                                        <div><?php echo e(trim((string)($h['admin_response'] ?? '')) !== '' ? (string)$h['admin_response'] : ($st === 'pending' ? 'Awaiting admin response.' : 'No written admin response was recorded.')); ?></div>
+                                        <div class="mt-1"><small class="text-muted">Last updated: <?php echo !empty($h['updated_at']) ? e(date('d M Y H:i', strtotime($h['updated_at']))) : '-'; ?></small></div>
                                         <?php if ((string)($h['request_type'] ?? '') === 'transcript_request'): ?>
                                             <div class="mt-1"><small class="text-muted"><?php echo e((string)($h['transcript_system_check'] ?? '')); ?></small></div>
                                             <?php if (!empty($h['transcript_unfulfilled'])): ?>

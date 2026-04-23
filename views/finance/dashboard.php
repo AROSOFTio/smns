@@ -638,9 +638,10 @@ $collectionsByMonth = $stmt->fetchAll();
 
 $activeStudents = [];
 $stmt = $conn->query("
-    SELECT s.id, s.student_id, s.first_name, s.last_name
+    SELECT s.id, s.student_id, s.first_name, s.last_name, s.academic_status, p.program_name
     FROM students s
     INNER JOIN users u ON u.id = s.user_id
+    LEFT JOIN programs p ON p.id = s.program_id
     WHERE s.status = 'active' AND u.status = 'active'
     ORDER BY s.first_name ASC, s.last_name ASC
 ");
@@ -1088,11 +1089,15 @@ include '../../includes/header.php';
                             <?php echo csrfField(); ?>
                             <input type="hidden" name="action" value="record_payment">
                             <div class="form-group">
+                                <label>Filter Students</label>
+                                <input type="text" class="form-control" id="payment_student_filter" placeholder="Type student number, name, programme, or status" <?php echo ($currentSemesterId <= 0 || $financeStaffId <= 0) ? 'disabled' : ''; ?>>
+                            </div>
+                            <div class="form-group">
                                 <label>Student</label>
-                                <select class="form-control" id="payment_student_id" name="student_id" required <?php echo ($currentSemesterId <= 0 || $financeStaffId <= 0) ? 'disabled' : ''; ?>>
+                                <select class="form-control" id="payment_student_id" name="student_id" required data-student-filter-source="payment_student_filter" <?php echo ($currentSemesterId <= 0 || $financeStaffId <= 0) ? 'disabled' : ''; ?>>
                                     <option value="">Select student</option>
                                     <?php foreach ($activeStudents as $studentOption): ?>
-                                        <option value="<?php echo (int)$studentOption['id']; ?>">
+                                        <option value="<?php echo (int)$studentOption['id']; ?>" data-search-text="<?php echo e(strtolower(trim(resolveDisplayedStudentRegistrationNumberFromRow($conn, $studentOption) . ' ' . (string)$studentOption['first_name'] . ' ' . (string)$studentOption['last_name'] . ' ' . (string)($studentOption['program_name'] ?? '') . ' ' . (string)($studentOption['academic_status'] ?? '')))); ?>">
                                             <?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $studentOption)); ?> - <?php echo e(trim((string)$studentOption['first_name'] . ' ' . (string)$studentOption['last_name'])); ?>
                                         </option>
                                     <?php endforeach; ?>
@@ -1166,11 +1171,15 @@ include '../../includes/header.php';
                             <?php echo csrfField(); ?>
                             <input type="hidden" name="action" value="generate_invoice">
                             <div class="form-group">
+                                <label>Filter Students</label>
+                                <input type="text" class="form-control" id="invoice_student_filter" placeholder="Type student number, name, programme, or status" <?php echo $currentSemesterId <= 0 ? 'disabled' : ''; ?>>
+                            </div>
+                            <div class="form-group">
                                 <label>Student</label>
-                                <select class="form-control" name="student_id" required <?php echo $currentSemesterId <= 0 ? 'disabled' : ''; ?>>
+                                <select class="form-control" id="invoice_student_id" name="student_id" required data-student-filter-source="invoice_student_filter" <?php echo $currentSemesterId <= 0 ? 'disabled' : ''; ?>>
                                     <option value="">Select student</option>
                                     <?php foreach ($activeStudents as $studentOption): ?>
-                                        <option value="<?php echo (int)$studentOption['id']; ?>">
+                                        <option value="<?php echo (int)$studentOption['id']; ?>" data-search-text="<?php echo e(strtolower(trim(resolveDisplayedStudentRegistrationNumberFromRow($conn, $studentOption) . ' ' . (string)$studentOption['first_name'] . ' ' . (string)$studentOption['last_name'] . ' ' . (string)($studentOption['program_name'] ?? '') . ' ' . (string)($studentOption['academic_status'] ?? '')))); ?>">
                                             <?php echo e(resolveDisplayedStudentRegistrationNumberFromRow($conn, $studentOption)); ?> - <?php echo e(trim((string)$studentOption['first_name'] . ' ' . (string)$studentOption['last_name'])); ?>
                                         </option>
                                     <?php endforeach; ?>
@@ -2282,10 +2291,39 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    function initSearchableStudentSelect(filterInputId, selectId) {
+        var filterInput = document.getElementById(filterInputId);
+        var select = document.getElementById(selectId);
+        if (!filterInput || !select) return;
+
+        var options = Array.prototype.slice.call(select.querySelectorAll('option'));
+        function renderStudentOptions() {
+            var query = String(filterInput.value || '').toLowerCase().trim();
+            options.forEach(function(option, idx) {
+                if (idx === 0) {
+                    option.hidden = false;
+                    return;
+                }
+                var haystack = String(option.getAttribute('data-search-text') || option.textContent || '').toLowerCase();
+                option.hidden = query !== '' && haystack.indexOf(query) === -1;
+            });
+
+            var selectedOption = select.options[select.selectedIndex] || null;
+            if (selectedOption && selectedOption.hidden) {
+                select.value = '';
+            }
+        }
+
+        filterInput.addEventListener('input', renderStudentOptions);
+        renderStudentOptions();
+    }
+
     if (studentSelect && invoiceSelect) {
         studentSelect.addEventListener('change', filterInvoicesByStudent);
         filterInvoicesByStudent();
     }
+    initSearchableStudentSelect('payment_student_filter', 'payment_student_id');
+    initSearchableStudentSelect('invoice_student_filter', 'invoice_student_id');
 
     function initTableSearchPagination(config) {
         var tbody = document.getElementById(config.tbodyId);

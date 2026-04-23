@@ -34,6 +34,99 @@ class Helper {
         return in_array($value, ['nodemailer', 'php_mail'], true) ? $value : 'php_mail';
     }
 
+    private static function resolveSmtpHostCandidates($hostname) {
+        $hostname = trim((string)$hostname);
+        if ($hostname === '') {
+            return ['candidates' => [], 'warnings' => []];
+        }
+
+        if (filter_var($hostname, FILTER_VALIDATE_IP)) {
+            return [
+                'candidates' => [
+                    ['host' => $hostname, 'tls_servername' => null, 'source' => 'literal']
+                ],
+                'warnings' => []
+            ];
+        }
+
+        $candidates = [];
+        $warnings = [];
+        $seen = [];
+
+        $addCandidate = function ($host, $source, $tlsServername = null) use (&$candidates, &$seen) {
+            $host = trim((string)$host);
+            $tlsServername = $tlsServername !== null ? trim((string)$tlsServername) : null;
+            if ($host === '') {
+                return;
+            }
+            $key = $host . '|' . ($tlsServername ?? '');
+            if (isset($seen[$key])) {
+                return;
+            }
+            $seen[$key] = true;
+            $candidates[] = [
+                'host' => $host,
+                'tls_servername' => $tlsServername,
+                'source' => (string)$source
+            ];
+        };
+
+        if (function_exists('dns_get_record')) {
+            $records = @dns_get_record($hostname, DNS_A + DNS_AAAA);
+            if (is_array($records)) {
+                foreach ($records as $record) {
+                    if (!empty($record['ip'])) {
+                        $addCandidate($record['ip'], 'php_dns_a', $hostname);
+                    }
+                    if (!empty($record['ipv6'])) {
+                        $addCandidate($record['ipv6'], 'php_dns_aaaa', $hostname);
+                    }
+                }
+            }
+        }
+
+        $fallbackAddress = @gethostbyname($hostname);
+        if ($fallbackAddress !== '' && $fallbackAddress !== $hostname) {
+            $addCandidate($fallbackAddress, 'php_gethostbyname', $hostname);
+        } else {
+            $warnings[] = 'PHP could not resolve the configured SMTP hostname before invoking Nodemailer.';
+        }
+
+        $addCandidate($hostname, 'hostname', $hostname);
+
+        return ['candidates' => $candidates, 'warnings' => $warnings];
+    }
+
+    /**
+     * Resolve effective email transport settings from saved settings or config defaults.
+     */
+    public static function getEmailConfiguration() {
+        $smtpPortRaw = (int)self::getSettingValue('smtp_port', (defined('SMTP_PORT') ? (int)SMTP_PORT : 587));
+        $smtpPort = ($smtpPortRaw >= 1 && $smtpPortRaw <= 65535) ? $smtpPortRaw : 587;
+        $smtpUsernameDefault = defined('SMTP_USERNAME') ? SMTP_USERNAME : (defined('SMTP_USER') ? SMTP_USER : '');
+        $smtpPasswordDefault = defined('SMTP_PASSWORD') ? SMTP_PASSWORD : (defined('SMTP_PASS') ? SMTP_PASS : '');
+        $smtpPassword = (string)self::getSettingValue('smtp_password', $smtpPasswordDefault);
+        if (in_array(strtolower(trim($smtpPassword)), ['replace-with-app-password', 'your-app-password', 'your-gmail-app-password'], true)) {
+            $smtpPassword = '';
+        }
+
+        return [
+            'transport' => self::normalizeTransport(
+                (string)self::getSettingValue('email_transport', (defined('EMAIL_TRANSPORT') ? EMAIL_TRANSPORT : 'php_mail'))
+            ),
+            'smtp_host' => trim((string)self::getSettingValue('smtp_host', (defined('SMTP_HOST') ? SMTP_HOST : ''))),
+            'smtp_port' => $smtpPort,
+            'smtp_username' => trim((string)self::getSettingValue('smtp_username', $smtpUsernameDefault)),
+            'smtp_password' => $smtpPassword,
+            'smtp_secure' => self::isTruthy(
+                self::getSettingValue('smtp_secure', defined('SMTP_SECURE') ? (SMTP_SECURE ? '1' : '0') : '0'),
+                false
+            ),
+            'smtp_from_email' => trim((string)self::getSettingValue('smtp_from_email', (defined('SMTP_FROM_EMAIL') ? SMTP_FROM_EMAIL : ''))),
+            'smtp_from_name' => trim((string)self::getSettingValue('smtp_from_name', (defined('SMTP_FROM_NAME') ? SMTP_FROM_NAME : APP_NAME))),
+        ];
+    }
+
     /**
      * Send an email using the configured transport.
      */
@@ -49,18 +142,12 @@ class Helper {
             return false;
         }
 
-        $smtpHost = (string)self::getSettingValue('smtp_host', (defined('SMTP_HOST') ? SMTP_HOST : ''));
-        $smtpPortRaw = (int)self::getSettingValue('smtp_port', (defined('SMTP_PORT') ? (int)SMTP_PORT : 587));
-        $smtpPort = ($smtpPortRaw >= 1 && $smtpPortRaw <= 65535) ? $smtpPortRaw : 587;
-        $smtpUsernameDefault = defined('SMTP_USERNAME') ? SMTP_USERNAME : (defined('SMTP_USER') ? SMTP_USER : '');
-        $smtpPasswordDefault = defined('SMTP_PASSWORD') ? SMTP_PASSWORD : (defined('SMTP_PASS') ? SMTP_PASS : '');
-        $smtpUsername = (string)self::getSettingValue('smtp_username', $smtpUsernameDefault);
-        $smtpPassword = (string)self::getSettingValue('smtp_password', $smtpPasswordDefault);
-        if (in_array(strtolower(trim($smtpPassword)), ['replace-with-app-password', 'your-app-password', 'your-gmail-app-password'], true)) {
-            $smtpPassword = '';
-        }
-        $smtpSecureDefault = defined('SMTP_SECURE') ? (SMTP_SECURE ? '1' : '0') : '0';
-        $smtpSecure = self::isTruthy(self::getSettingValue('smtp_secure', $smtpSecureDefault), false);
+        $emailConfig = self::getEmailConfiguration();
+        $smtpHost = $emailConfig['smtp_host'];
+        $smtpPort = (int)$emailConfig['smtp_port'];
+        $smtpUsername = (string)$emailConfig['smtp_username'];
+        $smtpPassword = (string)$emailConfig['smtp_password'];
+        $smtpSecure = !empty($emailConfig['smtp_secure']);
         $smtpConnectionTimeout = (int)($options['smtp_connection_timeout_ms']
             ?? self::getSettingValue('smtp_connection_timeout_ms', (defined('SMTP_CONNECTION_TIMEOUT_MS') ? SMTP_CONNECTION_TIMEOUT_MS : 12000)));
         $smtpGreetingTimeout = (int)($options['smtp_greeting_timeout_ms']
@@ -77,8 +164,8 @@ class Helper {
             $smtpSocketTimeout = 1000;
         }
 
-        $fromEmailDefault = (string)self::getSettingValue('smtp_from_email', (defined('SMTP_FROM_EMAIL') ? SMTP_FROM_EMAIL : ''));
-        $fromNameDefault = (string)self::getSettingValue('smtp_from_name', (defined('SMTP_FROM_NAME') ? SMTP_FROM_NAME : APP_NAME));
+        $fromEmailDefault = (string)$emailConfig['smtp_from_email'];
+        $fromNameDefault = (string)$emailConfig['smtp_from_name'];
         $fromEmail = trim((string)($options['from_email'] ?? $fromEmailDefault));
         if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
             $fromEmail = filter_var($fromEmailDefault, FILTER_VALIDATE_EMAIL) ? $fromEmailDefault : 'no-reply@localhost';
@@ -110,14 +197,14 @@ class Helper {
             ? (bool)$options['allow_php_fallback']
             : $fallbackDefault;
 
-        $transportDefault = (string)self::getSettingValue('email_transport', (defined('EMAIL_TRANSPORT') ? EMAIL_TRANSPORT : 'php_mail'));
-        $transport = self::normalizeTransport($options['transport'] ?? $transportDefault);
+        $transport = self::normalizeTransport($options['transport'] ?? (string)$emailConfig['transport']);
         if ($transport === 'nodemailer') {
             $nodeScript = $options['node_script'] ?? (defined('NODEMAILER_SCRIPT') ? NODEMAILER_SCRIPT : (BASE_PATH . '/scripts/mailer/send-email.js'));
             $nodeBin = $options['node_bin'] ?? (defined('NODE_BIN') ? NODE_BIN : 'node');
             $transportUsed = 'nodemailer';
 
             if (is_file($nodeScript)) {
+                $resolvedSmtp = self::resolveSmtpHostCandidates($smtpHost);
                 $payload = [
                     'to' => $recipients,
                     'subject' => (string)$subject,
@@ -133,6 +220,8 @@ class Helper {
                         'username' => $smtpUsername,
                         'password' => $smtpPassword,
                         'secure' => $smtpSecure,
+                        'host_candidates' => $resolvedSmtp['candidates'],
+                        'lookup_warnings' => $resolvedSmtp['warnings'],
                         'connection_timeout' => $smtpConnectionTimeout,
                         'greeting_timeout' => $smtpGreetingTimeout,
                         'socket_timeout' => $smtpSocketTimeout

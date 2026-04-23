@@ -53,6 +53,11 @@ class MfaService {
         return $v < $min ? $min : $v;
     }
 
+    private static function exposeLocalCodeOnFailure() {
+        $default = defined('MFA_LOCAL_FALLBACK_EXPOSE_CODE') ? MFA_LOCAL_FALLBACK_EXPOSE_CODE : true;
+        return self::getBoolSetting('mfa_local_fallback_expose_code', $default);
+    }
+
     public function __construct(PDO $db) {
         $this->db = $db;
     }
@@ -171,12 +176,25 @@ class MfaService {
             $lastError = method_exists('Helper', 'getLastEmailError') ? trim((string)Helper::getLastEmailError()) : '';
             error_log('MFA email delivery failed for user ' . $userId . ' (' . $module . '): ' . ($lastError !== '' ? $lastError : 'unknown error'));
 
-            if ((defined('APP_DEBUG') && APP_DEBUG) || self::isLocalRequest()) {
-                $reason = $lastError !== '' ? $lastError : 'unknown transport error';
+            if (self::isLocalRequest()) {
+                $localMessage = 'Email delivery is unavailable on this local environment.';
+                if (self::exposeLocalCodeOnFailure()) {
+                    $localMessage .= ' Use verification code: ' . $code;
+                } else {
+                    $localMessage .= ' Check the application log for the current verification code.';
+                }
+                $localMessage .= ' (expires in ' . (int)ceil($ttl / 60) . ' minute(s)).';
                 return [
                     'success' => true,
-                    'message' => 'Email delivery failed (' . $reason . '). Use verification code: ' . $code
-                        . ' (expires in ' . (int)ceil($ttl / 60) . ' minute(s)).'
+                    'message' => $localMessage
+                ];
+            }
+
+            if (defined('APP_DEBUG') && APP_DEBUG) {
+                $reason = $lastError !== '' ? $lastError : 'unknown transport error';
+                return [
+                    'success' => false,
+                    'message' => 'Unable to send MFA code. Mail transport error: ' . $reason
                 ];
             }
             return ['success' => false, 'message' => 'Unable to send MFA code. Please try again shortly.'];

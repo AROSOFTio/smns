@@ -106,8 +106,17 @@ $fromWhereSql = " FROM lecturers l
 $params = [];
 
 if ($search) {
-    $fromWhereSql .= " AND (l.lecturer_id LIKE :search OR l.first_name LIKE :search 
-              OR l.last_name LIKE :search OR l.email LIKE :search)";
+    $fromWhereSql .= " AND (
+              l.lecturer_id LIKE :search
+              OR l.first_name LIKE :search
+              OR l.last_name LIKE :search
+              OR CONCAT(COALESCE(l.first_name, ''), ' ', COALESCE(l.last_name, '')) LIKE :search
+              OR CONCAT(COALESCE(l.last_name, ''), ' ', COALESCE(l.first_name, '')) LIKE :search
+              OR l.email LIKE :search
+              OR COALESCE(l.department, '') LIKE :search
+              OR COALESCE(l.specialization, '') LIKE :search
+              OR COALESCE(u.username, '') LIKE :search
+          )";
     $params['search'] = "%$search%";
 }
 

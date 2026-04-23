@@ -58,7 +58,11 @@ $sql = "SELECT c.*
 $params = [];
 
 if (!empty($search)) {
-    $sql .= " AND (c.course_code LIKE :search_code OR c.course_name LIKE :search_name)";
+    $sql .= " AND (
+        c.course_code LIKE :search_code
+        OR c.course_name LIKE :search_name
+        OR COALESCE(c.course_description, '') LIKE :search_name
+    )";
     $params['search_code'] = "%$search%";
     $params['search_name'] = "%$search%";
 }

@@ -18,6 +18,15 @@ if (empty($lecturerProfile['id'])) {
     header('Location: ' . BASE_URL . '/views/auth/login.php?error=unauthorized&role=lecturer');
     exit;
 }
+$lecturerResultOwnerIds = array_values(array_unique(array_filter([
+    (int)($lecturerProfile['id'] ?? 0),
+    (int)($lecturerProfile['user_id'] ?? 0),
+    (int)($currentUser['id'] ?? 0),
+])));
+if (empty($lecturerResultOwnerIds)) {
+    $lecturerResultOwnerIds = [(int)($lecturerProfile['id'] ?? 0)];
+}
+$resultOwnerPlaceholders = implode(',', array_fill(0, count($lecturerResultOwnerIds), '?'));
 
 $db = new Database();
 $conn = $db->getConnection();
@@ -93,12 +102,12 @@ if ($semesterId > 0 && !empty($courseIds)) {
         SELECT r.course_id, r.status, COUNT(*) AS total_rows
         FROM results r
         WHERE r.semester_id = ?
-          AND r.entered_by = ?
+          AND r.entered_by IN ($resultOwnerPlaceholders)
           AND r.course_id IN ($placeholders)
         GROUP BY r.course_id, r.status
     ";
     $resultsStmt = $conn->prepare($resultsSql);
-    $resultsStmt->execute(array_merge([$semesterId, (int)$lecturerProfile['id']], $courseIds));
+    $resultsStmt->execute(array_merge([$semesterId], $lecturerResultOwnerIds, $courseIds));
     foreach ($resultsStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
         $courseId = (int)$row['course_id'];
         $status = (string)$row['status'];

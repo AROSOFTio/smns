@@ -67,7 +67,16 @@ if ($selectedProgramId > 0) {
 }
 
 if ($searchQuery) {
-    $sql .= " AND (s.student_id LIKE :search OR s.first_name LIKE :search OR s.last_name LIKE :search OR s.smns_email LIKE :search OR p.program_name LIKE :search)";
+    $sql .= " AND (
+        s.student_id LIKE :search
+        OR s.first_name LIKE :search
+        OR s.last_name LIKE :search
+        OR CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, '')) LIKE :search
+        OR CONCAT(COALESCE(s.last_name, ''), ' ', COALESCE(s.first_name, '')) LIKE :search
+        OR s.smns_email LIKE :search
+        OR COALESCE(p.program_name, '') LIKE :search
+        OR COALESCE(ay.year_name, '') LIKE :search
+    )";
     $params['search'] = "%{$searchQuery}%";
 }
 

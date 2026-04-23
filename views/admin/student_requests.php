@@ -290,8 +290,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
     }
     $isComplianceRequest = in_array((string)($row['request_type'] ?? ''), $complianceRequestTypes, true);
     $isTranscriptRequest = ((string)($row['request_type'] ?? '') === 'transcript_request');
-    if ($isComplianceRequest && $response === '') {
-        $session->setFlash('error', 'Admin response is required for compliance requests.');
+    if ($response === '') {
+        $session->setFlash('error', 'Admin response is required before approving or rejecting a request.');
         header('Location: ' . $redirectUrl); exit;
     }
     if ($isTranscriptRequest && $action === 'approve') {
@@ -924,7 +924,7 @@ html[data-theme='dark'] .unfulfilled-panel {
                                             <form method="POST" action="" class="request-actions-form">
                                                 <?php echo csrfField(); ?>
                                                 <input type="hidden" name="request_id" value="<?php echo e($r['id']); ?>">
-                                                <input type="text" name="admin_response" placeholder="Response (required for compliance requests)" class="form-control form-control-sm admin-response">
+                                                <textarea name="admin_response" placeholder="Write the response the student should receive" class="form-control form-control-sm admin-response" rows="2" required></textarea>
                                                 <div class="request-action-buttons">
                                                     <button class="btn btn-sm btn-success" type="submit" name="action" value="approve" <?php echo ((string)($r['request_type'] ?? '') === 'transcript_request' && empty($r['transcript_eligible'])) ? 'disabled title="Transcript checklist not fulfilled yet."' : ''; ?>>
                                                         <?php echo ((string)($r['request_type'] ?? '') === 'transcript_request') ? 'Release' : 'Approve'; ?>

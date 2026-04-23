@@ -45,7 +45,17 @@ $sql = "SELECT ca.*, c.course_code, c.course_name, c.credit_hours,
 $params = [];
 
 if ($search) {
-    $sql .= " AND (c.course_code LIKE :search OR c.course_name LIKE :search OR l.first_name LIKE :search OR l.last_name LIKE :search)";
+    $sql .= " AND (
+        c.course_code LIKE :search
+        OR c.course_name LIKE :search
+        OR COALESCE(p.program_code, '') LIKE :search
+        OR COALESCE(p.program_name, '') LIKE :search
+        OR COALESCE(l.lecturer_id, '') LIKE :search
+        OR l.first_name LIKE :search
+        OR l.last_name LIKE :search
+        OR CONCAT(COALESCE(l.first_name, ''), ' ', COALESCE(l.last_name, '')) LIKE :search
+        OR CONCAT(COALESCE(l.last_name, ''), ' ', COALESCE(l.first_name, '')) LIKE :search
+    )";
     $params['search'] = "%$search%";
 }
 

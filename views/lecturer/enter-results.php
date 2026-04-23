@@ -17,6 +17,22 @@ if (!$auth->isLoggedIn() || $auth->getRole() !== 'lecturer') {
 
 $currentUser     = $auth->getCurrentUser();
 $lecturerProfile = $currentUser['profile'];
+$lecturerResultOwnerIds = array_values(array_unique(array_filter([
+    (int)($lecturerProfile['id'] ?? 0),
+    (int)($lecturerProfile['user_id'] ?? 0),
+    (int)($currentUser['id'] ?? 0),
+])));
+if (empty($lecturerResultOwnerIds)) {
+    $lecturerResultOwnerIds = [(int)($lecturerProfile['id'] ?? 0)];
+}
+$lecturerResultOwnerParams = [];
+$lecturerResultOwnerPlaceholders = [];
+foreach ($lecturerResultOwnerIds as $ownerIndex => $ownerId) {
+    $ownerKey = 'result_owner_' . $ownerIndex;
+    $lecturerResultOwnerPlaceholders[] = ':' . $ownerKey;
+    $lecturerResultOwnerParams[$ownerKey] = (int)$ownerId;
+}
+$lecturerResultOwnerSql = implode(',', $lecturerResultOwnerPlaceholders);
 
 $db   = new Database();
 $conn = $db->getConnection();
@@ -376,14 +392,15 @@ if ($semesterId && $selectedCourseId) {
                         LEFT JOIN programs p ON s.program_id = p.id
                         WHERE r.semester_id = :semester_id
                           AND r.course_id   = :course_id
-                          AND r.entered_by  = :lecturer_id
+                          AND r.entered_by IN (" . $lecturerResultOwnerSql . ")
                         ORDER BY s.last_name, s.first_name";
         $fallbackStmt = $conn->prepare($fallbackSql);
-        $fallbackStmt->execute([
+        $fallbackParams = [
             'semester_id' => $semesterId,
             'course_id' => $selectedCourseId,
-            'lecturer_id' => (int)$lecturerProfile['id'],
-        ]);
+        ];
+        $fallbackParams = array_merge($fallbackParams, $lecturerResultOwnerParams);
+        $fallbackStmt->execute($fallbackParams);
         $students = $fallbackStmt->fetchAll();
     }
 
@@ -407,13 +424,14 @@ if ($semesterId && $selectedCourseId) {
         FROM results
         WHERE semester_id = :semester_id
           AND course_id = :course_id
-          AND entered_by = :lecturer_id
+          AND entered_by IN (" . $lecturerResultOwnerSql . ")
     ");
-    $lastSavedStmt->execute([
+    $lastSavedParams = [
         'semester_id' => $semesterId,
         'course_id' => $selectedCourseId,
-        'lecturer_id' => (int)$lecturerProfile['id']
-    ]);
+    ];
+    $lastSavedParams = array_merge($lastSavedParams, $lecturerResultOwnerParams);
+    $lastSavedStmt->execute($lastSavedParams);
     $lastSavedAt = $lastSavedStmt->fetchColumn() ?: null;
 }
 

@@ -591,6 +591,21 @@ class Auth {
         }
 
         try {
+            $this->db->exec("
+                CREATE TABLE IF NOT EXISTS password_history (
+                    id INT(11) NOT NULL AUTO_INCREMENT,
+                    user_id INT(11) NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    KEY idx_user_created (user_id, created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        } catch (Exception $e) {
+            // Non-fatal bootstrap safeguard
+        }
+
+        try {
             $mfa = new MfaService($this->db);
             $mfa->ensureTable();
         } catch (Exception $e) {
@@ -1445,6 +1460,89 @@ class Auth {
         } catch(Exception $e) {
             error_log("Password reset token error: " . $e->getMessage());
             return ['success' => false, 'message' => 'An error occurred'];
+        }
+    }
+
+    /**
+     * Change the password for the currently authenticated module user.
+     */
+    public function changeCurrentUserPassword($currentPassword, $newPassword, $confirmPassword) {
+        $currentPassword = (string)$currentPassword;
+        $newPassword = (string)$newPassword;
+        $confirmPassword = (string)$confirmPassword;
+
+        if (!$this->isLoggedIn()) {
+            return ['success' => false, 'message' => 'You must be logged in to change your password.'];
+        }
+
+        if ($currentPassword === '' || $newPassword === '' || $confirmPassword === '') {
+            return ['success' => false, 'message' => 'All fields are required.'];
+        }
+
+        if ($newPassword !== $confirmPassword) {
+            return ['success' => false, 'message' => 'Passwords do not match.'];
+        }
+
+        $policyErrors = [];
+        if (class_exists('Security') && !Security::validatePasswordPolicy($newPassword, $policyErrors)) {
+            return ['success' => false, 'message' => implode(' ', $policyErrors)];
+        }
+
+        $currentUser = $this->getCurrentUser();
+        $userId = (int)($currentUser['id'] ?? 0);
+        if ($userId <= 0) {
+            return ['success' => false, 'message' => 'Unable to determine the current user.'];
+        }
+
+        try {
+            $this->ensureAuthSupportStructures();
+
+            $stmt = $this->db->prepare('SELECT id, username, password_hash, require_password_change FROM users WHERE id = :id LIMIT 1');
+            $stmt->execute(['id' => $userId]);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$user || empty($user['password_hash'])) {
+                return ['success' => false, 'message' => 'Unable to verify the current password for this account.'];
+            }
+
+            if (!password_verify($currentPassword, (string)$user['password_hash'])) {
+                return ['success' => false, 'message' => 'Current password is incorrect.'];
+            }
+
+            if (class_exists('Security') && Security::isPasswordReused($this->db, $userId, $newPassword)) {
+                return ['success' => false, 'message' => 'You cannot reuse a recent password.'];
+            }
+
+            $newHash = class_exists('Security')
+                ? Security::hashPassword($newPassword)
+                : password_hash($newPassword, PASSWORD_DEFAULT);
+
+            $update = $this->db->prepare('
+                UPDATE users
+                SET password_hash = :hash,
+                    require_password_change = 0,
+                    updated_at = NOW()
+                WHERE id = :id
+            ');
+            $update->execute([
+                'hash' => $newHash,
+                'id' => $userId,
+            ]);
+
+            try {
+                $history = $this->db->prepare('INSERT INTO password_history (user_id, password_hash) VALUES (:user_id, :password_hash)');
+                $history->execute([
+                    'user_id' => $userId,
+                    'password_hash' => $newHash,
+                ]);
+            } catch (Exception $e) {
+                error_log('Password history insert failed for user ' . $userId . ': ' . $e->getMessage());
+            }
+
+            return ['success' => true, 'message' => 'Password changed successfully.'];
+        } catch (Exception $e) {
+            error_log('Password change failed for user ' . $userId . ': ' . $e->getMessage());
+            return ['success' => false, 'message' => 'Failed to change password.'];
         }
     }
     

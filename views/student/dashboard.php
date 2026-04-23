@@ -320,33 +320,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'chang
     }
 
     try {
-        $pStmt = $conn->prepare('SELECT password_hash FROM users WHERE id = :id LIMIT 1');
-        $pStmt->execute(['id' => $currentUserId]);
-        $row = $pStmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$row || !Security::verifyPassword($currentPassword, $row['password_hash'])) {
-            $session->setFlash('error', 'Current password is incorrect.');
-            header('Location: ' . BASE_URL . '/views/student/dashboard.php');
-            exit;
+        $passwordChange = $auth->changeCurrentUserPassword($currentPassword, $newPassword, $confirmPassword);
+        if (!empty($passwordChange['success'])) {
+            $session->setFlash('success', (string)($passwordChange['message'] ?? 'Password changed successfully.'));
+        } else {
+            $session->setFlash('error', (string)($passwordChange['message'] ?? 'Failed to change password.'));
         }
-        if (Security::isPasswordReused($conn, (int)$currentUserId, $newPassword)) {
-            $session->setFlash('error', 'You cannot reuse a recent password.');
-            header('Location: ' . BASE_URL . '/views/student/dashboard.php');
-            exit;
-        }
-
-        $hash = Security::hashPassword($newPassword);
-        $uStmt = $conn->prepare('UPDATE users SET password_hash = :hash, require_password_change = 0, updated_at = NOW() WHERE id = :id');
-        $uStmt->execute(['hash' => $hash, 'id' => $currentUserId]);
-
-        // Optional history insert; do not fail password change if history table is unavailable.
-        try {
-            $hStmt = $conn->prepare('INSERT INTO password_history (user_id, password_hash) VALUES (:user_id, :password_hash)');
-            $hStmt->execute(['user_id' => $currentUserId, 'password_hash' => $hash]);
-        } catch (Exception $e) {
-        }
-
-        $session->setFlash('success', 'Password changed successfully.');
     } catch (Exception $e) {
         $session->setFlash('error', 'Failed to change password.');
     }
@@ -628,9 +607,13 @@ body { background: #f8fafc; }
 .student-profile-pic { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; border: 2px solid #e5e7eb; }
 .bio-card { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); padding: 2rem 2.5rem; margin-top: 2rem; }
 .bio-header { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.5rem; }
+.bio-header-name { font-size:1.2rem; font-weight:700; color:#2563eb; }
+.bio-header-id { font-size:1.05rem; color:#222; }
 .bio-header .status-badge { font-size: 0.95rem; padding: 4px 14px; border-radius: 12px; margin-left: 0.7rem; }
 .status-active { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
 .status-notreg { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+.dashboard-inline-label { color: #222; }
+.dashboard-pill { display: inline-block; border-radius: 6px; padding: 4px 12px; font-weight: 600; }
 .bio-details-table { width: 100%; font-size: 0.82rem; margin-top: 1rem; }
 .bio-details-table td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; }
 .bio-details-table tr:last-child td { border-bottom: none; }
@@ -743,6 +726,54 @@ body { background: #f8fafc; }
 }
 html[data-theme='dark'] .profile-lock-overlay {
     background: rgba(2, 6, 23, 0.84);
+}
+html[data-theme='dark'] .dashboard-inline-label {
+    color: #e5e7eb;
+}
+html[data-theme='dark'] .dashboard-pill {
+    box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.16) inset;
+}
+html[data-theme='dark'] .bio-card {
+    background: #0f172a;
+    border: 1px solid #334155;
+    box-shadow: 0 20px 40px rgba(2, 6, 23, 0.35);
+}
+html[data-theme='dark'] .bio-header-name {
+    color: #60a5fa;
+}
+html[data-theme='dark'] .bio-header-id {
+    color: #e5e7eb;
+}
+html[data-theme='dark'] .student-profile-pic {
+    border-color: #475569;
+}
+html[data-theme='dark'] .bio-details-table td {
+    color: #e5e7eb;
+    border-bottom-color: #334155;
+}
+html[data-theme='dark'] .bio-details-table td b {
+    color: #f8fafc;
+}
+html[data-theme='dark'] .bio-btn.reload {
+    background: #1f2937;
+    color: #fca5a5;
+    border-color: #7f1d1d;
+}
+html[data-theme='dark'] .bio-btn.reload:hover {
+    background: #3f1d24;
+    color: #fecaca;
+    border-color: #b91c1c;
+}
+html[data-theme='dark'] .bio-btn.print {
+    background: #1d4ed8;
+    border-color: #2563eb;
+}
+html[data-theme='dark'] .bio-btn.print:hover {
+    background: #1e40af;
+    border-color: #1d4ed8;
+}
+html[data-theme='dark'] .bio-edit-link {
+    color: #93c5fd;
 }
 html[data-theme='dark'] .profile-lock-modal {
     background: #111827;
@@ -906,10 +937,10 @@ html[data-theme='dark'] .profile-lock-modal .text-muted {
     <div style="padding:0.7rem 1.2rem 0.2rem 1.2rem; font-size:0.98rem; font-weight:600; display:flex; align-items:center; gap:0.7rem; flex-wrap:wrap;">
         <span>PROGRAMME: <?php echo e($registeredProgramName); ?></span>
         <span class="status-badge status-active" style="font-size:0.85rem; padding:3px 10px;"><?php echo !empty($studentProfile['status']) ? strtoupper(e($studentProfile['status'])) : 'ACTIVE'; ?></span>
-        <span style="margin-left:auto; font-size:1.05rem; color:#222;">ACADEMIC STATUS: <span style="<?php echo e($academicStatusStyle); ?> border-radius:6px; padding:4px 12px; font-weight:600;">
+        <span class="dashboard-inline-label" style="margin-left:auto; font-size:1.05rem;">ACADEMIC STATUS: <span class="dashboard-pill" style="<?php echo e($academicStatusStyle); ?>">
             <?php echo !empty($academicStatus) ? e($academicStatus) : '-'; ?>
         </span></span>
-        <span style="margin-left:12px; font-size:0.98rem; color:#222;">STUDY STAGE: <span style="<?php echo e($studyStageStyle); ?> border-radius:6px; padding:4px 12px; font-weight:600;">
+        <span class="dashboard-inline-label" style="margin-left:12px; font-size:0.98rem;">STUDY STAGE: <span class="dashboard-pill" style="<?php echo e($studyStageStyle); ?>">
             <?php echo e($studyStageLabel); ?>
         </span></span>
     </div>
@@ -1119,10 +1150,10 @@ document.addEventListener('click', function() {
                     <img src="/assets/img/student_sample.jpg" alt="Profile" class="student-profile-pic">
                 <?php endif; ?>
                 <div>
-                    <div style="font-size:1.2rem; font-weight:700; color:#2563eb;">
+                    <div class="bio-header-name">
                         <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?>
                     </div>
-                    <div style="font-size:1.05rem; color:#222;"><?php echo e($studentDisplayId); ?></div>
+                    <div class="bio-header-id"><?php echo e($studentDisplayId); ?></div>
                     <span class="status-badge <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'status-active' : 'status-notreg'; ?>" style="margin-top:0.5rem;">
                         <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?>
                     </span>
@@ -1159,7 +1190,7 @@ document.addEventListener('click', function() {
                 <div class="tab-panel" data-panel="academic">
                     <table class="bio-details-table">
                         <tr><td><b>PROGRAMME</b></td><td>:<?php echo e($registeredProgramName); ?></td><td><b>YEAR OF STUDY</b></td><td>:<?php echo e($studyProgressLabel); ?></td></tr>
-                        <tr><td><b>STUDY STAGE</b></td><td>:<?php echo e($studyStageLabel); ?></td><td><b>CURRENT CALENDAR</b></td><td>:<?php echo e($currentRolloutStageLabel !== '' ? $currentRolloutStageLabel : '-'); ?></td></tr>
+                        <tr><td><b>STUDY STAGE</b></td><td>:<span class="dashboard-pill" style="<?php echo e($studyStageStyle); ?>"><?php echo e($studyStageLabel); ?></span></td><td><b>CURRENT CALENDAR</b></td><td>:<?php echo e($currentRolloutStageLabel !== '' ? $currentRolloutStageLabel : '-'); ?></td></tr>
                         <tr><td><b>ENTRY YEAR</b></td><td>:<?php echo e($studentRow['entry_year'] ?? ($studentProfile['entry_year'] ?? '-')); ?></td><td><b>ENTRY MODE</b></td><td>:<?php echo e($studentRow['entry_mode'] ?? ($studentProfile['entry_mode'] ?? '-')); ?></td></tr>
                         <tr><td><b>ENROLLMENT TYPE</b></td><td>:<?php echo e($studentRow['enrollment_type'] ?? ($studentProfile['enrollment_type'] ?? '-')); ?></td><td><b>ACADEMIC STATUS</b></td><td>:<?php echo e($academicStatus); ?></td></tr>
                     </table>

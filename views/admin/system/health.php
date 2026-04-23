@@ -368,10 +368,19 @@ function resolveHealthAggregateStatus($statuses) {
 }
 
 function runSmtpDiagnostics() {
-    $smtpHost = trim((string)(defined('SMTP_HOST') ? SMTP_HOST : ''));
-    $smtpPort = (int)(defined('SMTP_PORT') ? SMTP_PORT : 0);
-    $transport = trim((string)(defined('EMAIL_TRANSPORT') ? EMAIL_TRANSPORT : 'php_mail'));
-    $secure = defined('SMTP_SECURE') ? (SMTP_SECURE ? 'SSL/TLS' : 'STARTTLS / opportunistic TLS') : 'Not set';
+    $emailConfig = class_exists('Helper')
+        ? Helper::getEmailConfiguration()
+        : [
+            'smtp_host' => trim((string)(defined('SMTP_HOST') ? SMTP_HOST : '')),
+            'smtp_port' => (int)(defined('SMTP_PORT') ? SMTP_PORT : 0),
+            'transport' => trim((string)(defined('EMAIL_TRANSPORT') ? EMAIL_TRANSPORT : 'php_mail')),
+            'smtp_secure' => defined('SMTP_SECURE') ? (bool)SMTP_SECURE : false,
+        ];
+
+    $smtpHost = trim((string)($emailConfig['smtp_host'] ?? ''));
+    $smtpPort = (int)($emailConfig['smtp_port'] ?? 0);
+    $transport = trim((string)($emailConfig['transport'] ?? 'php_mail'));
+    $secure = !empty($emailConfig['smtp_secure']) ? 'SSL/TLS' : 'STARTTLS / opportunistic TLS';
 
     $details = [];
     $summaryParts = [];

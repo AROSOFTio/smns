@@ -27,6 +27,22 @@ $db   = new Database();
 $conn = $db->getConnection();
 
 $pageTitle = 'Draft Results';
+$lecturerResultOwnerIds = array_values(array_unique(array_filter([
+    (int)($lecturerProfile['id'] ?? 0),
+    (int)($lecturerProfile['user_id'] ?? 0),
+    (int)($currentUser['id'] ?? 0)
+])));
+if (empty($lecturerResultOwnerIds)) {
+    $lecturerResultOwnerIds = [(int)($lecturerProfile['id'] ?? 0)];
+}
+$lecturerOwnerPlaceholders = [];
+$lecturerOwnerParams = [];
+foreach ($lecturerResultOwnerIds as $idx => $ownerId) {
+    $key = 'owner_' . $idx;
+    $lecturerOwnerPlaceholders[] = ':' . $key;
+    $lecturerOwnerParams[$key] = (int)$ownerId;
+}
+$lecturerOwnerSql = implode(', ', $lecturerOwnerPlaceholders);
 
 // Optional filters
 $filterAcademicYear = isset($_REQUEST['academic_year']) ? (int)$_REQUEST['academic_year'] : 0;
@@ -68,8 +84,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_submit_drafts'])
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
     try {
-        $whereSql = "WHERE r.entered_by = :lecturer_id AND r.status = 'draft'";
-        $params = ['lecturer_id' => (int)$lecturerProfile['id']];
+        $whereSql = "WHERE r.entered_by IN ({$lecturerOwnerSql}) AND r.status = 'draft'";
+        $params = $lecturerOwnerParams;
         if ($filterAcademicYear > 0) {
             $whereSql .= " AND sem.academic_year_id = :ay";
             $params['ay'] = (int)$filterAcademicYear;
@@ -179,16 +195,38 @@ if ($filterAcademicYear) {
     $semesters = $stmt->fetchAll();
 }
 
-// Fetch courses taught by this lecturer
-$coursesStmt = $conn->prepare("
+// Fetch courses taught by this lecturer for the selected scope.
+$coursesSql = "
     SELECT DISTINCT c.id, c.course_code, c.course_name
     FROM course_assignments ca
     JOIN courses c ON ca.course_id = c.id
-    WHERE ca.lecturer_id = :lid AND ca.status IN ('active','completed')
-    ORDER BY c.course_code
-");
-$coursesStmt->execute(['lid' => $lecturerProfile['id']]);
+    JOIN semesters sem_filter ON sem_filter.id = ca.semester_id
+    WHERE ca.lecturer_id = :lid
+      AND ca.status IN ('active','completed')
+";
+$coursesParams = ['lid' => (int)$lecturerProfile['id']];
+
+if ($filterAcademicYear > 0) {
+    $coursesSql .= " AND sem_filter.academic_year_id = :course_ay";
+    $coursesParams['course_ay'] = (int)$filterAcademicYear;
+}
+
+if ($filterSemester > 0) {
+    $coursesSql .= " AND ca.semester_id = :course_sem";
+    $coursesParams['course_sem'] = (int)$filterSemester;
+}
+
+$coursesSql .= " ORDER BY c.course_code";
+$coursesStmt = $conn->prepare($coursesSql);
+$coursesStmt->execute($coursesParams);
 $courses = $coursesStmt->fetchAll();
+
+if ($filterCourse > 0) {
+    $visibleCourseIds = array_map('intval', array_column($courses, 'id'));
+    if (!in_array($filterCourse, $visibleCourseIds, true)) {
+        $filterCourse = 0;
+    }
+}
 
 // Build query for all results entered by this lecturer (draft + submitted)
 $sql = "
@@ -217,11 +255,11 @@ $sql = "
     JOIN courses c ON r.course_id = c.id
     JOIN semesters sem ON r.semester_id = sem.id
     JOIN academic_years ay ON sem.academic_year_id = ay.id
-    WHERE r.status IN ('draft', 'submitted')
-      AND r.entered_by = :lecturer_id
-";
+      WHERE r.status IN ('draft', 'submitted')
+      AND r.entered_by IN ({$lecturerOwnerSql})
+    ";
 
-$params = ['lecturer_id' => $lecturerProfile['id']];
+ $params = $lecturerOwnerParams;
 
 if ($filterAcademicYear) {
     $sql .= " AND sem.academic_year_id = :ay";
@@ -279,6 +317,31 @@ foreach ($draftResults as $result) {
         $groupedDrafts[$key]['count_submitted']++;
     }
     $groupedDrafts[$key]['students'][] = $result;
+}
+
+$selectedCourseMeta = null;
+foreach ($courses as $courseRow) {
+    if ((int)$courseRow['id'] === $filterCourse) {
+        $selectedCourseMeta = $courseRow;
+        break;
+    }
+}
+
+$selectedSemesterMeta = null;
+foreach ($semesters as $semesterRow) {
+    if ((int)$semesterRow['id'] === $filterSemester) {
+        $selectedSemesterMeta = $semesterRow;
+        break;
+    }
+}
+
+$emptyStateEnterResultsUrl = null;
+if ($filterAcademicYear > 0 && $selectedSemesterMeta && $selectedCourseMeta) {
+    $emptyStateEnterResultsUrl = 'enter-results.php?' . http_build_query([
+        'academic_year_id' => (int)$filterAcademicYear,
+        'semester_number' => (int)($selectedSemesterMeta['semester_number'] ?? 0),
+        'course_id' => (int)$filterCourse,
+    ]);
 }
 
 // Fetch unread notifications
@@ -449,6 +512,11 @@ include '../../includes/header.php';
                     <i class="fas fa-info-circle"></i> No draft results found. 
                     <?php if ($filterAcademicYear || $filterSemester || $filterCourse): ?>
                         Try adjusting your filters or <a href="draft-results.php">view all drafts</a>.
+                        <?php if ($emptyStateEnterResultsUrl !== null): ?>
+                            <br><a href="<?php echo e($emptyStateEnterResultsUrl); ?>" class="btn btn-sm btn-primary mt-2">
+                                <i class="fas fa-edit mr-1"></i> Enter Results For This Course
+                            </a>
+                        <?php endif; ?>
                     <?php else: ?>
                         Draft results are automatically saved when you save coursework marks without submitting them.
                     <?php endif; ?>
