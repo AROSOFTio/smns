@@ -257,16 +257,17 @@ class Auth {
             // Optional MFA gate before session is finalized.
             if (MfaService::isMfaRequiredForRole((string)$user['role'])) {
                 $mfa = new MfaService($this->db);
-                $challenge = $mfa->issueChallenge((int)$user['id'], $moduleName, (string)($user['email'] ?? ''));
-                if (!$challenge['success']) {
-                    return ['success' => false, 'message' => $challenge['message'] ?? 'Unable to issue MFA challenge.'];
+                $recipientEmail = $mfa->resolveRecipientEmail($moduleName, (string)($user['email'] ?? ''));
+                if ($recipientEmail === '') {
+                    return ['success' => false, 'message' => 'MFA requires a valid email address on file.'];
                 }
-                $this->setPendingLoginContext($moduleName, (int)$user['id'], 'mfa', (string)($challenge['message'] ?? ''));
+                $this->setPendingLoginContext($moduleName, (int)$user['id'], 'mfa');
+                $this->setPendingMfaBootstrap($moduleName, true);
                 return [
                     'success' => false,
                     'role' => $moduleName,
                     'mfa_required' => true,
-                    'message' => $challenge['message'] ?? 'Verification code sent.'
+                    'message' => 'Verification required.'
                 ];
             }
 
@@ -1049,7 +1050,29 @@ class Auth {
         unset($_SESSION[$moduleName . '_pending_reason']);
         unset($_SESSION[$moduleName . '_pending_expires_at']);
         unset($_SESSION[$moduleName . '_pending_notice']);
+        unset($_SESSION[$moduleName . '_pending_mfa_bootstrap']);
         $this->clearPendingLoginCookie($moduleName);
+    }
+
+    private function setPendingMfaBootstrap($module, $enabled = true) {
+        $moduleName = strtolower(trim((string)$module));
+        if ($moduleName === '') {
+            return;
+        }
+        $key = $moduleName . '_pending_mfa_bootstrap';
+        if ($enabled) {
+            $_SESSION[$key] = 1;
+        } else {
+            unset($_SESSION[$key]);
+        }
+    }
+
+    public function shouldBootstrapPendingMfa($module = null) {
+        $moduleName = $module ? strtolower(trim((string)$module)) : strtolower(trim((string)$this->module));
+        if ($moduleName === '') {
+            return false;
+        }
+        return !empty($_SESSION[$moduleName . '_pending_mfa_bootstrap']);
     }
 
     public function consumePendingLoginNotice($module = null) {
@@ -1125,6 +1148,7 @@ class Auth {
             if (!$ctx || $ctx['reason'] !== 'mfa') {
                 return ['success' => false, 'message' => 'No pending MFA challenge found.'];
             }
+            $this->setPendingMfaBootstrap((string)$ctx['module'], false);
             $user = $this->getUserById((int)$ctx['user_id']);
             if (!$user || !$this->isUserStatusActive($user['status'] ?? 'active')) {
                 return ['success' => false, 'message' => 'User account is not active.'];
@@ -1137,6 +1161,34 @@ class Auth {
             return $resent;
         } catch (Exception $e) {
             return ['success' => false, 'message' => 'Unable to resend verification code.'];
+        }
+    }
+
+    public function issuePendingMfaChallenge() {
+        try {
+            $ctx = $this->getPendingLoginContext(null, true);
+            if (!$ctx || $ctx['reason'] !== 'mfa') {
+                return ['success' => false, 'message' => 'No pending MFA challenge found.'];
+            }
+            $this->setPendingMfaBootstrap((string)$ctx['module'], false);
+            if (!empty($ctx['expired'])) {
+                return ['success' => false, 'message' => 'Verification session expired. Login again to request a new code.'];
+            }
+
+            $user = $this->getUserById((int)$ctx['user_id']);
+            if (!$user || !$this->isUserStatusActive($user['status'] ?? 'active')) {
+                $this->clearPendingLoginContext((string)$ctx['module']);
+                return ['success' => false, 'message' => 'User account is not active.'];
+            }
+
+            $mfa = new MfaService($this->db);
+            $issued = $mfa->issueChallenge((int)$ctx['user_id'], (string)$ctx['module'], (string)($user['email'] ?? ''));
+            if (!empty($issued['success'])) {
+                $this->setPendingLoginContext((string)$ctx['module'], (int)$ctx['user_id'], 'mfa', (string)($issued['message'] ?? 'Verification code sent.'));
+            }
+            return $issued;
+        } catch (Exception $e) {
+            return ['success' => false, 'message' => 'Unable to send verification code.'];
         }
     }
 

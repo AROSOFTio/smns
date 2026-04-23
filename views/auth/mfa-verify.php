@@ -48,6 +48,7 @@ $pendingNotice = trim((string)$auth->consumePendingLoginNotice($module));
 if ($pendingNotice !== '') {
     $success = $pendingNotice;
 }
+$shouldBootstrapMfa = $auth->shouldBootstrapPendingMfa($module);
 
 if ($auth->isLoggedIn() && $auth->getRole() === $module) {
     header('Location: ' . $postAuthTarget);
@@ -55,10 +56,25 @@ if ($auth->isLoggedIn() && $auth->getRole() === $module) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = trim((string)($_POST['action'] ?? 'verify'));
+    if ($action === 'bootstrap') {
+        header('Content-Type: application/json');
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+            echo json_encode(['success' => false, 'message' => 'Invalid request token.']);
+            exit;
+        }
+        $bootstrap = $auth->issuePendingMfaChallenge();
+        echo json_encode([
+            'success' => !empty($bootstrap['success']),
+            'message' => (string)($bootstrap['message'] ?? (!empty($bootstrap['success']) ? 'Verification code sent.' : 'Unable to send verification code.'))
+        ]);
+        exit;
+    }
+
     if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $error = 'Invalid request token.';
     } else {
-        $action = trim((string)($_POST['action'] ?? 'verify'));
         if ($action === 'resend') {
             $resend = $auth->resendPendingMfaChallenge();
             if (!empty($resend['success'])) {
@@ -93,6 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+$shouldBootstrapMfa = $auth->shouldBootstrapPendingMfa($module);
 
 $defaultMfaCodeLength = defined('MFA_CODE_LENGTH') ? (int)MFA_CODE_LENGTH : 6;
 $mfaCodeLength = (int)(function_exists('getSetting') ? getSetting('mfa_code_length', $defaultMfaCodeLength) : $defaultMfaCodeLength);
@@ -170,6 +187,12 @@ if ($mfaCodeLength > 8) {
         .mfa-actions .btn {
             margin-bottom: 8px;
         }
+        .mfa-status {
+            display: none;
+        }
+        .mfa-status.is-visible {
+            display: block;
+        }
         html[data-theme='dark'] .mfa-helper {
             color: #9ca3af;
         }
@@ -207,10 +230,17 @@ $moduleLabel = ucfirst($module);
 
         <?php if ($success): ?><div class="alert alert-success"><?php echo e($success); ?></div><?php endif; ?>
         <?php if ($error): ?><div class="alert alert-danger"><?php echo e($error); ?></div><?php endif; ?>
+        <div id="mfaStatus" class="alert mfa-status <?php echo $shouldBootstrapMfa ? 'alert-info is-visible' : ''; ?>">
+            <?php echo $shouldBootstrapMfa ? 'Opening your verification step now. Sending your code to email...' : ''; ?>
+        </div>
 
-        <p class="mfa-helper">Enter the verification code sent to your email. If it expires, click <strong>Resend Code</strong>.</p>
+        <p class="mfa-helper" id="mfaHelperText">
+            <?php echo $shouldBootstrapMfa
+                ? 'Your verification page is ready. We are sending a fresh code to your email now.'
+                : 'Enter the verification code sent to your email. If it expires, click <strong>Resend Code</strong>.'; ?>
+        </p>
 
-        <form method="post" class="login-form mfa-actions" id="mfaVerifyForm">
+        <form method="post" class="login-form mfa-actions" id="mfaVerifyForm" data-auto-issue="<?php echo $shouldBootstrapMfa ? '1' : '0'; ?>">
             <?php echo csrfField(); ?>
             <input type="hidden" name="module" value="<?php echo e($module); ?>">
             <input type="hidden" name="return_to" value="<?php echo e($returnTo); ?>">
@@ -234,11 +264,11 @@ $moduleLabel = ucfirst($module);
             </div>
         </form>
 
-        <form method="post" class="mfa-actions">
+        <form method="post" class="mfa-actions" id="mfaResendForm">
             <?php echo csrfField(); ?>
             <input type="hidden" name="module" value="<?php echo e($module); ?>">
             <input type="hidden" name="action" value="resend">
-            <button type="submit" class="btn btn-outline-secondary btn-block">Resend Code</button>
+            <button type="submit" class="btn btn-outline-secondary btn-block" id="mfaResendBtn">Resend Code</button>
         </form>
 
         <div class="text-center mt-2">
@@ -253,7 +283,16 @@ $moduleLabel = ucfirst($module);
 document.addEventListener('DOMContentLoaded', function () {
     var verifyForm = document.getElementById('mfaVerifyForm');
     var codeInput = document.getElementById('code');
+    var resendButton = document.getElementById('mfaResendBtn');
+    var helperText = document.getElementById('mfaHelperText');
+    var statusBox = document.getElementById('mfaStatus');
     if (!verifyForm || !codeInput) return;
+
+    function setStatus(type, message) {
+        if (!statusBox) return;
+        statusBox.className = 'alert mfa-status is-visible alert-' + type;
+        statusBox.textContent = message || '';
+    }
 
     var expectedLength = parseInt(codeInput.getAttribute('data-code-length') || '6', 10);
     if (!Number.isFinite(expectedLength) || expectedLength < 4) {
@@ -284,6 +323,48 @@ document.addEventListener('DOMContentLoaded', function () {
     codeInput.addEventListener('paste', function () {
         setTimeout(tryAutoSubmit, 0);
     });
+
+    if (verifyForm.dataset.autoIssue === '1') {
+        if (resendButton) {
+            resendButton.disabled = true;
+        }
+        fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: new URLSearchParams({
+                csrf_token: verifyForm.querySelector('input[name="csrf_token"]').value,
+                module: verifyForm.querySelector('input[name="module"]').value,
+                return_to: verifyForm.querySelector('input[name="return_to"]').value,
+                action: 'bootstrap'
+            })
+        })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+            if (data && data.success) {
+                setStatus('success', data.message || 'Verification code sent to your email.');
+                if (helperText) {
+                    helperText.innerHTML = 'Enter the verification code sent to your email. If it expires, click <strong>Resend Code</strong>.';
+                }
+            } else {
+                setStatus('danger', (data && data.message) ? data.message : 'Unable to send verification code.');
+                if (helperText) {
+                    helperText.innerHTML = 'Use <strong>Resend Code</strong> to request a new verification email.';
+                }
+            }
+        })
+        .catch(function () {
+            setStatus('danger', 'Unable to send verification code right now. Please use Resend Code.');
+            if (helperText) {
+                helperText.innerHTML = 'Use <strong>Resend Code</strong> to request a new verification email.';
+            }
+        })
+        .finally(function () {
+            if (resendButton) {
+                resendButton.disabled = false;
+            }
+            codeInput.focus();
+        });
+    }
 });
 </script>
 <script src="<?php echo BASE_URL; ?>/assets/js/fold-global.js?v=<?php echo urlencode((string)APP_VERSION); ?>" defer></script>

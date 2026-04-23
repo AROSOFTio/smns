@@ -96,14 +96,21 @@ class MfaService {
         return in_array($role, $roles, true);
     }
 
-    public function issueChallenge($userId, $module, $email) {
-        $userId = (int)$userId;
+    public function resolveRecipientEmail($module, $email) {
         $module = strtolower(trim((string)$module));
         $email = trim((string)$email);
         $adminOtpEmail = trim((string)self::getSettingValue('admin_mfa_email', (defined('ADMIN_MFA_EMAIL') ? ADMIN_MFA_EMAIL : '')));
         if ($module === 'admin' && filter_var($adminOtpEmail, FILTER_VALIDATE_EMAIL)) {
             $email = $adminOtpEmail;
         }
+
+        return filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : '';
+    }
+
+    public function issueChallenge($userId, $module, $email) {
+        $userId = (int)$userId;
+        $module = strtolower(trim((string)$module));
+        $email = $this->resolveRecipientEmail($module, $email);
         if ($userId <= 0 || $module === '') {
             return ['success' => false, 'message' => 'Unable to prepare MFA challenge.'];
         }

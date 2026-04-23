@@ -136,6 +136,20 @@ function smnsResolveProfileName($module, array $user, $fallback = '') {
     return $fallbackName;
 }
 
+function smnsResolveFirstNameLabel($name, $fallback = '') {
+    $value = trim((string)$name);
+    if ($value === '') {
+        $value = trim((string)$fallback);
+    }
+    if ($value === '') {
+        return 'you';
+    }
+
+    $parts = preg_split('/\s+/', $value);
+    $first = trim((string)($parts[0] ?? ''));
+    return $first !== '' ? $first : $value;
+}
+
 function smnsFindStudentProfileByStudentId($studentId) {
     $studentId = trim((string)$studentId);
     if ($studentId === '') {
@@ -479,7 +493,7 @@ if (!empty($loggedModules)) {
                 </div>
                 <div class="text-center mt-3">
                     <a href="<?php echo e(BASE_URL . '/views/auth/login.php'); ?>" class="btn btn-link btn-sm">
-                        <i class="fas fa-arrow-left"></i> Not you? Use different account
+                        <i class="fas fa-arrow-left"></i> Not <?php echo e(smnsResolveFirstNameLabel($profileName, $enteredUsername)); ?>? Use different account
                     </a>
                 </div>
             <?php endif; ?>

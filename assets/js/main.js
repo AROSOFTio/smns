@@ -402,7 +402,10 @@ function getLoadingLogoSrc() {
     return (baseUrl ? baseUrl : '') + '/assets/img/sem.PNG' + (version ? ('?v=' + encodeURIComponent(version)) : '');
 }
 
-function showLoading() {
+var smnsLoadingTimer = null;
+var smnsLoadingDelayMs = 180;
+
+function renderLoadingOverlay() {
     if ($('.loading-overlay').length) {
         return;
     }
@@ -422,8 +425,33 @@ function showLoading() {
     );
 }
 
+function showLoading(immediate) {
+    if (smnsLoadingTimer) {
+        clearTimeout(smnsLoadingTimer);
+        smnsLoadingTimer = null;
+    }
+
+    if (immediate === true) {
+        renderLoadingOverlay();
+        return;
+    }
+
+    if ($('.loading-overlay').length) {
+        return;
+    }
+
+    smnsLoadingTimer = window.setTimeout(function() {
+        smnsLoadingTimer = null;
+        renderLoadingOverlay();
+    }, smnsLoadingDelayMs);
+}
+
 // Hide loading spinner
 function hideLoading() {
+    if (smnsLoadingTimer) {
+        clearTimeout(smnsLoadingTimer);
+        smnsLoadingTimer = null;
+    }
     $('.loading-overlay').remove();
 }
 

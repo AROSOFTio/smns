@@ -1,6 +1,8 @@
 (function () {
     if (window.__smnsFoldGlobalInit) return;
     window.__smnsFoldGlobalInit = true;
+    var loadingOverlayTimer = null;
+    var loadingOverlayDelayMs = 180;
 
     function discoverBaseUrl() {
         if (typeof window.SMNS_BASE_URL === 'string' && window.SMNS_BASE_URL !== '') {
@@ -47,6 +49,10 @@
     }
 
     function showLoadingOverlay() {
+        if (loadingOverlayTimer) {
+            clearTimeout(loadingOverlayTimer);
+            loadingOverlayTimer = null;
+        }
         if (document.querySelector('.loading-overlay')) {
             return;
         }
@@ -64,6 +70,16 @@
                 '<div class="loading-brand-dots"><span></span><span></span><span></span></div>' +
             '</div>';
         document.body.appendChild(overlay);
+    }
+
+    function scheduleLoadingOverlay() {
+        if (document.querySelector('.loading-overlay') || loadingOverlayTimer) {
+            return;
+        }
+        loadingOverlayTimer = window.setTimeout(function () {
+            loadingOverlayTimer = null;
+            showLoadingOverlay();
+        }, loadingOverlayDelayMs);
     }
 
     function shouldHandleLinkClick(event, link) {
@@ -100,7 +116,7 @@
                 if (!shouldHandleLinkClick(event, link)) {
                     return;
                 }
-                showLoadingOverlay();
+                scheduleLoadingOverlay();
             });
         });
 
@@ -118,7 +134,7 @@
                     return;
                 }
 
-                showLoadingOverlay();
+                scheduleLoadingOverlay();
             });
         });
     }
