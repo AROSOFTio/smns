@@ -90,6 +90,9 @@ define('MFA_ENFORCED_ROLES', 'admin,finance');
 define('MFA_CODE_LENGTH', 6);
 define('MFA_CHALLENGE_TTL_SECONDS', 300);
 define('MFA_MAX_ATTEMPTS', 5);
+define('ADMIN_MFA_EMAIL', getenv('ADMIN_MFA_EMAIL') ?: 'your-admin-inbox@example.com');
+define('MFA_LOCAL_DELIVERY_MODE', getenv('MFA_LOCAL_DELIVERY_MODE') ?: 'email');
+define('MFA_LOCAL_FALLBACK_EXPOSE_CODE', true);
 
 // Privacy consent controls
 define('PRIVACY_CONSENT_REQUIRED', true);
