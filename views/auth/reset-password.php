@@ -75,6 +75,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <?php if ($success !== ''): ?>
             <div class="alert alert-success"><?php echo e($success); ?></div>
+            <div class="text-center mt-3">
+                <a href="<?php echo e($backLoginUrl); ?>" class="btn btn-primary btn-block">Continue to Login</a>
+            </div>
         <?php endif; ?>
         <?php if ($error !== ''): ?>
             <div class="alert alert-danger"><?php echo e($error); ?></div>
@@ -127,6 +130,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <script src="../../assets/js/login-theme.js?v=<?php echo urlencode((string)APP_VERSION); ?>"></script>
 <script src="<?php echo BASE_URL; ?>/assets/js/fold-global.js?v=<?php echo urlencode((string)APP_VERSION); ?>"></script>
 <script>
+    <?php if ($success !== ''): ?>
+    setTimeout(function () {
+        window.location.href = <?php echo json_encode($backLoginUrl); ?>;
+    }, 1800);
+    <?php endif; ?>
+
     function togglePassword(id, btn) {
         var input = document.getElementById(id);
         if (!input) return;

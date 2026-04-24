@@ -1489,8 +1489,13 @@ class Auth {
     public function generatePasswordResetToken($email) {
         try {
             $sql = "SELECT id FROM users WHERE email = :email AND status = 'active'";
+            $params = ['email' => $email];
+            if (!empty($this->module)) {
+                $sql .= " AND role = :role";
+                $params['role'] = $this->module;
+            }
             $stmt = $this->db->prepare($sql);
-            $stmt->execute(['email' => $email]);
+            $stmt->execute($params);
             $user = $stmt->fetch();
             
             if (!$user) {

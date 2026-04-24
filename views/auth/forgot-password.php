@@ -22,6 +22,26 @@ $backLoginUrl = $role !== ''
 
 $error = '';
 $success = '';
+$resetPreviewUrl = '';
+
+function smnsIsLocalDebugContext() {
+    $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+    $serverName = strtolower((string)($_SERVER['SERVER_NAME'] ?? ''));
+    $remoteAddr = strtolower((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+    $serverAddr = strtolower((string)($_SERVER['SERVER_ADDR'] ?? ''));
+
+    $hostOnly = $host;
+    if (strpos($hostOnly, ':') !== false) {
+        $hostOnly = substr($hostOnly, 0, (int)strpos($hostOnly, ':'));
+    }
+
+    $locals = ['localhost', '127.0.0.1', '::1'];
+    return (defined('APP_DEBUG') && APP_DEBUG)
+        || in_array($hostOnly, $locals, true)
+        || in_array($serverName, $locals, true)
+        || in_array($remoteAddr, $locals, true)
+        || in_array($serverAddr, $locals, true);
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrfValid = Security::verifyCSRFToken($_POST['csrf_token'] ?? '');
@@ -40,6 +60,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $resetUrl = BASE_URL . '/views/auth/reset-password.php?token=' . urlencode($token);
                 if ($role !== '') {
                     $resetUrl .= '&role=' . urlencode($role);
+                }
+                if (smnsIsLocalDebugContext()) {
+                    $resetPreviewUrl = $resetUrl;
                 }
 
                 $appName = defined('APP_NAME') ? APP_NAME : 'System';
@@ -64,10 +87,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'context_label' => 'Password Reset Request'
                 ]);
                 if (!$sent) {
-                    error_log('Forgot password email failed: ' . Helper::getLastEmailError());
+                    $deliveryError = trim((string)Helper::getLastEmailError());
+                    error_log('Forgot password email failed: ' . $deliveryError);
+                    if (smnsIsLocalDebugContext()) {
+                        $error = 'Reset link could not be emailed. Mailer error: ' . ($deliveryError !== '' ? $deliveryError : 'Unknown mail transport failure.');
+                    } else {
+                        $success = 'If that email is registered, we have sent a password reset link.';
+                    }
+                } else {
+                    $success = 'If that email is registered, we have sent a password reset link.';
+                }
+            } else {
+                $lookupMessage = trim((string)($tokenResult['message'] ?? ''));
+                error_log('Forgot password lookup skipped: ' . ($lookupMessage !== '' ? $lookupMessage : 'Unknown lookup result.'));
+                if (smnsIsLocalDebugContext()) {
+                    $roleText = $role !== '' ? ($roleLabel . ' ') : '';
+                    $error = 'No active ' . $roleText . 'account matches that email address.';
+                } else {
+                    $success = 'If that email is registered, we have sent a password reset link.';
                 }
             }
-            $success = 'If that email is registered, we have sent a password reset link.';
         } catch (Exception $e) {
             error_log('Forgot password error: ' . $e->getMessage());
             $error = 'Unable to process your request right now.';
@@ -108,6 +147,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
         <?php if ($error !== ''): ?>
             <div class="alert alert-danger"><?php echo e($error); ?></div>
+        <?php endif; ?>
+        <?php if ($resetPreviewUrl !== ''): ?>
+            <div class="alert alert-warning">
+                Local reset shortcut is ready.
+                <a href="<?php echo e($resetPreviewUrl); ?>" class="btn btn-link btn-sm" style="padding-left:6px;">Open Reset Page</a>
+            </div>
         <?php endif; ?>
 
         <form method="POST" class="login-form" autocomplete="on">

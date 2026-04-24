@@ -139,6 +139,116 @@
         });
     }
 
+    function isAutoFilterForm(form) {
+        if (!(form instanceof HTMLFormElement)) {
+            return false;
+        }
+        if ((form.getAttribute('method') || '').toLowerCase() !== 'get') {
+            return false;
+        }
+        if (form.dataset.noAutoFilter === '1') {
+            return false;
+        }
+
+        var className = (form.className || '').toLowerCase();
+        if (className.indexOf('filter') !== -1 || className.indexOf('search') !== -1) {
+            return true;
+        }
+
+        var candidateFields = form.querySelectorAll('input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="month"], select');
+        if (!candidateFields.length) {
+            return false;
+        }
+
+        var submitButtons = form.querySelectorAll('button[type="submit"], input[type="submit"]');
+        for (var i = 0; i < submitButtons.length; i++) {
+            var label = '';
+            if (submitButtons[i].tagName === 'INPUT') {
+                label = submitButtons[i].value || '';
+            } else {
+                label = submitButtons[i].textContent || '';
+            }
+            label = label.toLowerCase();
+            if (label.indexOf('filter') !== -1 || label.indexOf('search') !== -1 || label.indexOf('apply') !== -1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    function bindAutoFilterForms(root) {
+        var scope = root && root.querySelectorAll ? root : document;
+        var forms = scope.querySelectorAll('form');
+
+        forms.forEach(function (form) {
+            if (form.dataset.smnsAutoFilterBound === '1') {
+                return;
+            }
+            if (!isAutoFilterForm(form)) {
+                return;
+            }
+
+            form.dataset.smnsAutoFilterBound = '1';
+            var submitTimer = null;
+            var debounceMs = 350;
+
+            function resetPaging() {
+                var pageFields = form.querySelectorAll('input[name="page"], select[name="page"]');
+                pageFields.forEach(function (field) {
+                    if (field.tagName === 'SELECT') {
+                        field.value = '1';
+                    } else {
+                        field.value = '1';
+                    }
+                });
+            }
+
+            function queueSubmit(immediate) {
+                if (submitTimer) {
+                    clearTimeout(submitTimer);
+                    submitTimer = null;
+                }
+
+                var delay = immediate ? 0 : debounceMs;
+                submitTimer = window.setTimeout(function () {
+                    submitTimer = null;
+                    resetPaging();
+                    if (typeof form.requestSubmit === 'function') {
+                        form.requestSubmit();
+                    } else {
+                        form.submit();
+                    }
+                }, delay);
+            }
+
+            var textInputs = form.querySelectorAll('input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="month"]');
+            textInputs.forEach(function (input) {
+                if (input.dataset.autoFilterBound === '1' || input.type === 'hidden') {
+                    return;
+                }
+                input.dataset.autoFilterBound = '1';
+                input.addEventListener('input', function () {
+                    queueSubmit(false);
+                });
+                input.addEventListener('change', function () {
+                    queueSubmit(true);
+                });
+            });
+
+            var selects = form.querySelectorAll('select');
+            selects.forEach(function (select) {
+                if (select.dataset.autoFilterBound === '1') {
+                    return;
+                }
+                select.dataset.autoFilterBound = '1';
+                select.addEventListener('change', function () {
+                    queueSubmit(true);
+                });
+            });
+        });
+    }
+
     function initAutoFoldSections(root) {
         var scope = root && root.querySelectorAll ? root : document;
         var selectors = [
@@ -193,6 +303,7 @@
     function boot() {
         initAutoFoldSections(document);
         bindNavigationLoading(document);
+        bindAutoFilterForms(document);
         if (window.MutationObserver) {
             var foldRefreshTimer = null;
             var observer = new MutationObserver(function () {
@@ -200,6 +311,7 @@
                 foldRefreshTimer = setTimeout(function () {
                     initAutoFoldSections(document);
                     bindNavigationLoading(document);
+                    bindAutoFilterForms(document);
                 }, 120);
             });
             observer.observe(document.body, { childList: true, subtree: true });

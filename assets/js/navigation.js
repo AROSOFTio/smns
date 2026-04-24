@@ -92,15 +92,18 @@
     function initUserDropdown() {
         const dropdown = document.querySelector('#userDropdown');
         const dropdownMenu = document.querySelector('#userDropdownMenu');
+        const dropdownWrap = dropdown ? dropdown.closest('.user-dropdown') : null;
         
-        if (dropdown && dropdownMenu) {
+        if (dropdown && dropdownMenu && dropdownWrap) {
             dropdown.addEventListener('click', (e) => {
                 e.stopPropagation();
+                dropdownWrap.classList.toggle('active');
                 dropdownMenu.classList.toggle('show');
             });
             
             // Close dropdown when clicking outside
             document.addEventListener('click', () => {
+                dropdownWrap.classList.remove('active');
                 dropdownMenu.classList.remove('show');
             });
             

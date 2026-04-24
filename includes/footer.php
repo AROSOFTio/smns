@@ -7,6 +7,7 @@
     
     <script src="https://code.jquery.com/jquery-3.6.0.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js" defer></script>
+    <script src="<?php echo BASE_URL; ?>/assets/js/fold-global.js?v=<?php echo urlencode((string)APP_VERSION); ?>" defer></script>
     <script src="<?php echo BASE_URL; ?>/assets/js/navigation.js?v=<?php echo urlencode((string)APP_VERSION); ?>" defer></script>
     <script src="<?php echo BASE_URL; ?>/assets/js/main.js?v=<?php echo urlencode((string)APP_VERSION); ?>" defer></script>
     <?php if (isset($additionalJS)): ?>

@@ -58,6 +58,7 @@ $isStudentPortalPage = (strpos($requestPath, '/views/student/') !== false);
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/style.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/theme-shared.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/responsive-nav.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
     <?php if (isset($additionalCSS)): ?>
         <?php foreach($additionalCSS as $css): ?>
             <link rel="stylesheet" href="<?php echo BASE_URL . '/assets/css/' . $css . '?v=' . urlencode((string)APP_VERSION); ?>">
