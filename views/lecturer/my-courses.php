@@ -80,11 +80,7 @@ include '../../includes/header.php';
                 <div class="user-dropdown">
                     <button class="user-dropdown-toggle" id="userDropdown">
                         <div class="user-avatar">
-                            <?php if (!empty($lecturerProfile['photo'])): ?>
-                                <img src="<?php echo BASE_URL . '/' . $lecturerProfile['photo']; ?>" alt="Profile Photo" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
-                            <?php else: ?>
-                                <?php echo strtoupper(substr($lecturerProfile['first_name'], 0, 1) . substr($lecturerProfile['last_name'], 0, 1)); ?>
-                            <?php endif; ?>
+                            <?php echo e(strtoupper(substr((string)($lecturerProfile['first_name'] ?? 'L'), 0, 1) . substr((string)($lecturerProfile['last_name'] ?? ''), 0, 1)) ?: 'L'); ?>
                         </div>
                         <div>
                             <strong><?php echo e($lecturerProfile['first_name']); ?> <?php echo e($lecturerProfile['last_name']); ?></strong>

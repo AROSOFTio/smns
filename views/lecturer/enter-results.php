@@ -742,6 +742,14 @@ html[data-theme='dark'] .table.table-sm tbody td {
     border-color: #334155;
 }
 
+html[data-theme='dark'] .marks-table tbody tr {
+    background: #162235;
+}
+
+html[data-theme='dark'] .marks-table tbody tr:nth-child(even) {
+    background: #0f1b2d;
+}
+
 html[data-theme='dark'] .table.table-hover tbody tr:hover {
     background: #1e293b !important;
 }

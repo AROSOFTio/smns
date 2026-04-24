@@ -90,28 +90,49 @@
 
     // Enhanced user dropdown functionality
     function initUserDropdown() {
-        const dropdown = document.querySelector('#userDropdown');
-        const dropdownMenu = document.querySelector('#userDropdownMenu');
-        const dropdownWrap = dropdown ? dropdown.closest('.user-dropdown') : null;
-        
-        if (dropdown && dropdownMenu && dropdownWrap) {
+        const dropdowns = document.querySelectorAll('.user-dropdown');
+
+        dropdowns.forEach((dropdownWrap) => {
+            const dropdown = dropdownWrap.querySelector('.user-dropdown-toggle');
+            const dropdownMenu = dropdownWrap.querySelector('.user-dropdown-menu');
+
+            if (!dropdown || !dropdownMenu || dropdown.dataset.smnsDropdownBound === '1') {
+                return;
+            }
+
+            dropdown.dataset.smnsDropdownBound = '1';
+
             dropdown.addEventListener('click', (e) => {
                 e.stopPropagation();
+
+                document.querySelectorAll('.user-dropdown.active').forEach((openWrap) => {
+                    if (openWrap !== dropdownWrap) {
+                        openWrap.classList.remove('active');
+                        const openMenu = openWrap.querySelector('.user-dropdown-menu');
+                        if (openMenu) {
+                            openMenu.classList.remove('show');
+                        }
+                    }
+                });
+
                 dropdownWrap.classList.toggle('active');
                 dropdownMenu.classList.toggle('show');
             });
-            
-            // Close dropdown when clicking outside
-            document.addEventListener('click', () => {
-                dropdownWrap.classList.remove('active');
-                dropdownMenu.classList.remove('show');
-            });
-            
-            // Prevent dropdown from closing when clicking inside menu
+
             dropdownMenu.addEventListener('click', (e) => {
                 e.stopPropagation();
             });
-        }
+        });
+
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.user-dropdown.active').forEach((dropdownWrap) => {
+                dropdownWrap.classList.remove('active');
+                const dropdownMenu = dropdownWrap.querySelector('.user-dropdown-menu');
+                if (dropdownMenu) {
+                    dropdownMenu.classList.remove('show');
+                }
+            });
+        });
     }
 
     // Real-time clock and date

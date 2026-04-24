@@ -45,6 +45,73 @@
                 }
             }
         }
+
+        $topbarModule = $moduleFromPath;
+        $topbarCurrentUser = null;
+        if ($topbarModule !== '' && class_exists('Auth') && session_status() === PHP_SESSION_ACTIVE) {
+            try {
+                $topbarAuth = new Auth($topbarModule);
+                if ($topbarAuth->isLoggedIn()) {
+                    $topbarCurrentUser = $topbarAuth->getCurrentUser();
+                }
+            } catch (Exception $e) {
+                $topbarCurrentUser = null;
+            }
+        }
+
+        $topbarTemplateData = [
+            'module' => '',
+            'display_name' => '',
+            'subtitle' => '',
+            'initials' => '',
+            'menu_items' => []
+        ];
+
+        if (is_array($topbarCurrentUser) && !empty($topbarCurrentUser)) {
+            $profile = (array)($topbarCurrentUser['profile'] ?? []);
+            $firstName = trim((string)($profile['first_name'] ?? ''));
+            $lastName = trim((string)($profile['last_name'] ?? ''));
+            $displayName = trim($firstName . ' ' . $lastName);
+            $emailAddress = trim((string)($profile['email'] ?? ($topbarCurrentUser['email'] ?? '')));
+            $initials = strtoupper(substr($firstName !== '' ? $firstName : ((string)($topbarCurrentUser['username'] ?? 'U')), 0, 1) . substr($lastName, 0, 1));
+            if ($initials === '') {
+                $initials = 'U';
+            }
+
+            $topbarTemplateData['module'] = $topbarModule;
+            $topbarTemplateData['display_name'] = $displayName !== '' ? $displayName : (string)($topbarCurrentUser['username'] ?? 'User');
+
+            if ($topbarModule === 'admin') {
+                $topbarTemplateData['subtitle'] = 'Admin';
+                $topbarTemplateData['menu_items'] = [
+                    ['href' => BASE_URL . '/views/admin/profile.php', 'icon' => 'fas fa-user', 'label' => 'My Profile'],
+                    ['href' => BASE_URL . '/views/admin/settings.php', 'icon' => 'fas fa-cog', 'label' => 'Settings'],
+                    ['divider' => true],
+                    ['href' => BASE_URL . '/views/admin/logout.php', 'icon' => 'fas fa-sign-out-alt', 'label' => 'Logout', 'logout' => true],
+                ];
+            } elseif ($topbarModule === 'lecturer') {
+                $topbarTemplateData['subtitle'] = trim((string)($profile['lecturer_id'] ?? 'Lecturer'));
+                $topbarTemplateData['menu_items'] = [
+                    ['href' => BASE_URL . '/views/lecturer/profile.php', 'icon' => 'fas fa-user', 'label' => 'My Profile'],
+                    ['href' => BASE_URL . '/views/lecturer/my-courses.php', 'icon' => 'fas fa-book', 'label' => 'My Courses'],
+                    ['href' => BASE_URL . '/views/lecturer/reports.php', 'icon' => 'fas fa-file-alt', 'label' => 'Reports'],
+                    ['href' => BASE_URL . '/views/lecturer/change-password.php', 'icon' => 'fas fa-key', 'label' => 'Change Password'],
+                    ['divider' => true],
+                    ['href' => BASE_URL . '/views/lecturer/logout.php', 'icon' => 'fas fa-sign-out-alt', 'label' => 'Logout', 'logout' => true],
+                ];
+            } elseif ($topbarModule === 'finance') {
+                $topbarTemplateData['subtitle'] = 'Finance Staff';
+                $topbarTemplateData['menu_items'] = [
+                    ['href' => BASE_URL . '/views/finance/change-password.php', 'icon' => 'fas fa-key', 'label' => 'Change Password'],
+                    ['divider' => true],
+                    ['href' => BASE_URL . '/views/finance/logout.php', 'icon' => 'fas fa-sign-out-alt', 'label' => 'Logout', 'logout' => true],
+                ];
+            } else {
+                $topbarTemplateData['subtitle'] = $emailAddress !== '' ? $emailAddress : ucfirst($topbarModule);
+            }
+
+            $topbarTemplateData['initials'] = $initials;
+        }
     ?>
 
         <!-- Session Inactivity Timeout Checker -->
@@ -1457,6 +1524,198 @@
                 applyTheme(nextMode);
             });
         }
+    })();
+    </script>
+    <script>
+    (function() {
+        var topbarData = <?php echo json_encode($topbarTemplateData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+        if (!topbarData || !topbarData.module || ['admin', 'lecturer', 'finance'].indexOf(String(topbarData.module)) === -1) {
+            return;
+        }
+
+        function createTimeBlock() {
+            var wrap = document.createElement('div');
+            wrap.className = 'topbar-time smns-injected-topbar-time';
+
+            var inner = document.createElement('div');
+            inner.id = 'current-date-time';
+
+            var time = document.createElement('div');
+            time.className = 'time-display';
+            time.textContent = '';
+
+            var date = document.createElement('div');
+            date.className = 'date-display';
+            date.textContent = '';
+
+            inner.appendChild(time);
+            inner.appendChild(date);
+            wrap.appendChild(inner);
+            return wrap;
+        }
+
+        function createUserDropdown() {
+            var userInfo = document.createElement('div');
+            userInfo.className = 'user-info smns-injected-user-info';
+
+            var dropdown = document.createElement('div');
+            dropdown.className = 'user-dropdown';
+
+            var button = document.createElement('button');
+            button.className = 'user-dropdown-toggle';
+            button.type = 'button';
+
+            var avatar = document.createElement('div');
+            avatar.className = 'user-avatar';
+            avatar.textContent = String(topbarData.initials || 'U');
+
+            var meta = document.createElement('div');
+            var strong = document.createElement('strong');
+            strong.textContent = String(topbarData.display_name || 'User');
+            var small = document.createElement('small');
+            small.textContent = String(topbarData.subtitle || '');
+            meta.appendChild(strong);
+            meta.appendChild(document.createElement('br'));
+            meta.appendChild(small);
+
+            var arrow = document.createElement('i');
+            arrow.className = 'dropdown-arrow';
+            arrow.textContent = '▼';
+
+            button.appendChild(avatar);
+            button.appendChild(meta);
+            button.appendChild(arrow);
+
+            var menu = document.createElement('div');
+            menu.className = 'user-dropdown-menu';
+
+            (Array.isArray(topbarData.menu_items) ? topbarData.menu_items : []).forEach(function(item) {
+                if (item && item.divider) {
+                    var divider = document.createElement('div');
+                    divider.className = 'dropdown-divider';
+                    menu.appendChild(divider);
+                    return;
+                }
+
+                if (!item || !item.href) {
+                    return;
+                }
+
+                var link = document.createElement('a');
+                link.className = 'dropdown-item' + (item.logout ? ' logout-item' : '');
+                link.href = String(item.href);
+
+                var icon = document.createElement('i');
+                icon.className = String(item.icon || 'fas fa-circle');
+                link.appendChild(icon);
+                link.appendChild(document.createTextNode(' ' + String(item.label || 'Open')));
+                menu.appendChild(link);
+            });
+
+            button.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var isActive = dropdown.classList.contains('active');
+                document.querySelectorAll('.user-dropdown.active').forEach(function(openDropdown) {
+                    openDropdown.classList.remove('active');
+                    var openMenu = openDropdown.querySelector('.user-dropdown-menu');
+                    if (openMenu) {
+                        openMenu.classList.remove('show');
+                    }
+                });
+                if (!isActive) {
+                    dropdown.classList.add('active');
+                    menu.classList.add('show');
+                }
+            });
+
+            menu.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+
+            dropdown.appendChild(button);
+            dropdown.appendChild(menu);
+            userInfo.appendChild(dropdown);
+            return userInfo;
+        }
+
+        function refreshInjectedDateTime() {
+            var holder = document.querySelector('.smns-injected-topbar-time #current-date-time');
+            if (!holder) {
+                return;
+            }
+
+            var now = new Date();
+            var hours = now.getHours();
+            var minutes = now.getMinutes();
+            var seconds = now.getSeconds();
+            var ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12;
+            hours = hours ? hours : 12;
+            minutes = minutes < 10 ? '0' + minutes : minutes;
+            seconds = seconds < 10 ? '0' + seconds : seconds;
+
+            var timeEl = holder.querySelector('.time-display');
+            var dateEl = holder.querySelector('.date-display');
+            if (timeEl) {
+                timeEl.textContent = hours + ':' + minutes + ':' + seconds + ' ' + ampm;
+            }
+            if (dateEl) {
+                dateEl.textContent = now.toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+            }
+        }
+
+        function enhanceTopbar(topbar) {
+            if (!(topbar instanceof HTMLElement) || topbar.classList.contains('smns-topbar-enhanced')) {
+                return;
+            }
+
+            var right = topbar.querySelector('.topbar-right');
+            if (!(right instanceof HTMLElement)) {
+                right = document.createElement('div');
+                right.className = 'topbar-right';
+                topbar.appendChild(right);
+            }
+
+            var standard = right.querySelector('.smns-standard-topbar-actions');
+            if (!(standard instanceof HTMLElement)) {
+                standard = document.createElement('div');
+                standard.className = 'smns-standard-topbar-actions';
+                standard.style.display = 'flex';
+                standard.style.alignItems = 'center';
+                standard.style.gap = '16px';
+                standard.style.flexWrap = 'wrap';
+                right.appendChild(standard);
+            }
+
+            if (!right.querySelector('.topbar-time')) {
+                standard.appendChild(createTimeBlock());
+            }
+
+            if (!right.querySelector('.user-dropdown')) {
+                standard.appendChild(createUserDropdown());
+            }
+
+            topbar.classList.add('smns-topbar-enhanced');
+        }
+
+        document.querySelectorAll('.topbar').forEach(enhanceTopbar);
+        refreshInjectedDateTime();
+        window.setInterval(refreshInjectedDateTime, 1000);
+
+        document.addEventListener('click', function() {
+            document.querySelectorAll('.user-dropdown.active').forEach(function(dropdown) {
+                dropdown.classList.remove('active');
+                var menu = dropdown.querySelector('.user-dropdown-menu');
+                if (menu) {
+                    menu.classList.remove('show');
+                }
+            });
+        });
     })();
     </script>
 </body>

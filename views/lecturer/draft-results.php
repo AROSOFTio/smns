@@ -181,30 +181,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_submit_drafts'])
     }
 }
 
-// Fetch academic years for filter
-$window = getAcademicCalendarDisplayWindowBounds();
-$academicYearsStmt = $conn->prepare("SELECT id, year_name FROM academic_years WHERE start_date >= :start_date AND start_date <= :end_date ORDER BY start_date DESC");
-$academicYearsStmt->execute($window);
-$academicYears = $academicYearsStmt->fetchAll();
+// Build filter options from the lecturer's actual saved result rows so archived or
+// no-longer-active course assignments still remain filterable here.
+$filterScopeSql = "
+    FROM results r
+    JOIN semesters sem_filter ON sem_filter.id = r.semester_id
+    JOIN academic_years ay_filter ON ay_filter.id = sem_filter.academic_year_id
+    JOIN courses c_filter ON c_filter.id = r.course_id
+    WHERE r.status IN ('draft', 'submitted', 'approved', 'published')
+      AND r.entered_by IN ({$lecturerOwnerSql})
+";
 
-// Fetch semesters for filter
+$academicYearsStmt = $conn->prepare("
+    SELECT DISTINCT ay_filter.id, ay_filter.year_name, ay_filter.start_date
+    {$filterScopeSql}
+    ORDER BY ay_filter.start_date DESC, ay_filter.year_name DESC
+");
+$academicYearsStmt->execute($lecturerOwnerParams);
+$academicYears = $academicYearsStmt->fetchAll(PDO::FETCH_ASSOC);
+
 $semesters = [];
-if ($filterAcademicYear) {
-    $stmt = $conn->prepare("SELECT id, semester_number, semester_name FROM semesters WHERE academic_year_id = :ay ORDER BY semester_number");
-    $stmt->execute(['ay' => $filterAcademicYear]);
-    $semesters = $stmt->fetchAll();
+if ($filterAcademicYear > 0) {
+    $semesterParams = $lecturerOwnerParams;
+    $semesterParams['ay'] = (int)$filterAcademicYear;
+    $semesterStmt = $conn->prepare("
+        SELECT DISTINCT sem_filter.id, sem_filter.semester_number, sem_filter.semester_name
+        {$filterScopeSql}
+          AND sem_filter.academic_year_id = :ay
+        ORDER BY sem_filter.semester_number
+    ");
+    $semesterStmt->execute($semesterParams);
+    $semesters = $semesterStmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-// Fetch courses taught by this lecturer for the selected scope.
+$coursesParams = $lecturerOwnerParams;
 $coursesSql = "
-    SELECT DISTINCT c.id, c.course_code, c.course_name
-    FROM course_assignments ca
-    JOIN courses c ON ca.course_id = c.id
-    JOIN semesters sem_filter ON sem_filter.id = ca.semester_id
-    WHERE ca.lecturer_id = :lid
-      AND ca.status IN ('active','completed')
+    SELECT DISTINCT c_filter.id, c_filter.course_code, c_filter.course_name
+    {$filterScopeSql}
 ";
-$coursesParams = ['lid' => (int)$lecturerProfile['id']];
 
 if ($filterAcademicYear > 0) {
     $coursesSql .= " AND sem_filter.academic_year_id = :course_ay";
@@ -212,14 +226,14 @@ if ($filterAcademicYear > 0) {
 }
 
 if ($filterSemester > 0) {
-    $coursesSql .= " AND ca.semester_id = :course_sem";
+    $coursesSql .= " AND sem_filter.id = :course_sem";
     $coursesParams['course_sem'] = (int)$filterSemester;
 }
 
-$coursesSql .= " ORDER BY c.course_code";
+$coursesSql .= " ORDER BY c_filter.course_code, c_filter.course_name";
 $coursesStmt = $conn->prepare($coursesSql);
 $coursesStmt->execute($coursesParams);
-$courses = $coursesStmt->fetchAll();
+$courses = $coursesStmt->fetchAll(PDO::FETCH_ASSOC);
 
 if ($filterCourse > 0) {
     $visibleCourseIds = array_map('intval', array_column($courses, 'id'));
@@ -228,7 +242,7 @@ if ($filterCourse > 0) {
     }
 }
 
-// Build query for all results entered by this lecturer (draft + submitted)
+// Build query for all results entered by this lecturer across workflow stages.
 $sql = "
     SELECT 
         r.id,
@@ -255,7 +269,7 @@ $sql = "
     JOIN courses c ON r.course_id = c.id
     JOIN semesters sem ON r.semester_id = sem.id
     JOIN academic_years ay ON sem.academic_year_id = ay.id
-      WHERE r.status IN ('draft', 'submitted')
+      WHERE r.status IN ('draft', 'submitted', 'approved', 'published')
       AND r.entered_by IN ({$lecturerOwnerSql})
     ";
 
@@ -283,11 +297,17 @@ $stmt->execute($params);
 $draftResults = $stmt->fetchAll();
 $draftOnlyCount = 0;
 $submittedOnlyCount = 0;
+$approvedOnlyCount = 0;
+$publishedOnlyCount = 0;
 foreach ($draftResults as $row) {
     if (($row['result_status'] ?? '') === 'draft') {
         $draftOnlyCount++;
     } elseif (($row['result_status'] ?? '') === 'submitted') {
         $submittedOnlyCount++;
+    } elseif (($row['result_status'] ?? '') === 'approved') {
+        $approvedOnlyCount++;
+    } elseif (($row['result_status'] ?? '') === 'published') {
+        $publishedOnlyCount++;
     }
 }
 
@@ -308,13 +328,19 @@ foreach ($draftResults as $result) {
             'status' => $result['result_status'],
             'students' => [],
             'count_draft' => 0,
-            'count_submitted' => 0
+            'count_submitted' => 0,
+            'count_approved' => 0,
+            'count_published' => 0
         ];
     }
     if (($result['result_status'] ?? '') === 'draft') {
         $groupedDrafts[$key]['count_draft']++;
     } elseif (($result['result_status'] ?? '') === 'submitted') {
         $groupedDrafts[$key]['count_submitted']++;
+    } elseif (($result['result_status'] ?? '') === 'approved') {
+        $groupedDrafts[$key]['count_approved']++;
+    } elseif (($result['result_status'] ?? '') === 'published') {
+        $groupedDrafts[$key]['count_published']++;
     }
     $groupedDrafts[$key]['students'][] = $result;
 }
@@ -380,11 +406,7 @@ include '../../includes/header.php';
                 <div class="user-dropdown">
                     <button class="user-dropdown-toggle" id="userDropdown">
                         <div class="user-avatar">
-                            <?php if (!empty($lecturerProfile['photo'])): ?>
-                                <img src="<?php echo BASE_URL . '/' . $lecturerProfile['photo']; ?>" alt="Profile Photo" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
-                            <?php else: ?>
-                                <?php echo strtoupper(substr($lecturerProfile['first_name'], 0, 1) . substr($lecturerProfile['last_name'], 0, 1)); ?>
-                            <?php endif; ?>
+                            <?php echo e(strtoupper(substr((string)($lecturerProfile['first_name'] ?? 'L'), 0, 1) . substr((string)($lecturerProfile['last_name'] ?? ''), 0, 1)) ?: 'L'); ?>
                         </div>
                         <div class="user-name">
                             <?php echo e($lecturerProfile['first_name'] . ' ' . $lecturerProfile['last_name']); ?>
@@ -486,10 +508,12 @@ include '../../includes/header.php';
                     <div class="d-flex flex-wrap mb-2" style="gap:8px;">
                         <span class="badge badge-warning" style="font-size:12px;">Draft Rows: <?php echo (int)$draftOnlyCount; ?></span>
                         <span class="badge badge-info" style="font-size:12px;">Submitted Rows: <?php echo (int)$submittedOnlyCount; ?></span>
+                        <span class="badge badge-success" style="font-size:12px;">Approved Rows: <?php echo (int)$approvedOnlyCount; ?></span>
+                        <span class="badge badge-primary" style="font-size:12px;">Published Rows: <?php echo (int)$publishedOnlyCount; ?></span>
                         <span class="badge badge-light border" style="font-size:12px;">Total Rows: <?php echo (int)count($draftResults); ?></span>
                     </div>
                     <small class="text-muted d-block mb-2">
-                        Workflow: Save partial marks in Enter Results, review here anytime, then submit single-course or bulk when ready.
+                        Workflow: Save partial marks in Enter Results, review progress here anytime, then submit when ready. Approved and published rows remain visible here as read-only history.
                     </small>
 
                     <?php if ($draftOnlyCount > 0): ?>
@@ -509,23 +533,23 @@ include '../../includes/header.php';
 
             <?php if (empty($groupedDrafts)): ?>
                 <div class="alert alert-info mt-3">
-                    <i class="fas fa-info-circle"></i> No draft results found. 
+                    <i class="fas fa-info-circle"></i> No result rows found. 
                     <?php if ($filterAcademicYear || $filterSemester || $filterCourse): ?>
-                        Try adjusting your filters or <a href="draft-results.php">view all drafts</a>.
+                        Try adjusting your filters or <a href="draft-results.php">view all lecturer results</a>.
                         <?php if ($emptyStateEnterResultsUrl !== null): ?>
                             <br><a href="<?php echo e($emptyStateEnterResultsUrl); ?>" class="btn btn-sm btn-primary mt-2">
                                 <i class="fas fa-edit mr-1"></i> Enter Results For This Course
                             </a>
                         <?php endif; ?>
                     <?php else: ?>
-                        Draft results are automatically saved when you save coursework marks without submitting them.
+                        Coursework rows saved by this lecturer will appear here across draft, submitted, approved, and published stages.
                     <?php endif; ?>
                 </div>
             <?php else: ?>
                 <div class="alert alert-info mt-3">
                     <i class="fas fa-info-circle"></i> 
                     Showing <strong><?php echo count($draftResults); ?></strong> result(s) from <strong><?php echo count($groupedDrafts); ?></strong> course(s).
-                    Your draft and submitted coursework marks are shown below for reference.
+                    Your coursework rows are shown below across draft, submitted, approved, and published stages.
                 </div>
 
                 <?php foreach ($groupedDrafts as $key => $group): ?>
@@ -563,6 +587,12 @@ include '../../includes/header.php';
                                     </span>
                                     <span class="badge badge-info" style="font-size: 12px; padding: 6px 12px;">
                                         Submitted: <?php echo (int)$group['count_submitted']; ?>
+                                    </span>
+                                    <span class="badge badge-success" style="font-size: 12px; padding: 6px 12px;">
+                                        Approved: <?php echo (int)$group['count_approved']; ?>
+                                    </span>
+                                    <span class="badge badge-primary" style="font-size: 12px; padding: 6px 12px;">
+                                        Published: <?php echo (int)$group['count_published']; ?>
                                     </span>
                                     <span class="badge badge-dark" style="font-size: 12px; padding: 6px 12px;">
                                         <i class="fas fa-users mr-1"></i>
@@ -618,6 +648,8 @@ include '../../includes/header.php';
                                                         <span class="badge badge-success" style="font-size: 11px;"><i class="fas fa-check mr-1"></i>Submitted</span>
                                                     <?php elseif ($student['result_status'] === 'approved'): ?>
                                                         <span class="badge badge-primary" style="font-size: 11px;"><i class="fas fa-thumbs-up mr-1"></i>Approved</span>
+                                                    <?php elseif ($student['result_status'] === 'published'): ?>
+                                                        <span class="badge badge-primary" style="font-size: 11px;"><i class="fas fa-bullhorn mr-1"></i>Published</span>
                                                     <?php else: ?>
                                                         <span class="badge badge-warning" style="font-size: 11px;"><i class="fas fa-pencil-alt mr-1"></i>Draft</span>
                                                     <?php endif; ?>
@@ -642,7 +674,13 @@ include '../../includes/header.php';
                         </div>
                         <div class="card-footer" style="background-color: #f8f9fa; border-top: 1px solid #dee2e6; padding: 12px 15px;">
                             <div class="text-right">
-                                <?php if ($isSubmitted): ?>
+                                <?php if ($group['count_published'] > 0 || $group['count_approved'] > 0): ?>
+                                    <span class="text-muted mr-2" style="font-size: 13px;"><i class="fas fa-lock mr-1"></i>Read-only after approval/publication</span>
+                                    <a href="enter-results.php?academic_year_id=<?php echo $group['academic_year_id']; ?>&semester_number=<?php echo $group['semester_number']; ?>&course_id=<?php echo $group['course_id']; ?>" 
+                                       class="btn btn-outline-primary btn-sm">
+                                        <i class="fas fa-eye mr-1"></i> View in Enter Results
+                                    </a>
+                                <?php elseif ($isSubmitted): ?>
                                     <span class="text-success mr-2" style="font-size: 13px;"><i class="fas fa-check-circle mr-1"></i>Submitted for approval</span>
                                     <a href="enter-results.php?academic_year_id=<?php echo $group['academic_year_id']; ?>&semester_number=<?php echo $group['semester_number']; ?>&course_id=<?php echo $group['course_id']; ?>" 
                                        class="btn btn-outline-primary btn-sm">
@@ -828,6 +866,14 @@ html[data-theme='dark'] .content-area .table th,
 html[data-theme='dark'] .content-area .table td {
     color: #e5e7eb;
     border-color: #334155;
+}
+
+html[data-theme='dark'] .content-area .marks-table tbody tr {
+    background: #162235;
+}
+
+html[data-theme='dark'] .content-area .marks-table tbody tr:nth-child(even) {
+    background: #0f1b2d;
 }
 
 html[data-theme='dark'] .content-area .table thead th {
