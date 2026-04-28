@@ -929,6 +929,8 @@ if ($export === 'csv' || $export === 'excel') {
 }
 
 $pageTitle = 'My Transcript - ' . APP_NAME;
+$additionalCSS = array_merge($additionalCSS ?? [], ['student-portal.css']);
+$additionalJS = array_merge($additionalJS ?? [], ['student-portal.js']);
 include '../../includes/header.php';
 ?>
 
@@ -1726,9 +1728,12 @@ html[data-theme='dark'] .services-submenu {
     .verification-note { margin-top: 0.03rem; }
     .verification-link { margin-top: 0.03rem; }
 }
+.main-content{margin-left:var(--student-sidebar-width)!important;width:auto!important;max-width:none!important;min-width:0;overflow-x:hidden}
+.main-content.full-width{margin-left:0!important;width:auto!important;max-width:none!important}
+@media (max-width: 992px) {.topbar-right{justify-content:flex-start}.transcript-action{width:100%}}
 </style>
 
-<div class="main-content">
+<div class="main-content" id="mainContent">
     <div class="topbar">
         <div class="topbar-left">
             <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar"><i class="fas fa-bars"></i></button>

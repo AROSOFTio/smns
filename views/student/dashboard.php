@@ -484,127 +484,12 @@ $linkAcademicCalendar = file_exists($studentViewsPath . 'academic-calendar.php')
 $mailUnreadCount = !empty($currentUser['id']) ? getUnreadNotificationCountForUser((int)$currentUser['id']) : 0;
 
 $pageTitle = 'Student Portal - ' . APP_NAME;
+$additionalCSS = array_merge($additionalCSS ?? [], ['student-portal.css']);
+$additionalJS = array_merge($additionalJS ?? [], ['student-portal.js']);
 include '../../includes/header.php';
 ?>
 
 <style>
-body { background: #f8fafc; }
-.student-sidebar {
-    width: 230px;
-    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-    min-height: 100vh;
-    height: 100vh;
-    overflow-y: auto;
-    overflow-x: hidden;
-    border-right: 1px solid #e5e7eb;
-    position: fixed;
-    left: 0;
-    top: 0;
-    z-index: 100;
-    box-shadow: 2px 0 12px rgba(15, 23, 42, 0.04);
-    transition: transform 0.25s ease;
-}
-.student-sidebar ul {
-    list-style: none;
-    padding: 10px 8px;
-    margin: 0;
-}
-.student-sidebar > ul { padding-bottom: 20px; }
-.student-sidebar li {
-    padding: 9px 12px;
-    margin-bottom: 4px;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    font-size: 0.82rem;
-    letter-spacing: 0.02em;
-    color: #334155;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-.student-sidebar li a {
-    color: inherit;
-    text-decoration: none;
-    display: block;
-}
-    .student-sidebar li.active {
-        background: #eaf2ff;
-        border-color: #bfdbfe;
-        color: #1d4ed8;
-        font-weight: 700;
-    }
-    html[data-theme='dark'] .student-topbar {
-        --key-btn-bg: rgba(15, 23, 42, 0.9);
-        --key-btn-border: rgba(148, 163, 184, 0.5);
-        --key-btn-color: #f8fafc;
-    }
-    html[data-theme='dark'] #keyDropMenu {
-        background: #0f172a !important;
-        color: #e2e8f0 !important;
-        border-color: #334155 !important;
-        box-shadow: 0 2px 12px rgba(2, 6, 23, 0.65) !important;
-    }
-    html[data-theme='dark'] #keyDropMenu label {
-        color: #e2e8f0 !important;
-    }
-    html[data-theme='dark'] #keyDropMenu input.form-control {
-        background: #0b1220 !important;
-        color: #e2e8f0 !important;
-        border-color: #334155 !important;
-    }
-    html[data-theme='dark'] #keyDropMenu input.form-control::placeholder {
-        color: #94a3b8 !important;
-    }
-    html[data-theme='dark'] #keyDropMenu input:-webkit-autofill,
-    html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:hover,
-    html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:focus,
-    html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:active {
-        -webkit-text-fill-color: #e2e8f0 !important;
-        caret-color: #e2e8f0 !important;
-        box-shadow: 0 0 0 1000px #0b1220 inset !important;
-        border-color: #334155 !important;
-    }
-.student-sidebar li:hover {
-    background: #f1f5f9;
-    color: #0f172a;
-}
-.student-sidebar .sidebar-section { font-size: 0.9rem; color: #888; padding: 10px 28px 4px 28px; text-transform: uppercase; letter-spacing: 0.04em; }
-.main-content {
-    margin-left: 230px;
-    width: calc(100vw - 230px);
-    max-width: calc(100vw - 230px);
-    min-height: 100vh;
-    background: #f8fafc;
-    transition: margin-left 0.25s ease, width 0.25s ease;
-}
-.student-sidebar.sidebar-collapsed {
-    transform: translateX(-100%);
-}
-.sidebar-user-card {
-    margin: 0.4rem 0.45rem 0.15rem;
-    background: linear-gradient(180deg, #31465d 0%, #243547 100%);
-    border-radius: 10px;
-    color: #fff;
-    text-align: center;
-    padding: 0.4rem 0.45rem 0.5rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.28rem;
-}
-.sidebar-user-card img { width: 126px; height: 126px; border-radius: 16px; object-fit: cover; border: 2px solid rgba(255,255,255,0.82); box-shadow: 0 8px 18px rgba(0,0,0,0.2); }
-.sidebar-user-name { font-size: 0.8rem; line-height: 1.12; margin: 0; }
-.sidebar-user-no { font-size: 1rem; font-weight: 700; line-height: 1.08; margin: 0; }
-
-.sidebar-portal-title { font-size: 0.6rem; letter-spacing: 0.07em; text-transform: uppercase; color: #d7e3f3; margin-bottom: 0.12rem; font-weight: 700; }
-.main-content.full-width {
-    margin-left: 0;
-    width: 100vw;
-    max-width: 100vw;
-}
-.student-topbar {
-    display: flex; align-items: center; justify-content: space-between; background: #fff; border-bottom: 1px solid #e5e7eb; padding: 0.7rem 2.5rem 0.7rem 2.5rem; position: sticky; top: 0; z-index: 10;
-}
-.student-profile-pic { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; border: 2px solid #e5e7eb; }
 .bio-card { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); padding: 2rem 2.5rem; margin-top: 2rem; }
 .bio-header { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.5rem; }
 .bio-header-name { font-size:1.2rem; font-weight:700; color:#2563eb; }
@@ -870,8 +755,8 @@ html[data-theme='dark'] .profile-lock-modal .text-muted {
     </ul>
 </div>
 
-<div class="main-content">
-    <div class="student-topbar" style="padding:0.5rem 1.2rem; font-size:0.92rem; display:flex; align-items:center; justify-content:space-between; --key-btn-bg:#fff; --key-btn-border:#e5e7eb; --key-btn-color:#0f172a;">
+<div class="main-content" id="mainContent">
+    <div class="student-topbar" style="font-size:0.92rem;">
         <div style="display:flex; align-items:center; gap:0.7rem;">
             <button id="menuBtn" style="background:none; border:none; font-size:1.1rem; cursor:pointer;" title="Toggle Sidebar"><i class="fas fa-bars"></i></button>
             <button onclick="location.href='<?php echo e($linkDashboard); ?>'" style="background:#2563eb; color:#fff; border:none; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW BIO DATA</button>
@@ -934,7 +819,7 @@ html[data-theme='dark'] .profile-lock-modal .text-muted {
         </div>
     </div>
 
-    <div style="padding:0.7rem 1.2rem 0.2rem 1.2rem; font-size:0.98rem; font-weight:600; display:flex; align-items:center; gap:0.7rem; flex-wrap:wrap;">
+    <div class="student-portal-summary" style="font-size:0.98rem; font-weight:600; gap:0.7rem;">
         <span>PROGRAMME: <?php echo e($registeredProgramName); ?></span>
         <span class="status-badge status-active" style="font-size:0.85rem; padding:3px 10px;"><?php echo !empty($studentProfile['status']) ? strtoupper(e($studentProfile['status'])) : 'ACTIVE'; ?></span>
         <span class="dashboard-inline-label" style="margin-left:auto; font-size:1.05rem;">ACADEMIC STATUS: <span class="dashboard-pill" style="<?php echo e($academicStatusStyle); ?>">
@@ -1127,7 +1012,7 @@ document.addEventListener('click', function() {
             <div class="alert alert-danger"><?php echo e($session->getFlash('error')); ?></div>
         <?php endif; ?>
 
-        <div style="display:flex; align-items:center; gap:0.35rem; margin-bottom:1.2rem; flex-wrap:wrap; white-space:normal;">
+        <div class="student-portal-summary" style="margin-bottom:1.2rem; white-space:normal;">
             <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">CURRENT YR. <span style="color:#2563eb;"><?php echo !empty($currentSemester['academic_year']) ? e($currentSemester['academic_year']) : '-'; ?></span></span>
             <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">CURRENT CALENDAR. <span style="color:#2563eb;"><?php echo e($currentRolloutStageLabel); ?></span></span>
             <span style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7; color:#166534; border:1px solid #86efac; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;' : 'background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;'; ?>">
@@ -1136,7 +1021,7 @@ document.addEventListener('click', function() {
             <span style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7; color:#166534; border:1px solid #86efac; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;' : 'background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;'; ?>">
                 <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?>
             </span>
-            <div style="display:flex; align-items:center; gap:0.35rem; white-space:nowrap; flex:0 0 auto; margin-left:auto;">
+            <div class="student-summary-grow" style="white-space:nowrap;">
                 <span style="background:#f1f5f9; color:#991b1b; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">APPROVED FEES AMOUNT: <?php echo $formatCurrencyForDisplay((float)$approvedFeesAmount); ?></span>
                 <span style="background:#2563eb; color:#fff; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">BALANCE ON ACCOUNT: <?php echo $formatCurrencyForDisplay((float)$balanceOnAccount); ?></span>
             </div>

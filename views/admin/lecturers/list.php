@@ -241,13 +241,17 @@ include dirname(__DIR__, 3) . '/includes/header.php';
     }
     
     .main-content {
-        max-width: 100vw;
-        overflow-x: hidden;
+        width: auto;
+        max-width: none;
+        min-width: 0;
+        overflow-x: clip;
     }
     
     .content-area {
+        width: 100%;
         max-width: 100%;
-        overflow-x: hidden;
+        min-width: 0;
+        overflow-x: clip;
     }
     
     .topbar {
@@ -493,7 +497,7 @@ include dirname(__DIR__, 3) . '/includes/header.php';
 
 <?php include dirname(__DIR__, 3) . '/includes/admin/sidebar.php'; ?>
 
-<div class="main-content" style="max-width: 100vw; overflow-x: hidden;">
+<div class="main-content">
     <div class="topbar d-flex justify-content-between align-items-center" style="flex-wrap: wrap; gap: 0.5rem; padding: 0.75rem 1rem;">
         <div class="topbar-left">
             <h4 style="margin: 0;">Lecturers Management</h4>
@@ -514,7 +518,7 @@ include dirname(__DIR__, 3) . '/includes/header.php';
         </div>
     </div>
     
-    <div class="content-area" style="max-width: 100%; overflow-x: hidden; padding: 1rem;">
+    <div class="content-area" style="padding: 1rem;">
         <?php 
         $successMessage = $session->getFlash('success');
         if ($successMessage): 
@@ -617,7 +621,7 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                     </div>
                 </div>
             </div>
-            <div class="card-body" style="overflow-x: hidden; padding: 0.5rem;">
+            <div class="card-body" style="padding: 0.5rem;">
                 <?php if (count($lecturers) > 0): ?>
                     <div class="table-responsive" style="overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch;">
                         <table class="table table-hover table-sm lecturers-table" style="font-size: 0.875rem; margin-bottom: 0;">

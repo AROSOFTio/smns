@@ -272,6 +272,8 @@ foreach ($organizedResults as &$semesters) {
 unset($semesters);
 
 $pageTitle = 'My Provisional Results - ' . APP_NAME;
+$additionalCSS = array_merge($additionalCSS ?? [], ['student-portal.css']);
+$additionalJS = array_merge($additionalJS ?? [], ['student-portal.js']);
 include '../../includes/header.php';
 ?>
 
@@ -452,6 +454,9 @@ html[data-theme='dark'] .grading-key strong {
 html[data-theme='dark'] .table-responsive {
     border-radius: 0 0 10px 10px;
 }
+.main-content{margin-left:var(--student-sidebar-width)!important;width:auto!important;max-width:none!important;min-width:0;overflow-x:hidden}
+.main-content.full-width{margin-left:0!important;width:auto!important;max-width:none!important}
+.chip-row{flex-wrap:wrap;row-gap:.4rem;white-space:normal}
 </style>
 
 <div class="student-sidebar">
@@ -485,7 +490,7 @@ html[data-theme='dark'] .table-responsive {
     </ul>
 </div>
 
-<div class="main-content">
+<div class="main-content" id="mainContent">
     <div class="student-topbar">
         <div style="display:flex; align-items:center; gap:0.7rem;">
             <button id="menuBtn" style="background:none; border:none; font-size:1.1rem; cursor:pointer;" title="Toggle Sidebar"><i class="fas fa-bars"></i></button>

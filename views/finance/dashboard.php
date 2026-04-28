@@ -1852,7 +1852,8 @@ include '../../includes/header.php';
 <style>
 .main-content.finance-dashboard,
 .finance-dashboard .content-area {
-    overflow-x: hidden;
+    min-width: 0;
+    overflow-x: clip;
 }
 
 .finance-dashboard .stats-grid {

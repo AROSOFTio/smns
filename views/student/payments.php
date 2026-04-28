@@ -772,127 +772,15 @@ if ($section === 'ledger' && isset($_GET['download']) && $_GET['download'] === '
 }
 
 $pageTitle = 'Payments - ' . APP_NAME;
+$additionalCSS = array_merge($additionalCSS ?? [], ['student-portal.css']);
+$additionalJS = array_merge($additionalJS ?? [], ['student-portal.js']);
 include '../../includes/header.php';
 ?>
 
 <style>
-body { background: #f2f4f7; }
-.student-sidebar {
-    width: 230px;
-    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-    min-height: 100vh;
-    height: 100vh;
-    overflow-y: auto;
-    overflow-x: hidden;
-    border-right: 1px solid #e5e7eb;
-    position: fixed;
-    left: 0;
-    top: 0;
-    z-index: 100;
-    box-shadow: 2px 0 12px rgba(15, 23, 42, 0.04);
-    transition: transform 0.25s ease;
-}
-.student-sidebar ul { list-style: none; padding: 10px 8px; margin: 0; }
-.student-sidebar > ul { padding-bottom: 20px; }
-.student-sidebar li {
-    padding: 9px 12px;
-    margin-bottom: 4px;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    font-size: 0.82rem;
-    letter-spacing: 0.02em;
-    color: #334155;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-.student-sidebar li a { color: inherit; text-decoration: none; display: block; }
-.student-sidebar li.active { background: #eaf2ff; border-color: #bfdbfe; color: #1d4ed8; font-weight: 700; }
-.student-sidebar li:hover { background: #f1f5f9; color: #0f172a; }
-.student-sidebar.sidebar-collapsed { transform: translateX(-100%); }
 .payments-submenu { list-style: none; padding: 0 0 0 10px; margin: 0 0 6px 0; }
 .payments-submenu li { font-size: 0.79rem; margin-bottom: 3px; }
 .payments-submenu li.active { background: #dceaf3; color: #0e7490; border-color: #bfddeb; }
-.sidebar-user-card {
-    margin: 0.4rem 0.45rem 0.15rem;
-    background: linear-gradient(180deg, #31465d 0%, #243547 100%);
-    border-radius: 10px;
-    color: #fff;
-    text-align: center;
-    padding: 0.4rem 0.45rem 0.5rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.28rem;
-}
-.sidebar-user-card img { width: 126px; height: 126px; border-radius: 16px; object-fit: cover; border: 2px solid rgba(255,255,255,0.82); box-shadow: 0 8px 18px rgba(0,0,0,0.2); }
-.sidebar-user-name { font-size: 0.8rem; line-height: 1.12; margin: 0; }
-.sidebar-user-no { font-size: 1rem; font-weight: 700; line-height: 1.08; margin: 0; }
-
-
-.sidebar-portal-title { font-size: 0.6rem; letter-spacing: 0.07em; text-transform: uppercase; color: #d7e3f3; margin-bottom: 0.12rem; font-weight: 700; }
-.main-content {
-    margin-left: 230px;
-    width: calc(100vw - 230px);
-    max-width: calc(100vw - 230px);
-    min-height: 100vh;
-    transition: margin-left 0.25s ease, width 0.25s ease;
-}
-.main-content.full-width { margin-left: 0; width: 100vw; max-width: 100vw; }
-
-.student-topbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: #fff;
-    border-bottom: 1px solid #e5e7eb;
-    padding: 0.5rem 1.2rem;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    --key-btn-bg: #fff;
-    --key-btn-border: #e5e7eb;
-    --key-btn-color: #0f172a;
-}
-html[data-theme='dark'] .student-topbar {
-    --key-btn-bg: rgba(15, 23, 42, 0.9);
-    --key-btn-border: rgba(148, 163, 184, 0.5);
-    --key-btn-color: #f8fafc;
-}
-html[data-theme='dark'] #keyDropMenu {
-    background: #0f172a;
-    color: #e2e8f0;
-    border-color: #334155;
-    box-shadow: 0 2px 12px rgba(2, 6, 23, 0.65);
-}
-html[data-theme='dark'] #keyDropMenu label { color: #e2e8f0; }
-html[data-theme='dark'] #keyDropMenu input.form-control {
-    background: #0b1220;
-    color: #e2e8f0;
-    border-color: #334155;
-}
-html[data-theme='dark'] #keyDropMenu input.form-control::placeholder { color: #94a3b8; }
-.student-profile-pic { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; border: 2px solid #e5e7eb; }
-
-.chip-row {
-    padding: 0.45rem 1.2rem 0.2rem;
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    flex-wrap: wrap;
-    row-gap: 0.4rem;
-}
-.chip {
-    border-radius: 6px;
-    padding: 4px 8px;
-    font-weight: 600;
-    font-size: 0.78rem;
-    line-height: 1;
-    white-space: nowrap;
-}
-.chip.gray { background: #f1f5f9; color: #222; }
-.chip.blue { background: #1f7aa8; color: #fff; }
-.chip.green { background: #16a34a; color: #fff; }
-.chip.red { background: #fee2e2; color: #991b1b; }
 .chip.balance-chip {
     background: #0ea5e9;
     border: 1px solid #0284c7;
@@ -1709,10 +1597,6 @@ html[data-theme='dark'] .ledger-amount-negative {
     font-weight: 800 !important;
 }
 @media (max-width: 1200px) {
-    .chip-row {
-        white-space: normal;
-        flex-wrap: wrap;
-    }
     .summary-grid { grid-template-columns: repeat(2, 1fr); }
     .methods-tabs {
         width: 100%;
@@ -1734,6 +1618,12 @@ html[data-theme='dark'] .ledger-amount-negative {
     .group-total { grid-template-columns: 1fr; }
     .ledger-info-wrap { grid-template-columns: 1fr; }
     .ledger-photo { justify-self: start; }
+}
+@media (max-width: 768px) {
+    .tx-form-row input {
+        min-width: 0;
+        width: 100%;
+    }
 }
 </style>
 
@@ -1775,7 +1665,7 @@ html[data-theme='dark'] .ledger-amount-negative {
     </ul>
 </div>
 
-<div class="main-content">
+<div class="main-content" id="mainContent">
     <div class="student-topbar">
         <div style="display:flex; align-items:center; gap:0.7rem;">
             <button id="menuBtn" style="background:none; border:none; font-size:1.1rem; cursor:pointer;" title="Toggle Sidebar"><i class="fas fa-bars"></i></button>

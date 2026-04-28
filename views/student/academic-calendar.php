@@ -218,6 +218,8 @@ $fmtDate = function ($d) {
 };
 
 $pageTitle = 'Academic Calendar - ' . APP_NAME;
+$additionalCSS = array_merge($additionalCSS ?? [], ['student-portal.css']);
+$additionalJS = array_merge($additionalJS ?? [], ['student-portal.js']);
 include dirname(__DIR__, 2) . '/includes/header.php';
 ?>
 
@@ -239,6 +241,9 @@ body{background:#f2f4f7}.student-sidebar{width:230px;background:linear-gradient(
 .main-content{margin-left:230px;width:calc(100vw - 230px);max-width:calc(100vw - 230px);min-height:100vh;transition:margin-left .25s ease,width .25s ease}.main-content.full-width{margin-left:0;width:100vw;max-width:100vw}.student-topbar{display:flex;align-items:center;justify-content:space-between;background:#fff;border-bottom:1px solid #e5e7eb;padding:.5rem 1.2rem;position:sticky;top:0;z-index:10;--key-btn-bg:#fff;--key-btn-border:#e5e7eb;--key-btn-color:#0f172a}.student-profile-pic { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; border: 2px solid #e5e7eb; }.chip-row{padding:.45rem 1.2rem .2rem;display:flex;align-items:center;gap:.35rem;white-space:nowrap}.chip{border-radius:6px;padding:4px 8px;font-weight:600;font-size:.78rem;line-height:1;white-space:nowrap}.chip.gray{background:#f1f5f9;color:#222}.chip.blue{background:#1f7aa8;color:#fff}.chip.red{background:#fee2e2;color:#991b1b}html[data-theme='dark'] .student-topbar{--key-btn-bg:rgba(15,23,42,0.9);--key-btn-border:rgba(148,163,184,0.5);--key-btn-color:#f8fafc)}html[data-theme='dark'] #keyDropMenu{background:#0f172a;color:#e2e8f0;border-color:#334155;box-shadow:0 2px 12px rgba(2,6,23,0.65)}html[data-theme='dark'] #keyDropMenu label{color:#e2e8f0}html[data-theme='dark'] #keyDropMenu input.form-control{background:#0b1220;color:#e2e8f0;border-color:#334155}html[data-theme='dark'] #keyDropMenu input.form-control::placeholder{color:#94a3b8}
 .cal-wrap{padding:.9rem 1.2rem 1.3rem}.cal-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px}.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.cal-title{margin:0;font-size:2rem;font-weight:400;color:#20262d;text-align:center;width:100%}.cal-year-pick{width:220px;border:1px solid #d1d5db;border-radius:8px;padding:7px 9px;font-size:.88rem}.cal-block{margin-bottom:18px;border:1px solid #d1d5db}.cal-block-head{background:#2f4052;color:#fff;font-size:1.7rem;font-weight:700;padding:7px 10px;display:flex;align-items:center;justify-content:space-between}.cal-current{background:#ecfdf3;color:#359c0f;border:1px solid #84cc16;border-radius:8px;padding:4px 11px;font-size:1.05rem;line-height:1;font-weight:700}.cal-table{width:100%;border-collapse:collapse}.cal-table th,.cal-table td{border-top:1px solid #d1d5db;padding:10px 12px;font-size:1rem;color:#2a3138}.cal-table th{font-weight:700;text-align:left}.status-pill{display:inline-flex;align-items:center;gap:7px;border-radius:8px;padding:5px 12px;font-size:1rem;font-weight:500}.status-pill.open{color:#359c0f;background:#ecfdf3;border:1px solid #a3d98c}.status-pill.closed{color:#dc5b2c;background:#fff1ea;border:1px solid #f3ad8d}
 @media(max-width:1200px){.cal-title{font-size:1.4rem;text-align:left}.cal-table{display:block;overflow-x:auto}.cal-table th,.cal-table td{white-space:nowrap;font-size:.9rem}.cal-block-head{font-size:1.3rem}}
+.main-content{margin-left:var(--student-sidebar-width)!important;width:auto!important;max-width:none!important;min-width:0;overflow-x:hidden}
+.main-content.full-width{margin-left:0!important;width:auto!important;max-width:none!important}
+.chip-row{flex-wrap:wrap;row-gap:.4rem;white-space:normal}
 </style>
 
 <div class="student-sidebar">
@@ -266,7 +271,7 @@ body{background:#f2f4f7}.student-sidebar{width:230px;background:linear-gradient(
   </ul>
 </div>
 
-<div class="main-content">
+<div class="main-content" id="mainContent">
   <div class="student-topbar">
     <div style="display:flex;align-items:center;gap:.7rem;">
       <button id="menuBtn" style="background:none;border:none;font-size:1.1rem;cursor:pointer;" title="Toggle Sidebar"><i class="fas fa-bars"></i></button>

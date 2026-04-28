@@ -560,6 +560,18 @@ include '../../../includes/header.php';
 .results-actions-bar .text-muted {
     font-size: 0.82rem;
 }
+.main-content {
+    width: auto;
+    max-width: none;
+    min-width: 0;
+    overflow-x: clip;
+}
+.content-area {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: clip;
+}
 .publish-note {
     font-size: 0.82rem;
     color: #64748b;
@@ -623,7 +635,7 @@ html[data-theme='dark'] .results-filter .form-control {
 
 <?php include '../../../includes/admin/sidebar.php'; ?>
 
-<div class="main-content" id="mainContent" style="max-width:100vw; overflow-x:hidden;">
+<div class="main-content" id="mainContent">
     <div class="topbar">
         <div class="topbar-left">
             <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar">
@@ -667,7 +679,7 @@ html[data-theme='dark'] .results-filter .form-control {
         </div>
 
         <div class="card mb-3">
-            <div class="card-body" style="overflow-x:hidden; padding: 14px 16px;">
+            <div class="card-body" style="padding: 14px 16px;">
                 <form method="GET" class="row results-filter">
                     <div class="col-lg-3 col-md-4 col-sm-6 mb-2">
                         <label>Academic Year</label>

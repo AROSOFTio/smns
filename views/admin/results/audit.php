@@ -297,20 +297,25 @@ include '../../../includes/header.php';
     }
     
     .main-content {
-        max-width: 100vw;
-        overflow-x: hidden;
+        width: auto;
+        max-width: none;
+        min-width: 0;
+        overflow-x: clip;
     }
     
     .content-area {
+        width: 100%;
         max-width: 100%;
-        overflow-x: hidden;
+        min-width: 0;
+        overflow-x: clip;
         padding: 15px;
     }
     
-    /* Keep results tables fully visible without horizontal scrolling */
+    /* Keep wide audit tables scrollable instead of forcing viewport overflow */
     .table-responsive,
     .table-responsive[style*='overflow-x: auto'] {
-        overflow-x: visible !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
         max-width: 100%;
     }
     
@@ -535,7 +540,7 @@ include '../../../includes/header.php';
 
 <?php include '../../../includes/admin/sidebar.php'; ?>
 
-<div class="main-content" style="max-width: 100vw; overflow-x: hidden;">
+<div class="main-content">
     <div class="topbar">
         <div class="topbar-left">
             <h4><i class="fas fa-history"></i> Results Audit Trail</h4>
