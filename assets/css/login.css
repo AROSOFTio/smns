@@ -241,6 +241,9 @@ body::before {
 
 .login-form .form-control {
     height: 52px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     border-radius: 12px;
     border: 2px solid #e9ecef;
     padding: 12px 15px 12px 48px;
@@ -543,10 +546,34 @@ html[data-theme='dark'] .btn-outline-secondary {
     color: #667eea;
 }
 
+.input-wrapper.has-action .form-control {
+    padding-right: 72px;
+}
+
+.password-toggle-btn {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    min-width: 54px;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 /* Responsive */
 @media (max-width: 480px) {
+    .login-container {
+        padding: 0;
+    }
+
     .login-card {
-        padding: 35px 25px;
+        padding: 24px 14px;
         border-radius: 16px;
     }
     
@@ -567,6 +594,20 @@ html[data-theme='dark'] .btn-outline-secondary {
     .login-footer .other-logins a {
         width: 100%;
         text-align: center;
+    }
+
+    .input-wrapper.has-action .form-control {
+        padding-right: 64px;
+        padding-left: 14px;
+        font-size: 14px;
+    }
+
+    .password-toggle-btn {
+        right: 8px;
+        min-width: 48px;
+        height: 28px;
+        padding: 0 8px;
+        font-size: 11px;
     }
 }
 

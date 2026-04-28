@@ -38,6 +38,30 @@ if ($currentPage <= 0) {
     $currentPage = 1;
 }
 
+$buildListUrl = static function (int $page, int $perPage, string $search, string $program, string $status, string $level): string {
+    $query = [];
+    if ($search !== '') {
+        $query['search'] = $search;
+    }
+    if ($program !== '') {
+        $query['program'] = $program;
+    }
+    if ($status !== '') {
+        $query['status'] = $status;
+    }
+    if ($level !== '') {
+        $query['level'] = $level;
+    }
+    if ($page > 1) {
+        $query['page'] = $page;
+    }
+    if ($perPage > 0) {
+        $query['per_page'] = $perPage;
+    }
+    return 'list.php' . (!empty($query) ? ('?' . http_build_query($query)) : '');
+};
+$currentListUrl = $buildListUrl($currentPage, $rowsPerPage, $search, $program, $status, $level);
+
 // Build query
 $db = new Database();
 $conn = $db->getConnection();
@@ -116,6 +140,52 @@ if ($status) {
 if ($level) {
     $fromWhereSql .= " AND s.level_year = :level";
     $params['level'] = $level;
+}
+
+if (isset($_GET['student_lookup']) && $_GET['student_lookup'] === '1') {
+    header('Content-Type: application/json');
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+
+    $lookupTerm = $normalizeFilterValue($_GET['term'] ?? '');
+    if ($lookupTerm === '') {
+        echo json_encode(['success' => true, 'matches' => []]);
+        exit;
+    }
+
+    $lookupSql = "SELECT s.id, s.student_id, s.admission_number, s.first_name, s.last_name
+        " . $fromWhereSql . "
+        ORDER BY
+            CASE
+                WHEN CONCAT_WS(' ', s.first_name, s.last_name) LIKE :lookup_prefix_name THEN 0
+                WHEN s.student_id LIKE :lookup_prefix_student THEN 1
+                WHEN COALESCE(s.admission_number, '') LIKE :lookup_prefix_admission THEN 2
+                ELSE 3
+            END,
+            s.first_name ASC,
+            s.last_name ASC
+        LIMIT 6";
+    $lookupStmt = $conn->prepare($lookupSql);
+    foreach ($params as $k => $v) {
+        $lookupStmt->bindValue(':' . $k, $v);
+    }
+    $lookupStmt->bindValue(':lookup_prefix_name', $lookupTerm . '%');
+    $lookupStmt->bindValue(':lookup_prefix_student', $lookupTerm . '%');
+    $lookupStmt->bindValue(':lookup_prefix_admission', $lookupTerm . '%');
+    $lookupStmt->execute();
+    $lookupRows = $lookupStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $matches = [];
+    foreach ($lookupRows as $row) {
+        $matches[] = [
+            'id' => (int)($row['id'] ?? 0),
+            'name' => trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? '')),
+            'student_id' => (string)resolveDisplayedStudentRegistrationNumberFromRow($conn, $row),
+            'admission_number' => (string)($row['admission_number'] ?? ''),
+        ];
+    }
+
+    echo json_encode(['success' => true, 'matches' => $matches]);
+    exit;
 }
 
 $totalStudents = 0;
@@ -232,28 +302,6 @@ if ($search !== '' && $totalStudents === 0 && $status !== '') {
 }
 $displayStart = $totalStudents > 0 ? ($offset + 1) : 0;
 $displayEnd = $totalStudents > 0 ? min($offset + count($students), $totalStudents) : 0;
-$buildListUrl = static function (int $page, int $perPage, string $search, string $program, string $status, string $level): string {
-    $query = [];
-    if ($search !== '') {
-        $query['search'] = $search;
-    }
-    if ($program !== '') {
-        $query['program'] = $program;
-    }
-    if ($status !== '') {
-        $query['status'] = $status;
-    }
-    if ($level !== '') {
-        $query['level'] = $level;
-    }
-    if ($page > 1) {
-        $query['page'] = $page;
-    }
-    if ($perPage > 0) {
-        $query['per_page'] = $perPage;
-    }
-    return 'list.php' . (!empty($query) ? ('?' . http_build_query($query)) : '');
-};
 $clearStatusFilterUrl = $buildListUrl(1, $rowsPerPage, $search, $program, '', $level);
 
 // Get programs for filter
@@ -315,6 +363,58 @@ select.form-control-sm option {
 }
 .students-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .students-pagination .pagination { margin-bottom: 0; }
+.students-search-wrap { position: relative; }
+.students-search-preview {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    background: #fff;
+    border: 1px solid #dbe2ea;
+    border-radius: 10px;
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.10);
+    overflow: hidden;
+}
+.students-search-preview.is-visible {
+    display: block;
+}
+.students-search-preview-item {
+    display: block;
+    width: 100%;
+    padding: 10px 12px;
+    text-align: left;
+    border: 0;
+    border-bottom: 1px solid #edf2f7;
+    background: transparent;
+    cursor: pointer;
+}
+.students-search-preview-item:last-child {
+    border-bottom: 0;
+}
+.students-search-preview-item:hover,
+.students-search-preview-item:focus {
+    background: #f8fafc;
+    outline: none;
+}
+.students-search-preview-name {
+    display: block;
+    font-weight: 600;
+    color: #1e293b;
+}
+.students-search-preview-meta {
+    display: block;
+    margin-top: 2px;
+    color: #64748b;
+    font-size: 12px;
+}
+.students-search-helper {
+    margin-top: 8px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 600;
+}
 @media (max-width: 1200px) {
     .students-table { font-size: 0.82rem; }
 }
@@ -383,7 +483,11 @@ select.form-control-sm option {
                 <form method="GET" action="" class="form-row">
                     <input type="hidden" name="per_page" value="<?php echo (int)$rowsPerPage; ?>">
                     <div class="col-md-3 mb-2">
-                        <input type="text" name="search" class="form-control form-control-sm" placeholder="Search students..." value="<?php echo e($search); ?>">
+                        <div class="students-search-wrap">
+                            <input type="text" id="studentsSearchInput" name="search" class="form-control form-control-sm" placeholder="Search students..." value="<?php echo e($search); ?>" autocomplete="off">
+                            <div id="studentsSearchPreview" class="students-search-preview" aria-live="polite"></div>
+                        </div>
+                        <div id="studentsSearchHelper" class="students-search-helper">Type a student name, student ID, or admission number.</div>
                     </div>
                     <div class="col-md-2 mb-2">
                         <select name="program" class="form-control form-control-sm">
@@ -519,7 +623,7 @@ select.form-control-sm option {
                                                     <a href="graduation-awards.php?id=<?php echo $student['id']; ?>" class="btn btn-success" title="Graduation & Awards">
                                                         <i class="fas fa-certificate"></i>
                                                     </a>
-                                                    <a href="delete.php?id=<?php echo $student['id']; ?>" class="btn btn-danger" title="Delete Student" onclick="return confirm('Are you sure you want to delete this student?')">
+                                                    <a href="delete.php?id=<?php echo $student['id']; ?>&return_to=<?php echo urlencode($currentListUrl); ?>" class="btn btn-danger" title="Delete Student" onclick="return confirm('Are you sure you want to delete this student?')">
                                                         <i class="fas fa-trash"></i>
                                                     </a>
                                                 </div>
@@ -562,5 +666,134 @@ select.form-control-sm option {
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var searchInput = document.getElementById('studentsSearchInput');
+    var previewBox = document.getElementById('studentsSearchPreview');
+    var helperBox = document.getElementById('studentsSearchHelper');
+    var form = searchInput ? searchInput.form : null;
+    if (!searchInput || !previewBox || !form) {
+        return;
+    }
+
+    var debounceTimer = null;
+    var activeController = null;
+    var activeRequest = 0;
+
+    function escapeHtml(value) {
+        return String(value || '').replace(/[&<>"']/g, function (char) {
+            return {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[char] || char;
+        });
+    }
+
+    function hidePreview() {
+        previewBox.classList.remove('is-visible');
+        previewBox.innerHTML = '';
+    }
+
+    function setHelper(message) {
+        if (helperBox) {
+            helperBox.textContent = message || 'Type a student name, student ID, or admission number.';
+        }
+    }
+
+    function renderMatches(matches) {
+        if (!Array.isArray(matches) || matches.length === 0) {
+            hidePreview();
+            setHelper('No matching student names found for the current filters.');
+            return;
+        }
+
+        previewBox.innerHTML = matches.map(function (match) {
+            var name = escapeHtml(match.name || '');
+            var studentId = escapeHtml(match.student_id || '');
+            var admission = escapeHtml(match.admission_number || '');
+            var meta = admission ? (studentId + ' | ' + admission) : studentId;
+            return '<button type="button" class="students-search-preview-item" data-value="' + name + '">' +
+                '<span class="students-search-preview-name">' + name + '</span>' +
+                '<span class="students-search-preview-meta">' + meta + '</span>' +
+            '</button>';
+        }).join('');
+        previewBox.classList.add('is-visible');
+        setHelper(matches.length === 1 ? '1 matching student found.' : (matches.length + ' matching students found.'));
+    }
+
+    function fetchMatches() {
+        var value = (searchInput.value || '').trim();
+        if (value.length < 2) {
+            hidePreview();
+            setHelper('Type a student name, student ID, or admission number.');
+            return;
+        }
+
+        activeRequest += 1;
+        var requestId = activeRequest;
+        if (activeController) {
+            activeController.abort();
+        }
+        activeController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+
+        var url = new URL(window.location.href);
+        url.searchParams.set('student_lookup', '1');
+        url.searchParams.set('term', value);
+        url.searchParams.delete('page');
+
+        fetch(url.toString(), {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            signal: activeController ? activeController.signal : undefined
+        })
+        .then(function (response) { return response.json(); })
+        .then(function (payload) {
+            if (requestId !== activeRequest) {
+                return;
+            }
+            renderMatches(payload && payload.matches ? payload.matches : []);
+        })
+        .catch(function (error) {
+            if (error && error.name === 'AbortError') {
+                return;
+            }
+            hidePreview();
+            setHelper('Unable to load student suggestions right now.');
+        });
+    }
+
+    searchInput.addEventListener('input', function () {
+        if (debounceTimer) {
+            clearTimeout(debounceTimer);
+        }
+        debounceTimer = setTimeout(fetchMatches, 220);
+    });
+
+    searchInput.addEventListener('focus', function () {
+        if ((searchInput.value || '').trim().length >= 2) {
+            fetchMatches();
+        }
+    });
+
+    previewBox.addEventListener('click', function (event) {
+        var button = event.target.closest('.students-search-preview-item');
+        if (!button) {
+            return;
+        }
+        searchInput.value = button.getAttribute('data-value') || '';
+        hidePreview();
+        form.submit();
+    });
+
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest('.students-search-wrap')) {
+            hidePreview();
+        }
+    });
+});
+</script>
 
 <?php include '../../../includes/footer.php'; ?>

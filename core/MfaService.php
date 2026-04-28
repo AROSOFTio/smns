@@ -157,33 +157,52 @@ class MfaService {
             'mfa_local_delivery_mode',
             (defined('MFA_LOCAL_DELIVERY_MODE') ? MFA_LOCAL_DELIVERY_MODE : 'fast')
         )));
-        if (!in_array($localDeliveryMode, ['fast', 'email'], true)) {
-            $localDeliveryMode = 'fast';
+        if (!in_array($localDeliveryMode, ['auto', 'fast', 'email'], true)) {
+            $localDeliveryMode = 'auto';
         }
         if (self::isLocalRequest() && $localDeliveryMode === 'fast') {
             error_log('MFA local fast mode challenge for user ' . $userId . ' (' . $module . '): ' . $code);
             return [
                 'success' => true,
+                'delivery' => 'local_code',
                 'message' => 'Local verification code: ' . $code
                     . ' (expires in ' . (int)ceil($ttl / 60) . ' minute(s)).'
             ];
         }
 
-        $sent = Helper::sendEmail([$email], $subject, $message, [
+        $emailOptions = [
             'context_label' => 'MFA OTP',
-            // MFA still needs to feel responsive, but the transport should get a fair chance on slower links.
-            'retry_attempts' => 2,
-            'retry_delay_ms' => 800,
             'allow_php_fallback' => false,
-            'smtp_connection_timeout_ms' => 12000,
-            'smtp_greeting_timeout_ms' => 10000,
-            'smtp_socket_timeout_ms' => 15000
-        ]);
+        ];
+
+        if (self::isLocalRequest()) {
+            if ($localDeliveryMode === 'auto') {
+                $emailOptions['retry_attempts'] = 1;
+                $emailOptions['retry_delay_ms'] = 0;
+                $emailOptions['smtp_connection_timeout_ms'] = 3500;
+                $emailOptions['smtp_greeting_timeout_ms'] = 3000;
+                $emailOptions['smtp_socket_timeout_ms'] = 5000;
+            } else {
+                $emailOptions['retry_attempts'] = 1;
+                $emailOptions['retry_delay_ms'] = 300;
+                $emailOptions['smtp_connection_timeout_ms'] = 6000;
+                $emailOptions['smtp_greeting_timeout_ms'] = 5000;
+                $emailOptions['smtp_socket_timeout_ms'] = 7000;
+            }
+        } else {
+            $emailOptions['retry_attempts'] = 2;
+            $emailOptions['retry_delay_ms'] = 800;
+            $emailOptions['smtp_connection_timeout_ms'] = 12000;
+            $emailOptions['smtp_greeting_timeout_ms'] = 10000;
+            $emailOptions['smtp_socket_timeout_ms'] = 15000;
+        }
+
+        $sent = Helper::sendEmail([$email], $subject, $message, $emailOptions);
         if (!$sent) {
             $lastError = method_exists('Helper', 'getLastEmailError') ? trim((string)Helper::getLastEmailError()) : '';
             error_log('MFA email delivery failed for user ' . $userId . ' (' . $module . '): ' . ($lastError !== '' ? $lastError : 'unknown error'));
 
-            if (self::isLocalRequest()) {
+            if (self::isLocalRequest() && $localDeliveryMode !== 'email') {
                 $localMessage = 'Email delivery is unavailable on this local environment.';
                 if (self::exposeLocalCodeOnFailure()) {
                     $localMessage .= ' Use verification code: ' . $code;
@@ -193,6 +212,7 @@ class MfaService {
                 $localMessage .= ' (expires in ' . (int)ceil($ttl / 60) . ' minute(s)).';
                 return [
                     'success' => true,
+                    'delivery' => 'local_fallback',
                     'message' => $localMessage
                 ];
             }
@@ -207,7 +227,11 @@ class MfaService {
             return ['success' => false, 'message' => 'Unable to send MFA code. Please try again shortly.'];
         }
 
-        return ['success' => true, 'message' => 'Verification code sent to your email address.'];
+        return [
+            'success' => true,
+            'delivery' => 'email',
+            'message' => 'Verification code sent to your email address.'
+        ];
     }
 
     public function verifyChallenge($userId, $module, $code) {

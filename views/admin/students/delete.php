@@ -4,6 +4,36 @@
  */
 require_once '../../../config.php';
 
+if (!function_exists('resolveSafeStudentReturnTo')) {
+    function resolveSafeStudentReturnTo($rawValue) {
+        $raw = trim((string)$rawValue);
+        if ($raw === '') {
+            return 'list.php';
+        }
+        $parts = @parse_url($raw);
+        if ($parts === false || !empty($parts['scheme']) || !empty($parts['host'])) {
+            return 'list.php';
+        }
+        $path = trim((string)($parts['path'] ?? ''));
+        if ($path === '') {
+            return 'list.php';
+        }
+        $allowedPaths = [
+            'list.php',
+            '/smns/views/admin/students/list.php',
+            rtrim((string)BASE_URL, '/') . '/views/admin/students/list.php'
+        ];
+        if (!in_array($path, $allowedPaths, true)) {
+            return 'list.php';
+        }
+        $normalized = $path === 'list.php' ? 'list.php' : (BASE_URL . '/views/admin/students/list.php');
+        if (!empty($parts['query'])) {
+            $normalized .= '?' . $parts['query'];
+        }
+        return $normalized;
+    }
+}
+
 $session = new Session('admin');
 $auth = new Auth('admin');
 
@@ -14,9 +44,10 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
 
 $currentUser = $auth->getCurrentUser();
 $studentId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+$returnTo = resolveSafeStudentReturnTo($_GET['return_to'] ?? $_POST['return_to'] ?? '');
 if ($studentId <= 0) {
     $session->setFlash('error', 'Invalid student ID.');
-    header('Location: list.php');
+    header('Location: ' . $returnTo);
     exit;
 }
 
@@ -36,19 +67,19 @@ try {
     $student = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$student) {
         $session->setFlash('error', 'Student not found.');
-        header('Location: list.php');
+        header('Location: ' . $returnTo);
         exit;
     }
 } catch (Exception $e) {
     $session->setFlash('error', 'Database error: ' . $e->getMessage());
-    header('Location: list.php');
+    header('Location: ' . $returnTo);
     exit;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrfToken()) {
         $session->setFlash('error', 'Invalid request.');
-        header('Location: delete.php?id=' . $studentId);
+        header('Location: delete.php?id=' . $studentId . '&return_to=' . urlencode($returnTo));
         exit;
     }
 
@@ -58,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($confirmDelete !== $expectedPhrase) {
         $session->setFlash('error', 'Confirmation phrase mismatch. Type "' . $expectedPhrase . '" to proceed.');
-        header('Location: delete.php?id=' . $studentId);
+        header('Location: delete.php?id=' . $studentId . '&return_to=' . urlencode($returnTo));
         exit;
     }
 
@@ -165,14 +196,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $session->setFlash('success', 'Student hard deleted successfully.');
         }
 
-        header('Location: list.php');
+        header('Location: ' . $returnTo);
         exit;
     } catch (Exception $e) {
         if ($conn->inTransaction()) {
             $conn->rollBack();
         }
         $session->setFlash('error', 'Failed to process request: ' . $e->getMessage());
-        header('Location: delete.php?id=' . $studentId);
+        header('Location: delete.php?id=' . $studentId . '&return_to=' . urlencode($returnTo));
         exit;
     }
 }
@@ -243,7 +274,7 @@ $pageTitle = 'Delete or Anonymize Student - ' . APP_NAME;
             <a href="view.php?id=<?php echo (int)$student['id']; ?>" class="btn btn-info mr-2">
                 <i class="fas fa-eye"></i> View Details
             </a>
-            <a href="list.php" class="btn btn-secondary mr-2">
+            <a href="<?php echo e($returnTo); ?>" class="btn btn-secondary mr-2">
                 <i class="fas fa-arrow-left"></i> Back to List
             </a>
             <?php include '../../../includes/notification_bell.php'; ?>
@@ -284,6 +315,7 @@ $pageTitle = 'Delete or Anonymize Student - ' . APP_NAME;
 
                         <form method="POST" class="mt-4">
                             <?php echo csrfField(); ?>
+                            <input type="hidden" name="return_to" value="<?php echo e($returnTo); ?>">
 
                             <div class="action-option">
                                 <div class="custom-control custom-radio">

@@ -49,6 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script>
         (function () {
             try {
@@ -89,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <input type="hidden" name="token" value="<?php echo e($token); ?>">
                 <div class="form-group">
                     <label class="mb-1">New Password</label>
-                    <div class="input-wrapper" style="position:relative;">
+                    <div class="input-wrapper has-action">
                         <input
                             type="password"
                             name="new_password"
@@ -99,12 +100,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             required
                             autofocus
                         >
-                        <button type="button" class="btn btn-sm btn-outline-secondary" style="position:absolute; right:10px; top:50%; transform:translateY(-50%);" onclick="togglePassword('new_password', this)">Show</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary password-toggle-btn" onclick="togglePassword('new_password', this)">Show</button>
                     </div>
                 </div>
                 <div class="form-group">
                     <label class="mb-1">Confirm Password</label>
-                    <div class="input-wrapper" style="position:relative;">
+                    <div class="input-wrapper has-action">
                         <input
                             type="password"
                             name="confirm_password"
@@ -113,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             placeholder="Confirm new password"
                             required
                         >
-                        <button type="button" class="btn btn-sm btn-outline-secondary" style="position:absolute; right:10px; top:50%; transform:translateY(-50%);" onclick="togglePassword('confirm_password', this)">Show</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary password-toggle-btn" onclick="togglePassword('confirm_password', this)">Show</button>
                     </div>
                 </div>
                 <button type="submit" class="btn btn-primary btn-block">Reset Password</button>

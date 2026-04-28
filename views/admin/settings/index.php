@@ -622,6 +622,8 @@ include '../../../includes/header.php';
                                 <div class="form-group col-md-12">
                                     <button type="submit" name="save_email" class="btn btn-primary">Save Email Settings</button>
                                     <a href="<?php echo BASE_URL; ?>/views/admin/email-test.php" class="btn btn-outline-secondary ml-2">Open Email Test</a>
+                                    <a href="<?php echo BASE_URL; ?>/views/admin/system/health.php#smtp-diagnostics" class="btn btn-outline-primary ml-2">Open SMTP Health</a>
+                                    <small class="form-text text-muted mt-2">Use SMTP Health to confirm DNS resolution and SMTP port reachability before testing OTP delivery again.</small>
                                 </div>
                             </div>
                         </form>

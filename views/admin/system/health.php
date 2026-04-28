@@ -197,6 +197,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 }
                 break;
 
+            case 'run_smtp_probe':
+                try {
+                    $smtpProbe = runSmtpDiagnostics();
+                    $actionResult = [
+                        'status' => ($smtpProbe['status'] ?? 'warning') === 'pass'
+                            ? 'success'
+                            : (($smtpProbe['status'] ?? 'warning') === 'warning' ? 'warning' : 'fail'),
+                        'message' => 'SMTP health check completed. ' . trim((string)($smtpProbe['message'] ?? ''))
+                    ];
+                } catch (Throwable $e) {
+                    $actionResult = ['status' => 'fail', 'message' => 'SMTP health check failed: ' . $e->getMessage()];
+                }
+                break;
+
             case 'purge_backups':
                 $backupDir = BackupSecurity::getBackupDirectory();
                 $deleted = 0;
@@ -498,6 +512,7 @@ function runSmtpDiagnostics() {
         'message' => implode(' ', $summaryParts),
         'details' => $details,
         'meta' => [
+            'checked_at' => date('Y-m-d H:i:s'),
             'host' => $smtpHost,
             'port' => $smtpPort,
             'transport' => $transport,
@@ -1113,13 +1128,22 @@ include '../../../includes/header.php';
             </div>
             
             <!-- Detailed Health Checks -->
-            <div class="row mt-4">
+            <div class="row mt-4" id="smtp-diagnostics">
                 <div class="col-md-12">
                     <div class="card">
                         <div class="card-header">
-                            <h5 class="mb-0">
-                                <i class="fas fa-envelope-open-text"></i> SMTP Diagnostics
-                            </h5>
+                            <div class="d-flex flex-wrap justify-content-between align-items-center" style="gap:12px;">
+                                <h5 class="mb-0">
+                                    <i class="fas fa-envelope-open-text"></i> SMTP Diagnostics
+                                </h5>
+                                <form method="post" action="<?php echo e(BASE_URL . '/views/admin/system/health.php#smtp-diagnostics'); ?>" style="margin:0;">
+                                    <input type="hidden" name="csrf_token" value="<?php echo Security::generateCSRFToken(); ?>">
+                                    <input type="hidden" name="action" value="run_smtp_probe">
+                                    <button type="submit" class="btn btn-outline-primary btn-sm">
+                                        <i class="fas fa-stethoscope"></i> Run SMTP Health Check
+                                    </button>
+                                </form>
+                            </div>
                         </div>
                         <div class="card-body">
                             <div class="smtp-diagnostic-summary smtp-<?php echo e($smtpDiagnostics['status'] ?? 'warning'); ?>">
@@ -1129,6 +1153,11 @@ include '../../../includes/header.php';
                                         <?php echo strtoupper((string)($smtpDiagnostics['status'] ?? 'warning')); ?>
                                     </span>
                                 </div>
+                                <?php if (!empty($smtpDiagnostics['meta']['checked_at'])): ?>
+                                    <div class="mt-2 text-muted">
+                                        Last checked: <?php echo e((string)$smtpDiagnostics['meta']['checked_at']); ?>
+                                    </div>
+                                <?php endif; ?>
                                 <p class="mb-0 mt-2"><?php echo e($smtpDiagnostics['message'] ?? ''); ?></p>
                             </div>
 
@@ -1228,6 +1257,13 @@ include '../../../includes/header.php';
                                     <button onclick="window.location.reload()" class="btn btn-primary">
                                         <i class="fas fa-redo"></i> Refresh Check
                                     </button>
+                                    <form method="post" action="<?php echo e(BASE_URL . '/views/admin/system/health.php#smtp-diagnostics'); ?>" style="display:inline-block;margin-left:8px;">
+                                        <input type="hidden" name="csrf_token" value="<?php echo Security::generateCSRFToken(); ?>">
+                                        <input type="hidden" name="action" value="run_smtp_probe">
+                                        <button type="submit" class="btn btn-outline-primary">
+                                            <i class="fas fa-envelope-open-text"></i> SMTP Health Check
+                                        </button>
+                                    </form>
                                     <a href="?show_logs=<?php echo $showLogs ? '0' : '1'; ?>" class="btn btn-secondary">
                                         <i class="fas fa-file-alt"></i> <?php echo $showLogs ? 'Hide Logs' : 'View Logs'; ?>
                                     </a>

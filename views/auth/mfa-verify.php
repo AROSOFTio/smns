@@ -67,7 +67,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $bootstrap = $auth->issuePendingMfaChallenge();
         echo json_encode([
             'success' => !empty($bootstrap['success']),
-            'message' => (string)($bootstrap['message'] ?? (!empty($bootstrap['success']) ? 'Verification code sent.' : 'Unable to send verification code.'))
+            'message' => (string)($bootstrap['message'] ?? (!empty($bootstrap['success']) ? 'Verification code sent.' : 'Unable to send verification code.')),
+            'delivery' => (string)($bootstrap['delivery'] ?? '')
         ]);
         exit;
     }
@@ -204,6 +205,21 @@ if ($mfaCodeLength > 8) {
             }
             .login-card {
                 padding: 16px 12px !important;
+            }
+        }
+        @media (max-width: 380px) {
+            .mfa-helper {
+                font-size: 12px;
+            }
+            .mfa-code-input {
+                letter-spacing: 0.18em;
+                font-size: 0.98rem;
+                padding-left: 12px !important;
+                padding-right: 12px !important;
+            }
+            .mfa-actions .btn {
+                font-size: 0.95rem;
+                height: 48px;
             }
         }
     </style>
@@ -343,7 +359,11 @@ document.addEventListener('DOMContentLoaded', function () {
             if (data && data.success) {
                 setStatus('success', data.message || 'Verification code sent to your email.');
                 if (helperText) {
-                    helperText.innerHTML = 'Enter the verification code sent to your email. If it expires, click <strong>Resend Code</strong>.';
+                    if (data.delivery === 'local_code' || data.delivery === 'local_fallback') {
+                        helperText.innerHTML = 'Use the verification code shown above. If it expires, click <strong>Resend Code</strong>.';
+                    } else {
+                        helperText.innerHTML = 'Enter the verification code sent to your email. If it expires, click <strong>Resend Code</strong>.';
+                    }
                 }
             } else {
                 setStatus('danger', (data && data.message) ? data.message : 'Unable to send verification code.');
