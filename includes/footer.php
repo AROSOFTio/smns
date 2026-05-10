@@ -23,6 +23,11 @@
         $moduleFromPath = '';
         if (strpos($requestPath, '/views/admin/') !== false) {
             $moduleFromPath = 'admin';
+        } elseif (strpos($requestPath, '/admin/') !== false) {
+            // Legacy admin tools live under /admin/*.php (outside /views/admin).
+            // Treat them as admin so the shared topbar (time + user dropdown/logout)
+            // and auto-logout module tracking remain consistent.
+            $moduleFromPath = 'admin';
         } elseif (strpos($requestPath, '/views/student/') !== false) {
             $moduleFromPath = 'student';
         } elseif (strpos($requestPath, '/views/lecturer/') !== false) {
@@ -85,7 +90,7 @@
                 $topbarTemplateData['subtitle'] = 'Admin';
                 $topbarTemplateData['menu_items'] = [
                     ['href' => BASE_URL . '/views/admin/profile.php', 'icon' => 'fas fa-user', 'label' => 'My Profile'],
-                    ['href' => BASE_URL . '/views/admin/settings.php', 'icon' => 'fas fa-cog', 'label' => 'Settings'],
+                    ['href' => BASE_URL . '/views/admin/settings/index.php', 'icon' => 'fas fa-cog', 'label' => 'Settings'],
                     ['divider' => true],
                     ['href' => BASE_URL . '/views/admin/logout.php', 'icon' => 'fas fa-sign-out-alt', 'label' => 'Logout', 'logout' => true],
                 ];
@@ -1564,6 +1569,9 @@
             var button = document.createElement('button');
             button.className = 'user-dropdown-toggle';
             button.type = 'button';
+            // Avoid duplicate dropdown bindings from navigation.js/main.js.
+            // The injected dropdown manages its own toggle behavior.
+            button.dataset.smnsDropdownBound = '1';
 
             var avatar = document.createElement('div');
             avatar.className = 'user-avatar';
@@ -1672,6 +1680,21 @@
         function enhanceTopbar(topbar) {
             if (!(topbar instanceof HTMLElement) || topbar.classList.contains('smns-topbar-enhanced')) {
                 return;
+            }
+
+            // Standardize the left side: ensure a sidebar toggle exists when a sidebar is present.
+            // Many admin pages render a `.topbar-left` title but omit the toggle, which makes
+            // the topbar feel inconsistent compared to the Dashboard.
+            var left = topbar.querySelector('.topbar-left');
+            var sidebarExists = !!(document.getElementById('sidebar') || document.querySelector('.sidebar'));
+            if (left && sidebarExists && !document.getElementById('sidebarToggle') && !left.querySelector('.sidebar-toggle')) {
+                var toggle = document.createElement('button');
+                toggle.className = 'sidebar-toggle';
+                toggle.id = 'sidebarToggle';
+                toggle.type = 'button';
+                toggle.title = 'Toggle Sidebar';
+                toggle.innerHTML = '<i class="fas fa-bars"></i>';
+                left.insertBefore(toggle, left.firstChild);
             }
 
             var right = topbar.querySelector('.topbar-right');

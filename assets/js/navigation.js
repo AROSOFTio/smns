@@ -20,6 +20,13 @@
         document.body.appendChild(overlay);
 
         const sidebar = document.querySelector('.sidebar');
+        if (!sidebar) {
+            // Some pages (e.g., auth screens) may not render a sidebar.
+            // Guard to prevent JS from crashing and blocking other inits (dropdown/logout).
+            overlay.remove();
+            mobileBtn.remove();
+            return;
+        }
         
         // Toggle mobile menu
         function toggleMobileMenu() {
