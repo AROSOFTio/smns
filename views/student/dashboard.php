@@ -997,6 +997,7 @@ document.addEventListener('click', function() {
                     </div>
 
                     <div class="text-right">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="window.location.href='dashboard.php'">Cancel</button>
                         <button type="submit" class="btn btn-primary btn-sm">Save and Lock Profile</button>
                     </div>
                 </form>

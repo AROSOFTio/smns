@@ -668,7 +668,7 @@ $flashInfo = $session->getFlash('info');
             <div class="card-body">
                 <h5>All Approved Students (All Semesters)</h5>
                 <?php
-                $allApprovedSql = "SELECT cr.student_id, s.first_name, s.last_name, s.student_id as student_code, sem.semester_name, COUNT(*) as course_count
+                $allApprovedSql = "SELECT cr.student_id, s.first_name, s.last_name, s.student_id as student_code, sem.semester_name, sem.id as semester_id, COUNT(*) as course_count
                     FROM course_registrations cr
                     JOIN students s ON cr.student_id = s.id
                     JOIN semesters sem ON cr.semester_id = sem.id

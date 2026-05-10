@@ -11,6 +11,8 @@ $providedStudentId = trim((string)($_GET['student_id'] ?? ''));
 $providedCode = strtoupper(str_replace([' ', '-'], '', trim((string)($_GET['code'] ?? ''))));
 $providedHash = strtolower(trim((string)($_GET['hash'] ?? '')));
 
+$formSubmitted = !empty($_GET);
+
 $student = null;
 $status = 'pending';
 $message = 'Enter a verification token or use Student ID plus verification code/hash to validate an official transcript.';
@@ -166,6 +168,7 @@ if ($providedToken !== '') {
                 <button class="btn btn-primary" type="submit">Verify</button>
             </form>
 
+            <?php if ($formSubmitted): ?>
             <div class="alert <?php echo $status === 'valid' ? 'alert-success' : ($status === 'invalid' ? 'alert-danger' : 'alert-info'); ?>">
                 <?php echo e($message); ?>
             </div>
@@ -186,6 +189,16 @@ if ($providedToken !== '') {
                         <?php endif; ?>
                     <?php endif; ?>
                 </div>
+            <?php endif; ?>
+
+            <?php if ($status === 'valid' && $student): ?>
+                <div id="transcriptDisplay" class="mt-4">
+                    <?php
+                    $studentId = (int)$student['id'];
+                    include_once '../student/transcript_template.php';
+                    ?>
+                </div>
+            <?php endif; ?>
             <?php endif; ?>
         </div>
     </div>

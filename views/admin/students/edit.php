@@ -482,6 +482,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'username' => $student['username'],
                         'temporary_password' => $generatedPassword,
                         'login_url' => BASE_URL . '/views/student/login.php'
+                    ], [
+                        // Keep the profile-update request responsive even if SMTP is slow.
+                        'allow_php_fallback' => false,
+                        'retry_attempts' => 1,
+                        'retry_delay_ms' => 0,
+                        'smtp_connection_timeout_ms' => 4000,
+                        'smtp_greeting_timeout_ms' => 4000,
+                        'smtp_socket_timeout_ms' => 4000,
+                        'source_page' => '/views/admin/students/edit.php?id=' . (int)$studentId
                     ]);
                 } catch (Exception $mailEx) {
                     $mailSent = false;
@@ -490,7 +499,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($mailSent) {
                     $successMessage .= '. Email updated and new login credentials were sent to the new address.';
                 } else {
-                    $successMessage .= '. Email updated, but credential email failed. Share this temporary password manually: ' . $generatedPassword;
+                    $successMessage .= '. Email updated, but credential email could not be delivered right now. Use Reset Password to resend fresh credentials if needed.';
                 }
             }
 

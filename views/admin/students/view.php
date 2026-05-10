@@ -562,6 +562,9 @@ $pageTitle = 'View Student - ' . APP_NAME;
                 <a href="graduation-awards.php?id=<?php echo $student['id']; ?>" class="btn btn-primary mr-2">
                     <i class="fas fa-certificate"></i> Graduation & Awards
                 </a>
+                <a href="transcript.php?id=<?php echo $student['id']; ?>" class="btn btn-info" target="_blank">
+                    <i class="fas fa-file-alt"></i> View Transcript
+                </a>
                 <button type="button" class="btn btn-danger" onclick="deleteStudent(<?php echo $student['id']; ?>)">
                     <i class="fas fa-trash"></i> Delete Student
                 </button>

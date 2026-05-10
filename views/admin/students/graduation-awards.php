@@ -498,31 +498,40 @@ html[data-theme='dark'] .ga-summary-item .value { color: #e2e8f0; }
             <h4>Graduation & Awards Tracking</h4>
         </div>
         <div class="topbar-right">
-            <a href="view.php?id=<?php echo (int)$studentId; ?>" class="btn btn-info btn-sm mr-2">
+            <a href="view.php?id=<?php echo $studentId; ?>" class="btn btn-outline-secondary btn-sm" title="Back to Student Profile">
                 <i class="fas fa-user"></i> Student Profile
             </a>
-            <a href="<?php echo BASE_URL; ?>/views/admin/student_requests.php?view=transcript" class="btn btn-outline-info btn-sm mr-2">
-                <i class="fas fa-file-signature"></i> Transcript
-            </a>
-            <a href="?id=<?php echo (int)$studentId; ?>&export=csv" class="btn btn-outline-secondary btn-sm mr-2">
+            <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#transcriptModal">
+                <i class="fas fa-file-alt"></i> Transcript
+            </button>
+            <a href="?id=<?php echo $studentId; ?>&export=csv" class="btn btn-outline-secondary btn-sm">
                 <i class="fas fa-file-csv"></i> Export CSV
             </a>
-            <a href="?id=<?php echo (int)$studentId; ?>&export=excel" class="btn btn-outline-secondary btn-sm mr-2">
+            <a href="?id=<?php echo $studentId; ?>&export=excel" class="btn btn-outline-secondary btn-sm">
                 <i class="fas fa-file-excel"></i> Export Excel
             </a>
-            <?php include '../../../includes/notification_bell.php'; ?>
         </div>
     </div>
 
-    <div class="content-area p-4">
-        <?php if ($session->getFlash('success')): ?>
-            <div class="alert alert-success"><?php echo e($session->getFlash('success')); ?></div>
+    <div class="container-fluid">
+        <?php if ($session->hasFlash('success')): ?>
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <?php echo $session->getFlash('success'); ?>
+                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
         <?php endif; ?>
-        <?php if ($session->getFlash('error')): ?>
-            <div class="alert alert-danger"><?php echo e($session->getFlash('error')); ?></div>
+        <?php if ($session->hasFlash('error')): ?>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <?php echo $session->getFlash('error'); ?>
+                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
         <?php endif; ?>
 
-        <div class="ga-card card mb-3">
+        <div class="card ga-card mb-4">
             <div class="card-header bg-primary text-white">
                 <h5 class="mb-0"><i class="fas fa-user-graduate"></i> Student Graduation Snapshot</h5>
             </div>
@@ -773,6 +782,35 @@ html[data-theme='dark'] .ga-summary-item .value { color: #e2e8f0; }
     </div>
 </div>
 
-<?php include '../../../includes/footer.php'; ?>
+<!-- Transcript Modal -->
+<div class="modal fade" id="transcriptModal" tabindex="-1" role="dialog" aria-labelledby="transcriptModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="transcriptModalLabel">Transcript for <?php echo e(trim($student['first_name'] . ' ' . $student['last_name'])); ?></h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="transcript-container" style="max-height: 75vh; overflow-y: auto;">
+                    <?php
+                    // Reuse the transcript template
+                    // The template expects $studentId and $conn to be available
+                    include_once '../../student/transcript_template.php';
+                    ?>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                <a href="transcript.php?id=<?php echo $studentId; ?>" class="btn btn-primary" target="_blank">Open in New Tab</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.slim.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="<?php echo BASE_URL; ?>/assets/js/main.js?v=<?php echo urlencode((string)APP_VERSION); ?>"></script>
 </body>
 </html>

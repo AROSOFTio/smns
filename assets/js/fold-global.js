@@ -3,6 +3,8 @@
     window.__smnsFoldGlobalInit = true;
     var loadingOverlayTimer = null;
     var loadingOverlayDelayMs = 180;
+    var loadingOverlayFailsafeTimer = null;
+    var loadingOverlayMaxVisibleMs = 15000;
 
     function discoverBaseUrl() {
         if (typeof window.SMNS_BASE_URL === 'string' && window.SMNS_BASE_URL !== '') {
@@ -53,6 +55,10 @@
             clearTimeout(loadingOverlayTimer);
             loadingOverlayTimer = null;
         }
+        if (loadingOverlayFailsafeTimer) {
+            clearTimeout(loadingOverlayFailsafeTimer);
+            loadingOverlayFailsafeTimer = null;
+        }
         if (document.querySelector('.loading-overlay')) {
             return;
         }
@@ -70,6 +76,7 @@
                 '<div class="loading-brand-dots"><span></span><span></span><span></span></div>' +
             '</div>';
         document.body.appendChild(overlay);
+        loadingOverlayFailsafeTimer = window.setTimeout(hideLoadingOverlay, loadingOverlayMaxVisibleMs);
     }
 
     function scheduleLoadingOverlay() {
@@ -80,6 +87,22 @@
             loadingOverlayTimer = null;
             showLoadingOverlay();
         }, loadingOverlayDelayMs);
+    }
+
+    function hideLoadingOverlay() {
+        if (loadingOverlayTimer) {
+            clearTimeout(loadingOverlayTimer);
+            loadingOverlayTimer = null;
+        }
+        if (loadingOverlayFailsafeTimer) {
+            clearTimeout(loadingOverlayFailsafeTimer);
+            loadingOverlayFailsafeTimer = null;
+        }
+
+        var overlay = document.querySelector('.loading-overlay');
+        if (overlay && overlay.parentNode) {
+            overlay.parentNode.removeChild(overlay);
+        }
     }
 
     function shouldHandleLinkClick(event, link) {
@@ -126,6 +149,10 @@
 
             form.addEventListener('submit', function (event) {
                 if (event.defaultPrevented || form.noValidate || form.dataset.noLoading === '1') {
+                    return;
+                }
+                if (typeof form.checkValidity === 'function' && !form.checkValidity()) {
+                    hideLoadingOverlay();
                     return;
                 }
 
@@ -323,4 +350,6 @@
     } else {
         boot();
     }
+
+    window.addEventListener('pageshow', hideLoadingOverlay);
 })();

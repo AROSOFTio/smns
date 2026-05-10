@@ -246,14 +246,10 @@ $moduleLabel = ucfirst($module);
 
         <?php if ($success): ?><div class="alert alert-success"><?php echo e($success); ?></div><?php endif; ?>
         <?php if ($error): ?><div class="alert alert-danger"><?php echo e($error); ?></div><?php endif; ?>
-        <div id="mfaStatus" class="alert mfa-status <?php echo $shouldBootstrapMfa ? 'alert-info is-visible' : ''; ?>">
-            <?php echo $shouldBootstrapMfa ? 'Opening your verification step now. Sending your code to email...' : ''; ?>
-        </div>
+        <div id="mfaStatus" class="alert mfa-status"></div>
 
         <p class="mfa-helper" id="mfaHelperText">
-            <?php echo $shouldBootstrapMfa
-                ? 'Your verification page is ready. We are sending a fresh code to your email now.'
-                : 'Enter the verification code sent to your email. If it expires, click <strong>Resend Code</strong>.'; ?>
+            <?php echo 'Enter the verification code sent to your email. If it expires, click <strong>Resend Code</strong>.'; ?>
         </p>
 
         <form method="post" class="login-form mfa-actions" id="mfaVerifyForm" data-auto-issue="<?php echo $shouldBootstrapMfa ? '1' : '0'; ?>">
@@ -357,11 +353,13 @@ document.addEventListener('DOMContentLoaded', function () {
         .then(function (response) { return response.json(); })
         .then(function (data) {
             if (data && data.success) {
-                setStatus('success', data.message || 'Verification code sent to your email.');
-                if (helperText) {
-                    if (data.delivery === 'local_code' || data.delivery === 'local_fallback') {
+                if (data.delivery === 'local_code' || data.delivery === 'local_fallback') {
+                    setStatus('success', data.message || 'Verification code ready.');
+                    if (helperText) {
                         helperText.innerHTML = 'Use the verification code shown above. If it expires, click <strong>Resend Code</strong>.';
-                    } else {
+                    }
+                } else {
+                    if (helperText) {
                         helperText.innerHTML = 'Enter the verification code sent to your email. If it expires, click <strong>Resend Code</strong>.';
                     }
                 }
