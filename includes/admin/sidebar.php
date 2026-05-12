@@ -113,6 +113,11 @@ if (!isset($currentUser) || !is_array($currentUser)) {
                 </a>
             </li>
             <li>
+                <a href="<?php echo BASE_URL; ?>/views/admin/users/add.php" class="<?php echo $currentDir == 'users' ? 'active' : ''; ?>">
+                    <i class="fas fa-users-cog"></i><span>Manage Users</span>
+                </a>
+            </li>
+            <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/students/list.php?status=graduated" class="<?php echo ($currentDir == 'students' && ($currentPage == 'graduation-awards.php' || (($_GET['status'] ?? '') === 'graduated'))) ? 'active' : ''; ?>">
                     <i class="fas fa-certificate"></i><span>Graduation & Awards</span>
                 </a>
@@ -211,6 +216,11 @@ if (!isset($currentUser) || !is_array($currentUser)) {
             <li>
                 <a href="<?php echo BASE_URL; ?>/views/admin/system/health.php" class="<?php echo $currentPage == 'health.php' ? 'active' : ''; ?>">
                     <i class="fas fa-heartbeat"></i><span>System Health</span>
+                </a>
+            </li>
+            <li>
+                <a href="<?php echo BASE_URL; ?>/views/admin/super-admin.php" class="<?php echo $currentPage == 'super-admin.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-user-shield"></i><span>Super Admin Setup</span>
                 </a>
             </li>
             <li>

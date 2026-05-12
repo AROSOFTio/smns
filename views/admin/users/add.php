@@ -250,6 +250,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $db = new Database();
 $conn = $db->getConnection();
+$isSuperAdmin = false;
+try {
+    $isSuperAdmin = FeeStructureGovernance::isSuperAdmin($conn, (int)($currentUser['id'] ?? 0));
+} catch (Exception $e) {
+    $isSuperAdmin = false;
+}
 
 // Notifications (per-user + broadcast aware)
 $currentUser = isset($currentUser) ? $currentUser : $auth->getCurrentUser();
@@ -326,7 +332,7 @@ try {
     $systemUsersError = 'Unable to load system users directory right now.';
 }
 
-$pageTitle = 'Add User - ' . APP_NAME;
+$pageTitle = 'Manage Users - ' . APP_NAME;
 $additionalCSS = ['admin.css'];
 $disableAutoLogout = true;
 include __DIR__ . '/../../../includes/header.php';
@@ -339,7 +345,7 @@ include __DIR__ . '/../../../includes/header.php';
         <div class="topbar-left">
             <h4>
                 <a href="../dashboard.php" class="btn btn-link">← Back to Dashboard</a>
-                Add User
+                Manage Users
             </h4>
         </div>
         <div class="topbar-right d-flex align-items-center">
@@ -557,6 +563,7 @@ include __DIR__ . '/../../../includes/header.php';
                                                     <th>Identifier</th>
                                                     <th>Operating Area</th>
                                                     <th>Status</th>
+                                                    <th>Actions</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -621,6 +628,16 @@ include __DIR__ . '/../../../includes/header.php';
                                                                 <?php echo e(ucfirst($statusRaw)); ?>
                                                             </span>
                                                         </td>
+                                                        <td>
+                                                            <a href="edit.php?id=<?php echo (int)$directoryUser['id']; ?>" class="btn btn-sm btn-outline-primary" title="Edit user">
+                                                                <i class="fas fa-edit"></i> Edit
+                                                            </a>
+                                                            <?php if ($isSuperAdmin && (int)$directoryUser['id'] !== (int)($currentUser['id'] ?? 0)): ?>
+                                                                <a href="delete.php?id=<?php echo (int)$directoryUser['id']; ?>" class="btn btn-sm btn-outline-danger mt-1" title="Remove or delete user">
+                                                                    <i class="fas fa-trash-alt"></i> Remove
+                                                                </a>
+                                                            <?php endif; ?>
+                                                        </td>
                                                     </tr>
                                                 <?php endforeach; ?>
                                             </tbody>
@@ -661,7 +678,7 @@ include __DIR__ . '/../../../includes/header.php';
 }
 
 .system-users-table-wrap table {
-    min-width: 980px;
+    min-width: 1080px;
     table-layout: fixed;
     margin-bottom: 0;
 }
@@ -678,6 +695,7 @@ include __DIR__ . '/../../../includes/header.php';
 #systemUsersTable td:nth-child(5) { width: 95px; }
 #systemUsersTable td:nth-child(6) { width: 130px; }
 #systemUsersTable td:nth-child(8) { width: 100px; }
+#systemUsersTable td:nth-child(9) { width: 110px; }
 
 .operating-area-cell small {
     display: block;
