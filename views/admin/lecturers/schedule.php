@@ -254,9 +254,9 @@ include '../../../includes/header.php';
 ?>
 
 <style>
-/* Keep parent containers from clipping filter controls */
-.main-content { overflow-x: visible; }
-.content-area  { overflow-x: visible; }
+/* Keep page stable while tables scroll inside their own wrappers */
+.main-content { overflow-x: hidden; }
+.content-area  { overflow-x: hidden; }
 .card.filter-card,
 .card.filter-card .card-body,
 .filter-form { overflow: visible !important; }
@@ -308,6 +308,13 @@ include '../../../includes/header.php';
 .ua-course-badge { display:inline-block; background:#fef2f2; color:#b91c1c; border:1px solid #fca5a5; border-radius:4px; font-size:0.7rem; padding:1px 5px; font-weight:600; }
 .ua-row-index { color:#94a3b8; font-weight:600; text-align:center; }
 .ua-sem-col { color:#94a3b8; font-size:0.82rem; }
+.schedule-table-scroll {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto !important;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+}
 
 /* Filter form — wraps on small screens */
 .filter-card { position: static; }
@@ -446,8 +453,61 @@ html[data-theme='dark'] .ua-course-badge {
 }
 
 @media (max-width: 768px) {
-    .sched-table col.col-lec  { width: 22%; }
-    .sched-table col.col-name { width: 30%; }
+    .main-content,
+    .content-area {
+        max-width: 100vw !important;
+        overflow-x: hidden !important;
+    }
+
+    .sched-card,
+    .ua-card {
+        max-width: 100% !important;
+        overflow: hidden !important;
+    }
+
+    .schedule-table-scroll,
+    .table-responsive.schedule-table-scroll {
+        display: block;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        overflow-y: visible !important;
+        border-radius: 0;
+    }
+
+    .schedule-table-scroll .sched-table,
+    .schedule-table-scroll .ua-table {
+        width: max-content !important;
+        max-width: none !important;
+        min-width: 760px !important;
+        table-layout: fixed !important;
+    }
+
+    .schedule-table-scroll .ua-table {
+        min-width: 640px !important;
+    }
+
+    .schedule-table-scroll .sched-table th,
+    .schedule-table-scroll .sched-table td,
+    .schedule-table-scroll .ua-table th,
+    .schedule-table-scroll .ua-table td {
+        white-space: normal !important;
+        overflow-wrap: normal !important;
+        word-break: normal !important;
+    }
+
+    .sched-table col.col-num    { width: 44px; }
+    .sched-table col.col-code   { width: 118px; }
+    .sched-table col.col-name   { width: 250px; }
+    .sched-table col.col-cu     { width: 90px; }
+    .sched-table col.col-lec    { width: 180px; }
+    .sched-table col.col-status { width: 110px; }
+
+    .ua-table col.col-num  { width: 44px; }
+    .ua-table col.col-code { width: 128px; }
+    .ua-table col.col-name { width: 310px; }
+    .ua-table col.col-cu   { width: 90px; }
+    .ua-table col.col-sem  { width: 90px; }
 }
 </style>
 
@@ -592,7 +652,7 @@ html[data-theme='dark'] .ua-course-badge {
                         <i class="fas fa-users mr-1"></i> Year <?php echo $lvl; ?>
                         &nbsp;|&nbsp; <span style="font-weight:400;"><?php echo count($lvlLectSet); ?> lecturer(s), <?php echo $lvlAssign; ?> assignment(s), <?php echo count($courseList); ?> course(s)</span>
                     </div>
-                    <div class="table-responsive" style="overflow-x:hidden;">
+                    <div class="table-responsive schedule-table-scroll">
                         <table class="table sched-table mb-0">
                             <colgroup>
                                 <col class="col-num">
@@ -677,7 +737,7 @@ html[data-theme='dark'] .ua-course-badge {
                             <i class="fas fa-users mr-1"></i> Year <?php echo $lvl; ?>
                             &nbsp;&mdash;&nbsp; <span style="font-weight:400;"><?php echo count($courses); ?> course(s)</span>
                         </div>
-                        <div style="overflow-x:hidden;">
+                        <div class="schedule-table-scroll">
                             <table class="ua-table">
                                 <colgroup>
                                     <col class="col-num">

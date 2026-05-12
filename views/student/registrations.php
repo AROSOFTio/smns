@@ -110,6 +110,8 @@ unset($semesters);
 $unreadNotifications = fetchUnreadNotificationsForUser($currentUser['id'], 10);
 
 $pageTitle = 'My Registrations - ' . APP_NAME;
+$additionalCSS = array_merge($additionalCSS ?? [], ['student-portal.css']);
+$additionalJS = array_merge($additionalJS ?? [], ['student-portal.js']);
 include '../../includes/header.php';
 ?>
 

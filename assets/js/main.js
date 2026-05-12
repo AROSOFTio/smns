@@ -226,7 +226,10 @@ document.addEventListener('DOMContentLoaded', function() {
         localStorage.removeItem('sidebar-collapsed');
         
         // Check localStorage for sidebar state and apply on page load
-        if (localStorage.getItem('sidebarCollapsed') === 'true') {
+        if (window.innerWidth <= 768) {
+            sidebar.classList.remove('collapsed');
+            mainContent.classList.remove('expanded');
+        } else if (localStorage.getItem('sidebarCollapsed') === 'true') {
             sidebar.classList.add('collapsed');
             mainContent.classList.add('expanded');
             var icon = sidebarToggle.querySelector('i');
@@ -239,6 +242,18 @@ document.addEventListener('DOMContentLoaded', function() {
         sidebarToggle.addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
+
+            if (window.innerWidth <= 768) {
+                sidebar.classList.remove('collapsed');
+                mainContent.classList.remove('expanded');
+                if (window.SMNSMobileNav && typeof window.SMNSMobileNav.toggle === 'function') {
+                    window.SMNSMobileNav.toggle();
+                } else {
+                    sidebar.classList.toggle('active');
+                    document.body.classList.toggle('smns-sidebar-open', sidebar.classList.contains('active'));
+                }
+                return;
+            }
             
             sidebar.classList.toggle('collapsed');
             mainContent.classList.toggle('expanded');

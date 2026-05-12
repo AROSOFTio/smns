@@ -425,6 +425,173 @@ html[data-theme='dark'] .badge-provisional {
 .main-content{margin-left:var(--student-sidebar-width)!important;width:auto!important;max-width:none!important;min-width:0;overflow-x:hidden}
 .main-content.full-width{margin-left:0!important;width:auto!important;max-width:none!important}
 .chip-row{flex-wrap:wrap;row-gap:.4rem;white-space:normal}
+.mobile-table-scroll {
+    width: 100%;
+    max-width: 100%;
+}
+
+@media (max-width: 992px) {
+    .main-content,
+    .main-content.full-width {
+        margin-left: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+    }
+
+    .student-topbar {
+        flex-wrap: wrap !important;
+        align-items: flex-start !important;
+        gap: 0.65rem !important;
+        padding: 0.55rem 0.85rem !important;
+    }
+
+    .student-topbar > div:first-child,
+    .student-topbar > div:last-child {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        justify-content: flex-start !important;
+    }
+
+    .student-topbar > div:first-child {
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        padding-bottom: 0.2rem !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .student-topbar > div:first-child button {
+        flex: 0 0 auto;
+        white-space: nowrap !important;
+    }
+
+    .student-topbar > div:last-child {
+        flex-wrap: wrap !important;
+    }
+
+    .student-topbar > div:last-child span {
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+    }
+
+    .chip-row {
+        padding-left: 0.85rem !important;
+        padding-right: 0.85rem !important;
+        flex-wrap: wrap !important;
+        white-space: normal !important;
+        overflow-x: visible !important;
+    }
+
+    .chip-row > * {
+        max-width: 100% !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+    }
+
+    .chip-row > span[style*="margin-left:auto"] {
+        margin-left: 0 !important;
+    }
+
+    .wrap {
+        padding: 0.75rem 0.65rem !important;
+    }
+
+    .cardx {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow: hidden;
+    }
+
+    .cardx-head {
+        flex-wrap: wrap !important;
+        align-items: flex-start !important;
+        gap: 0.7rem !important;
+        padding: 0.85rem !important;
+    }
+
+    .view-switch {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        width: 100%;
+    }
+
+    .view-switch a {
+        margin-left: 0 !important;
+        white-space: nowrap;
+    }
+
+    .cardx > div[style*="padding:1rem 1.2rem"] {
+        padding: 0.75rem !important;
+    }
+
+    .mobile-table-scroll {
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        border: 1px solid #334155;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .tbl {
+        width: max-content !important;
+        min-width: 860px !important;
+        max-width: none !important;
+        white-space: nowrap !important;
+    }
+
+    .tbl th,
+    .tbl td {
+        padding: 8px 10px !important;
+        white-space: nowrap !important;
+        vertical-align: middle !important;
+    }
+
+    .tbl th:nth-child(2),
+    .tbl td:nth-child(2) {
+        min-width: 280px !important;
+    }
+
+    .tbl th:nth-child(3),
+    .tbl td:nth-child(3),
+    .tbl th:nth-child(4),
+    .tbl td:nth-child(4),
+    .tbl th:nth-child(6),
+    .tbl td:nth-child(6) {
+        text-align: right !important;
+    }
+
+    .tbl th:nth-child(5),
+    .tbl td:nth-child(5),
+    .tbl th:nth-child(7),
+    .tbl td:nth-child(7),
+    .tbl th:nth-child(8),
+    .tbl td:nth-child(8) {
+        text-align: center !important;
+    }
+}
+
+@media (max-width: 430px) {
+    .wrap {
+        padding-left: 0.45rem !important;
+        padding-right: 0.45rem !important;
+    }
+
+    .cardx-head,
+    .cardx > div[style*="padding:1rem 1.2rem"] {
+        padding-left: 0.6rem !important;
+        padding-right: 0.6rem !important;
+    }
+
+    .student-profile-pic {
+        width: 44px !important;
+        height: 44px !important;
+    }
+
+    .top-logout-link {
+        padding: 5px 8px !important;
+    }
+}
 </style>
 
 <div class="student-sidebar">
@@ -513,13 +680,14 @@ html[data-theme='dark'] .badge-provisional {
                     <?php foreach ($organizedResults as $year => $semesters): ?>
                         <?php foreach ($semesters as $semNum => $data): ?>
                             <div class="semester-title">YEAR <?php echo (int)$year; ?> - <?php echo e($data['academic_year']); ?> - SEMESTER <?php echo (int)$semNum; ?></div>
-                            <table class="tbl">
-                                <thead>
-                                    <tr>
-                                        <th>CODE</th><th>TITLE</th><th>MARK</th><th>CUs</th><th>GRADE</th><th>GD POINT</th><th>REMARK</th><th>STATUS</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
+                            <div class="mobile-table-scroll">
+                                <table class="tbl">
+                                    <thead>
+                                        <tr>
+                                            <th>CODE</th><th>TITLE</th><th>MARK</th><th>CUs</th><th>GRADE</th><th>GD POINT</th><th>REMARK</th><th>STATUS</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
                                     <?php
                                     $semesterCredits = 0.0;
                                     $semesterPoints = 0.0;
@@ -571,8 +739,9 @@ html[data-theme='dark'] .badge-provisional {
                                         <td colspan="2"><strong>Semester GPA</strong></td>
                                         <td colspan="2"><?php echo $sgpa !== null ? number_format((float)$sgpa, 2) : 'PA'; ?></td>
                                     </tr>
-                                </tbody>
-                            </table>
+                                    </tbody>
+                                </table>
+                            </div>
                         <?php endforeach; ?>
                     <?php endforeach; ?>
                     <div class="grading-key">

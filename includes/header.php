@@ -30,6 +30,11 @@ if ($currentUser && isset($currentUser['profile'])) {
 
 $requestPath = $_SERVER['REQUEST_URI'] ?? '';
 $isStudentPortalPage = (strpos($requestPath, '/views/student/') !== false);
+$isAdminPage = (strpos($requestPath, '/views/admin/') !== false || strpos($requestPath, '/admin/') !== false);
+$bodyClasses = [];
+if ($isAdminPage) {
+    $bodyClasses[] = 'smns-admin-mobile-shell';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -88,7 +93,7 @@ $isStudentPortalPage = (strpos($requestPath, '/views/student/') !== false);
     </style>
     <?php endif; ?>
 </head>
-<body>
+<body<?php echo !empty($bodyClasses) ? ' class="' . e(implode(' ', $bodyClasses)) . '"' : ''; ?>>
     <div class="wrapper">
         <img
             id="smnsSharedLogoAsset"

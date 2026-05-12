@@ -1940,8 +1940,8 @@ include '../../includes/header.php';
 .finance-dashboard table td {
     font-size: 12px;
     white-space: normal;
-    overflow-wrap: anywhere;
-    word-break: break-word;
+    overflow-wrap: normal;
+    word-break: normal;
     vertical-align: middle;
 }
 

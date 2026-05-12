@@ -4,15 +4,26 @@
  * Copy this to config.php and update with your settings
  */
 
-// Error reporting (Set to 0 in production)
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+// Error reporting (keep disabled in production)
+error_reporting(0);
+ini_set('display_errors', 0);
+define('APP_DEBUG', false);
+
+if (!function_exists('smnsEnv')) {
+    function smnsEnv($key, $default = '') {
+        $value = getenv((string)$key);
+        if (is_string($value) && trim($value) !== '') {
+            return trim($value);
+        }
+        return $default;
+    }
+}
 
 // Database Configuration
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'smns');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_HOST', smnsEnv('DB_HOST', smnsEnv('SMNS_DB_HOST', 'localhost:3306')));
+define('DB_NAME', smnsEnv('DB_NAME', smnsEnv('SMNS_DB_NAME', 'smns')));
+define('DB_USER', smnsEnv('DB_USER', smnsEnv('SMNS_DB_USER', 'root')));
+define('DB_PASS', smnsEnv('DB_PASS', smnsEnv('SMNS_DB_PASS', '')));
 define('DB_SSL_ENABLED', false);
 define('DB_SSL_CA', '/path/to/ca.pem');
 define('DB_SSL_CERT', '/path/to/client-cert.pem');
@@ -22,7 +33,7 @@ define('DB_SSL_KEY', '/path/to/client-key.pem');
 define('APP_NAME', 'Seminary Results Management System');
 define('APP_SHORT_NAME', 'SMNS');
 define('APP_VERSION', '1.0.0');
-define('BASE_URL', 'https://your-domain.example/smns');
+define('BASE_URL', rtrim(smnsEnv('SMNS_BASE_URL', 'https://your-domain.example/smns'), '/'));
 define('BASE_PATH', __DIR__);
 
 // Timezone
@@ -108,25 +119,25 @@ define('ALLOWED_EXTENSIONS', ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx']);
 define('RECORDS_PER_PAGE', 20);
 
 // Payment Gateway / Mobile Money
-define('PAYMENT_GATEWAY_MODE', 'live'); // mock | sandbox | live
+define('PAYMENT_GATEWAY_MODE', smnsEnv('PAYMENT_GATEWAY_MODE', 'mock')); // mock | sandbox | live
 define('MOBILE_MONEY_DEFAULT_PROVIDER', 'mtn');
-define('PAYMENT_GATEWAY_WEBHOOK_SECRET', 'replace-with-strong-shared-secret');
-define('PAYMENT_GATEWAY_WEBHOOK_URL', BASE_URL . '/api/payments/webhook.php');
+define('PAYMENT_GATEWAY_WEBHOOK_SECRET', smnsEnv('PAYMENT_GATEWAY_WEBHOOK_SECRET', ''));
+define('PAYMENT_GATEWAY_WEBHOOK_URL', smnsEnv('PAYMENT_GATEWAY_WEBHOOK_URL', BASE_URL . '/api/payments/webhook.php'));
 define('PAYMENT_GATEWAY_HTTP_TIMEOUT', 30);
-define('MOBILE_MONEY_MTN_INITIATE_URL', 'https://your-mtn-gateway.example.com/collections/request-to-pay');
-define('MOBILE_MONEY_MTN_BEARER_TOKEN', '');
-define('MOBILE_MONEY_MTN_API_KEY', '');
-define('MOBILE_MONEY_MTN_API_SECRET', '');
-define('MOBILE_MONEY_AIRTEL_INITIATE_URL', 'https://your-airtel-gateway.example.com/merchant/v1/payments');
-define('MOBILE_MONEY_AIRTEL_BEARER_TOKEN', '');
-define('MOBILE_MONEY_AIRTEL_CLIENT_ID', '');
-define('MOBILE_MONEY_AIRTEL_CLIENT_SECRET', '');
+define('MOBILE_MONEY_MTN_INITIATE_URL', smnsEnv('MOBILE_MONEY_MTN_INITIATE_URL', ''));
+define('MOBILE_MONEY_MTN_BEARER_TOKEN', smnsEnv('MOBILE_MONEY_MTN_BEARER_TOKEN', ''));
+define('MOBILE_MONEY_MTN_API_KEY', smnsEnv('MOBILE_MONEY_MTN_API_KEY', ''));
+define('MOBILE_MONEY_MTN_API_SECRET', smnsEnv('MOBILE_MONEY_MTN_API_SECRET', ''));
+define('MOBILE_MONEY_AIRTEL_INITIATE_URL', smnsEnv('MOBILE_MONEY_AIRTEL_INITIATE_URL', ''));
+define('MOBILE_MONEY_AIRTEL_BEARER_TOKEN', smnsEnv('MOBILE_MONEY_AIRTEL_BEARER_TOKEN', ''));
+define('MOBILE_MONEY_AIRTEL_CLIENT_ID', smnsEnv('MOBILE_MONEY_AIRTEL_CLIENT_ID', ''));
+define('MOBILE_MONEY_AIRTEL_CLIENT_SECRET', smnsEnv('MOBILE_MONEY_AIRTEL_CLIENT_SECRET', ''));
 define('MOBILE_MONEY_AIRTEL_COUNTRY_CODE', 'UG');
 
 // Interoperability / External integrations
-define('INTEGRATION_API_TOKEN', 'replace-with-strong-integration-token');
+define('INTEGRATION_API_TOKEN', smnsEnv('SMNS_INTEGRATION_API_TOKEN', ''));
 define('LMS_INTEGRATION_PROVIDER', 'moodle');
-define('LMS_INTEGRATION_BASE_URL', 'https://lms.your-domain.example');
+define('LMS_INTEGRATION_BASE_URL', smnsEnv('SMNS_LMS_BASE_URL', ''));
 define('UPTIME_SLO_TARGET_PERCENT', 99.0);
 define('RESTORE_DRILL_MAX_AGE_DAYS', 90);
 define('UPTIME_MONITOR_TIMEOUT_SECONDS', 8);
@@ -134,7 +145,7 @@ define('UPTIME_MONITOR_TIMEOUT_SECONDS', 8);
 // Backup controls
 define('BACKUP_STORAGE_PATH', dirname(BASE_PATH, 2) . DIRECTORY_SEPARATOR . 'smns_secure_backups');
 define('BACKUP_ENCRYPTION_ENABLED', true);
-define('BACKUP_ENCRYPTION_KEY', 'replace-with-strong-random-backup-key');
+define('BACKUP_ENCRYPTION_KEY', smnsEnv('SMNS_BACKUP_ENCRYPTION_KEY', ''));
 
 // Academic Configuration
 define('STUDENT_ID_PREFIX', 'STD');
@@ -146,10 +157,10 @@ define('PASS_MARK', 50);
 // Email Configuration
 define('SMTP_HOST', 'smtp.gmail.com');
 define('SMTP_PORT', 587);
-define('SMTP_USERNAME', 'your-email@gmail.com');
-define('SMTP_PASSWORD', 'your-gmail-app-password');
+define('SMTP_USERNAME', smnsEnv('SMTP_USERNAME', smnsEnv('SMTP_USER', '')));
+define('SMTP_PASSWORD', smnsEnv('SMTP_PASSWORD', smnsEnv('SMTP_PASS', '')));
 define('SMTP_SECURE', false);
-define('SMTP_FROM_EMAIL', 'your-email@gmail.com');
+define('SMTP_FROM_EMAIL', smnsEnv('SMTP_FROM_EMAIL', SMTP_USERNAME));
 define('SMTP_FROM_NAME', APP_NAME);
 define('EMAIL_TRANSPORT', 'nodemailer');
 define('EMAIL_FALLBACK_PHP_MAIL', true);

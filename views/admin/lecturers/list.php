@@ -493,6 +493,274 @@ include dirname(__DIR__, 3) . '/includes/header.php';
         .lecturer-filter-actions { width:100%; }
         .lecturer-filter-actions .btn { flex:1 1 auto; }
     }
+
+    @media (max-width: 576px) {
+        .topbar {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) !important;
+            align-items: stretch !important;
+            padding: 0.65rem 0.75rem 0.65rem 3.25rem !important;
+        }
+
+        .topbar-left,
+        .topbar-right {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+        }
+
+        .topbar-right {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: 6px !important;
+        }
+
+        .topbar-right form,
+        .topbar-right .notification-wrapper,
+        .topbar-right .notification-bell-container {
+            grid-column: 1 / -1;
+        }
+
+        .topbar-right .btn,
+        .topbar-right form button {
+            width: 100% !important;
+            min-height: 34px !important;
+            margin: 0 !important;
+            white-space: normal !important;
+        }
+
+        .content-area {
+            padding: 0.65rem !important;
+        }
+
+        .content-area > .card,
+        .content-area .card-body,
+        .content-area .card-header {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+        }
+
+        .content-area .card-body {
+            padding: 0.75rem !important;
+        }
+
+        .content-area form .row {
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+        }
+
+        .content-area form .row > [class*="col-"] {
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+
+        .lecturers-toolbar,
+        .lecturers-toolbar-right,
+        .lecturers-footer {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) !important;
+            align-items: stretch !important;
+            gap: 8px !important;
+        }
+
+        .lecturers-per-page {
+            display: grid !important;
+            grid-template-columns: auto minmax(0, 1fr);
+            align-items: center;
+            gap: 8px;
+        }
+
+        .lecturers-per-page label {
+            margin: 0 !important;
+        }
+
+        .lecturers-pagination {
+            overflow-x: auto;
+            max-width: 100%;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .lecturers-pagination .pagination {
+            flex-wrap: nowrap;
+            width: max-content;
+            max-width: none;
+        }
+
+        .lecturers-table-wrap,
+        .lecturers-table-wrap.table-responsive {
+            overflow-x: hidden !important;
+            border: 0 !important;
+            background: transparent !important;
+        }
+
+        .lecturers-table,
+        .lecturers-table thead,
+        .lecturers-table tbody,
+        .lecturers-table tr,
+        .lecturers-table th,
+        .lecturers-table td {
+            display: block;
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+
+        .lecturers-table {
+            table-layout: auto !important;
+            border-collapse: separate !important;
+            border-spacing: 0 !important;
+            min-width: 0 !important;
+        }
+
+        .lecturers-table thead {
+            display: none;
+        }
+
+        .lecturers-table tbody tr {
+            margin-bottom: 10px;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: #ffffff;
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+        }
+
+        .lecturers-table td {
+            display: grid;
+            grid-template-columns: 92px minmax(0, 1fr);
+            gap: 8px;
+            align-items: start;
+            border: 0 !important;
+            border-bottom: 1px solid #eef2f7 !important;
+            padding: 7px 0 !important;
+            font-size: 0.8rem !important;
+            text-align: left !important;
+            white-space: normal !important;
+            overflow-wrap: anywhere !important;
+        }
+
+        .lecturers-table td::before {
+            content: attr(data-label);
+            color: #64748b;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .lecturers-table td:last-child {
+            border-bottom: 0 !important;
+        }
+
+        .lecturers-table .col-dept,
+        .lecturers-table .col-spec {
+            display: block !important;
+        }
+
+        .assigned-course-tag {
+            font-size: 0.72rem;
+            overflow-wrap: anywhere;
+        }
+
+        .status-stack {
+            flex-direction: row;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .lecturer-actions {
+            grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+            gap: 5px !important;
+        }
+
+        .lecturer-actions .btn {
+            min-width: 0 !important;
+            min-height: 32px !important;
+            padding: 0.25rem !important;
+        }
+
+        html[data-theme='dark'] .lecturers-table tbody tr {
+            background: #0f172a;
+            border-color: #334155;
+        }
+
+        html[data-theme='dark'] .lecturers-table td {
+            border-bottom-color: #1e293b !important;
+        }
+
+        .lecturers-table-wrap,
+        .lecturers-table-wrap.table-responsive {
+            overflow-x: auto !important;
+            border: 1px solid rgba(15, 23, 42, 0.08) !important;
+            background: #ffffff !important;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .lecturers-table {
+            display: table !important;
+            width: max-content !important;
+            max-width: none !important;
+            min-width: 920px !important;
+            table-layout: fixed !important;
+            border-collapse: collapse !important;
+            border-spacing: 0 !important;
+        }
+
+        .lecturers-table thead {
+            display: table-header-group !important;
+        }
+
+        .lecturers-table tbody {
+            display: table-row-group !important;
+        }
+
+        .lecturers-table tr {
+            display: table-row !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+        }
+
+        .lecturers-table th,
+        .lecturers-table td {
+            display: table-cell !important;
+            width: auto !important;
+            max-width: none !important;
+            border-bottom: 1px solid #dee2e6 !important;
+            padding: 0.35rem !important;
+            vertical-align: top !important;
+        }
+
+        .lecturers-table td::before {
+            content: none !important;
+        }
+
+        .lecturers-table .col-dept,
+        .lecturers-table .col-spec {
+            display: table-cell !important;
+        }
+
+        .lecturers-table .col-id { width: 105px !important; }
+        .lecturers-table .col-name { width: 170px !important; }
+        .lecturers-table .col-dept { width: 145px !important; }
+        .lecturers-table .col-spec { width: 150px !important; }
+        .lecturers-table .col-assignment { width: 230px !important; }
+        .lecturers-table .col-status { width: 105px !important; }
+        .lecturers-table .col-actions { width: 115px !important; }
+
+        .lecturer-actions {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 4px !important;
+        }
+
+        html[data-theme='dark'] .lecturers-table-wrap,
+        html[data-theme='dark'] .lecturers-table-wrap.table-responsive {
+            background: var(--app-surface-1, #0f172a) !important;
+            border-color: var(--app-border, #334155) !important;
+        }
+    }
 </style>
 
 <?php include dirname(__DIR__, 3) . '/includes/admin/sidebar.php'; ?>
@@ -623,7 +891,7 @@ include dirname(__DIR__, 3) . '/includes/header.php';
             </div>
             <div class="card-body" style="padding: 0.5rem;">
                 <?php if (count($lecturers) > 0): ?>
-                    <div class="table-responsive" style="overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch;">
+                    <div class="table-responsive lecturers-table-wrap" style="overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch;">
                         <table class="table table-hover table-sm lecturers-table" style="font-size: 0.875rem; margin-bottom: 0;">
                             <thead>
                                 <tr>
@@ -639,14 +907,14 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                             <tbody>
                                 <?php foreach($lecturers as $lecturer): ?>
                                     <tr>
-                                        <td><strong><?php echo e($lecturer['lecturer_id']); ?></strong></td>
-                                        <td>
+                                        <td data-label="ID"><strong><?php echo e($lecturer['lecturer_id']); ?></strong></td>
+                                        <td data-label="Name">
                                             <?php echo e($lecturer['first_name'] . ' ' . $lecturer['last_name']); ?>
                                             <br><small class="text-muted" style="font-size: 0.75rem;"><?php echo e($lecturer['qualifications'] ?? 'N/A'); ?></small>
                                         </td>
-                                        <td><?php echo e($lecturer['department'] ?? 'N/A'); ?></td>
-                                        <td><?php echo e($lecturer['specialization'] ?? 'N/A'); ?></td>
-                                        <td style="font-size: 0.8rem;">
+                                        <td data-label="Department"><?php echo e($lecturer['department'] ?? 'N/A'); ?></td>
+                                        <td data-label="Designation"><?php echo e($lecturer['specialization'] ?? 'N/A'); ?></td>
+                                        <td data-label="Assignments" style="font-size: 0.8rem;">
                                             <?php $assignmentCount = (int)($lecturer['assignment_count'] ?? 0); ?>
                                             <span class="assignment-pill <?php echo $assignmentCount > 0 ? 'assigned' : 'unassigned'; ?>">
                                                 <?php echo $assignmentCount > 0 ? ('ASSIGNED (' . $assignmentCount . ')') : 'UNASSIGNED'; ?>
@@ -662,7 +930,7 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                                                 </div>
                                             <?php endif; ?>
                                         </td>
-                                        <td style="font-size: 0.8rem;">
+                                        <td data-label="Status" style="font-size: 0.8rem;">
                                             <?php
                                             $statusClass = 'secondary';
                                             $statusColor = 'gray';
@@ -692,7 +960,7 @@ include dirname(__DIR__, 3) . '/includes/header.php';
                                                 </span>
                                             </div>
                                         </td>
-                                        <td style="padding: 0.25rem;">
+                                        <td data-label="Actions" style="padding: 0.25rem;">
                                             <div class="lecturer-actions">
                                                 <a href="view.php?id=<?php echo $lecturer['id']; ?>" class="btn btn-sm btn-info btn-xs" title="View"><i class="fas fa-eye"></i></a>
                                                 <a href="edit.php?id=<?php echo $lecturer['id']; ?>" class="btn btn-sm btn-warning btn-xs" title="Edit"><i class="fas fa-edit"></i></a>

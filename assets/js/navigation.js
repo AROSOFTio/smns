@@ -7,68 +7,179 @@
 
     // Mobile menu functionality
     function initMobileMenu() {
-        // Create mobile menu button
-        const mobileBtn = document.createElement('button');
-        mobileBtn.className = 'mobile-menu-btn';
-        mobileBtn.innerHTML = '&#9776;';
-        mobileBtn.setAttribute('aria-label', 'Toggle Navigation');
-        document.body.appendChild(mobileBtn);
+        const isAdminPath = /\/views\/admin\/|\/admin\//.test(window.location.pathname);
+        let mobileBtn = null;
 
-        // Create overlay
-        const overlay = document.createElement('div');
-        overlay.className = 'sidebar-overlay';
-        document.body.appendChild(overlay);
+        if (isAdminPath) {
+            document.body.classList.add('smns-admin-mobile-shell');
+        }
+        document.querySelectorAll('.mobile-menu-btn').forEach(function (button) {
+            button.remove();
+        });
 
-        const sidebar = document.querySelector('.sidebar');
+        // Create or reuse overlay
+        let overlay = document.querySelector('.sidebar-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.className = 'sidebar-overlay';
+            document.body.appendChild(overlay);
+        }
+
+        const sidebar = document.querySelector('.sidebar, .student-sidebar, .lecturer-sidebar, .finance-sidebar');
         if (!sidebar) {
             // Some pages (e.g., auth screens) may not render a sidebar.
             // Guard to prevent JS from crashing and blocking other inits (dropdown/logout).
             overlay.remove();
-            mobileBtn.remove();
+            if (mobileBtn) {
+                mobileBtn.remove();
+            }
             return;
         }
-        
+
+        const isAdminSidebar = sidebar.classList.contains('sidebar') &&
+            !sidebar.classList.contains('student-sidebar') &&
+            !sidebar.classList.contains('lecturer-sidebar') &&
+            !sidebar.classList.contains('finance-sidebar');
+
+        if (isAdminSidebar) {
+            document.body.classList.add('smns-admin-mobile-shell');
+            document.querySelectorAll('.mobile-menu-btn').forEach(function (button) {
+                button.remove();
+            });
+            if (mobileBtn) {
+                mobileBtn.remove();
+                mobileBtn = null;
+            }
+        }
+
+        function syncMobileButtonOffset() {
+            if (!mobileBtn) {
+                return;
+            }
+            if (!mobileBtn.classList.contains('active')) {
+                mobileBtn.style.removeProperty('left');
+                return;
+            }
+
+            const sidebarWidth = Math.ceil(sidebar.getBoundingClientRect().width);
+            if (sidebarWidth > 0) {
+                mobileBtn.style.left = (sidebarWidth + 8) + 'px';
+            }
+        }
+
+        function closeMobileMenu() {
+            sidebar.classList.remove('active');
+            sidebar.classList.remove('collapsed');
+            const mainContent = document.getElementById('mainContent') || document.querySelector('.main-content');
+            if (mainContent) {
+                mainContent.classList.remove('expanded');
+            }
+            if (sidebar.classList.contains('student-sidebar') && window.innerWidth < 993) {
+                sidebar.classList.add('sidebar-collapsed');
+            }
+            overlay.classList.remove('active');
+            if (mobileBtn) {
+                mobileBtn.classList.remove('active');
+                mobileBtn.innerHTML = '&#9776;';
+                mobileBtn.style.removeProperty('left');
+            }
+            document.body.classList.remove('smns-sidebar-open');
+            document.body.style.overflow = '';
+        }
+
+        function openMobileMenu() {
+            sidebar.classList.add('active');
+            sidebar.classList.remove('collapsed');
+            sidebar.classList.remove('sidebar-collapsed');
+            const mainContent = document.getElementById('mainContent') || document.querySelector('.main-content');
+            if (mainContent) {
+                mainContent.classList.remove('expanded');
+            }
+            overlay.classList.add('active');
+            if (mobileBtn) {
+                mobileBtn.classList.add('active');
+                mobileBtn.innerHTML = '&times;';
+            }
+            document.body.classList.add('smns-sidebar-open');
+            document.body.style.overflow = 'hidden';
+            syncMobileButtonOffset();
+        }
+
+        window.SMNSMobileNav = {
+            open: openMobileMenu,
+            close: closeMobileMenu,
+            toggle: function () {
+                if (sidebar.classList.contains('active')) {
+                    closeMobileMenu();
+                } else {
+                    openMobileMenu();
+                }
+            }
+        };
+
+        if (isAdminSidebar) {
+            const topbarLeft = document.querySelector('.topbar-left') || document.querySelector('.topbar');
+            let adminToggle = document.getElementById('sidebarToggle') || document.querySelector('.sidebar-toggle');
+
+            if (!adminToggle && topbarLeft) {
+                adminToggle = document.createElement('button');
+                adminToggle.type = 'button';
+                adminToggle.className = 'sidebar-toggle';
+                adminToggle.id = 'sidebarToggle';
+                adminToggle.title = 'Toggle Sidebar';
+                adminToggle.setAttribute('aria-label', 'Toggle Sidebar');
+                adminToggle.innerHTML = '<i class="fas fa-bars"></i>';
+                topbarLeft.insertBefore(adminToggle, topbarLeft.firstChild);
+            }
+
+            if (adminToggle && adminToggle.dataset.smnsMobileNavBound !== '1') {
+                adminToggle.dataset.smnsMobileNavBound = '1';
+                adminToggle.addEventListener('click', function (event) {
+                    if (window.innerWidth > 768) {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    window.SMNSMobileNav.toggle();
+                }, true);
+            }
+        }
+         
         // Toggle mobile menu
         function toggleMobileMenu() {
             const isActive = sidebar.classList.contains('active');
             
             if (isActive) {
-                sidebar.classList.remove('active');
-                overlay.classList.remove('active');
-                mobileBtn.classList.remove('active');
-                mobileBtn.innerHTML = '&#9776;';
-                document.body.style.overflow = '';
+                closeMobileMenu();
             } else {
-                sidebar.classList.add('active');
-                overlay.classList.add('active');
-                mobileBtn.classList.add('active');
-                mobileBtn.innerHTML = '&times;';
-                document.body.style.overflow = 'hidden';
+                openMobileMenu();
             }
         }
 
         // Event listeners
-        mobileBtn.addEventListener('click', toggleMobileMenu);
-        overlay.addEventListener('click', toggleMobileMenu);
+        if (mobileBtn) {
+            mobileBtn.addEventListener('click', toggleMobileMenu);
+        }
+        overlay.addEventListener('click', closeMobileMenu);
+        overlay.addEventListener('touchstart', closeMobileMenu, { passive: true });
 
         // Close menu when clicking nav links on mobile
-        const navLinks = document.querySelectorAll('.nav-link');
+        const navLinks = document.querySelectorAll('.nav-link, .sidebar-menu a[href]:not(.has-submenu), .student-sidebar a[href], .lecturer-sidebar a[href], .finance-sidebar a[href]');
         navLinks.forEach(link => {
             link.addEventListener('click', () => {
-                if (window.innerWidth < 768) {
-                    toggleMobileMenu();
+                if (window.innerWidth < 993) {
+                    closeMobileMenu();
                 }
-            });
+            }, true);
         });
 
         // Handle window resize
         window.addEventListener('resize', () => {
-            if (window.innerWidth >= 768) {
-                sidebar.classList.remove('active');
-                overlay.classList.remove('active');
-                mobileBtn.classList.remove('active');
-                mobileBtn.innerHTML = '&#9776;';
-                document.body.style.overflow = '';
+            if (window.innerWidth > 768) {
+                closeMobileMenu();
+            } else {
+                syncMobileButtonOffset();
             }
         });
     }
@@ -322,10 +433,17 @@
                     dropdownMenu.classList.remove('show');
                 }
                 
-                const sidebar = document.querySelector('.sidebar.active');
+                const sidebar = document.querySelector('.sidebar.active, .student-sidebar.active, .lecturer-sidebar.active, .finance-sidebar.active');
                 if (sidebar && window.innerWidth < 768) {
-                    const event = new Event('click');
-                    document.querySelector('.sidebar-overlay').dispatchEvent(event);
+                    if (window.SMNSMobileNav && typeof window.SMNSMobileNav.close === 'function') {
+                        window.SMNSMobileNav.close();
+                    } else {
+                        const overlay = document.querySelector('.sidebar-overlay');
+                        if (overlay) {
+                            const event = new Event('click');
+                            overlay.dispatchEvent(event);
+                        }
+                    }
                 }
             }
         });
@@ -335,9 +453,12 @@
         
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Tab') {
-                const sidebar = document.querySelector('.sidebar');
-                if (sidebar.classList.contains('active') && window.innerWidth < 768) {
+                const sidebar = document.querySelector('.sidebar, .student-sidebar, .lecturer-sidebar, .finance-sidebar');
+                if (sidebar && sidebar.classList.contains('active') && window.innerWidth < 768) {
                     const focusableContent = sidebar.querySelectorAll(focusableElements);
+                    if (!focusableContent.length) {
+                        return;
+                    }
                     const firstFocusable = focusableContent[0];
                     const lastFocusable = focusableContent[focusableContent.length - 1];
                     

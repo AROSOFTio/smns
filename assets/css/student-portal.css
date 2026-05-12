@@ -26,6 +26,10 @@ body {
     transform: translateX(-100%);
 }
 
+.student-sidebar.active {
+    transform: translateX(0);
+}
+
 .student-sidebar ul {
     list-style: none;
     padding: 10px 8px;
@@ -203,6 +207,32 @@ body {
     min-width: 0;
 }
 
+.main-content *,
+.content-area * {
+    min-width: 0;
+}
+
+.content-area {
+    width: 100%;
+    max-width: 100%;
+}
+
+.content-area img,
+.main-content img {
+    max-width: 100%;
+    height: auto;
+}
+
+.content-area table {
+    max-width: 100%;
+}
+
+.table-responsive {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
 .chip {
     border-radius: 6px;
     padding: 4px 8px;
@@ -272,9 +302,9 @@ html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:active {
 @media (max-width: 992px) {
     .main-content,
     .main-content.full-width {
-        margin-left: 0;
-        width: auto;
-        max-width: none;
+        margin-left: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
     }
 
     .student-sidebar {
@@ -283,21 +313,151 @@ html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:active {
 
     .student-topbar {
         align-items: flex-start;
+        flex-wrap: wrap;
+        width: 100%;
+        max-width: 100%;
     }
 
+    .student-topbar > div:first-child,
     .student-topbar > div:last-child {
         margin-left: 0;
         width: 100%;
         justify-content: flex-start;
     }
 
+    .student-topbar > div:first-child {
+        overflow-x: auto;
+        padding-bottom: 0.15rem;
+        -webkit-overflow-scrolling: touch;
+    }
+
     .student-topbar > div:last-child > span {
         max-width: 100%;
+        white-space: normal !important;
+        word-break: break-word;
     }
 
     .student-summary-grow {
         margin-left: 0;
         width: 100%;
+        white-space: normal !important;
+    }
+
+    .content-area,
+    .content-area.container,
+    .container,
+    .container-fluid {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding-left: 0.85rem !important;
+        padding-right: 0.85rem !important;
+    }
+
+    .row,
+    .form-row {
+        margin-left: -0.4rem !important;
+        margin-right: -0.4rem !important;
+    }
+
+    [class*="col-"] {
+        min-width: 0;
+    }
+
+    .card,
+    .card-body,
+    .semester-block,
+    .year-section,
+    .dashboard-card,
+    .profile-lock-modal,
+    .transcript-card,
+    .invoice-card,
+    .service-card {
+        max-width: 100% !important;
+    }
+
+    .bio-details-table,
+    .reg-table,
+    .results-table,
+    .provisional-results-table,
+    .payments-table,
+    .invoice-table,
+    .course-table,
+    .calendar-table,
+    .services-table,
+    .notification-table {
+        display: block;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .content-area table:not(.transcript-table):not(.semester-table),
+    .main-content table:not(.transcript-table):not(.semester-table) {
+        display: block;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .bio-details-table tbody,
+    .reg-table tbody,
+    .results-table tbody,
+    .provisional-results-table tbody,
+    .payments-table tbody,
+    .invoice-table tbody,
+    .course-table tbody,
+    .calendar-table tbody,
+    .services-table tbody,
+    .notification-table tbody {
+        display: table;
+        min-width: max-content;
+        width: 100%;
+    }
+
+    .content-area table:not(.transcript-table):not(.semester-table) tbody,
+    .main-content table:not(.transcript-table):not(.semester-table) tbody {
+        display: table;
+        min-width: max-content;
+        width: 100%;
+    }
+
+    .table,
+    .table-responsive table {
+        width: 100%;
+    }
+
+    #keyDropMenu,
+    #profileDropMenu {
+        max-width: calc(100vw - 1.5rem) !important;
+        min-width: min(260px, calc(100vw - 1.5rem)) !important;
+        right: 0 !important;
+    }
+
+    .topbar,
+    .topbar-left,
+    .topbar-right {
+        flex-wrap: wrap;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .topbar h4,
+    .topbar h5,
+    .student-topbar button,
+    .topbar .btn,
+    .content-area .btn {
+        white-space: normal;
+    }
+
+    .alert,
+    .badge,
+    .chip,
+    .student-portal-summary span {
+        white-space: normal !important;
+        overflow-wrap: anywhere;
     }
 }
 
@@ -311,6 +471,7 @@ html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:active {
 
     .student-topbar button {
         max-width: 100%;
+        flex: 0 0 auto;
     }
 
     .student-profile-pic {
@@ -321,5 +482,229 @@ html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:active {
     .sidebar-user-card img {
         width: 104px;
         height: 104px;
+    }
+
+    .student-sidebar {
+        width: min(64vw, 224px) !important;
+        max-width: min(64vw, 224px) !important;
+    }
+
+    .student-sidebar ul {
+        padding-left: 6px !important;
+        padding-right: 6px !important;
+    }
+
+    .student-sidebar li {
+        padding: 7px 8px !important;
+        font-size: 0.74rem !important;
+        margin-bottom: 3px !important;
+    }
+
+    .student-sidebar .sidebar-menu a,
+    .student-sidebar a {
+        font-size: 0.76rem !important;
+        line-height: 1.2;
+    }
+
+    .student-topbar > div:first-child {
+        flex-wrap: nowrap !important;
+        gap: 0.45rem !important;
+    }
+
+    .student-topbar > div:first-child button {
+        font-size: 0.78rem !important;
+        padding: 5px 8px !important;
+    }
+
+    .content-area,
+    .content-area.container,
+    .container,
+    .container-fluid {
+        padding-left: 0.65rem !important;
+        padding-right: 0.65rem !important;
+    }
+
+    .card-body {
+        padding: 0.85rem !important;
+    }
+
+    .bio-details-table td,
+    .reg-table th,
+    .reg-table td,
+    .table th,
+    .table td {
+        padding: 0.45rem 0.55rem !important;
+        font-size: 0.78rem;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .main-content {
+        font-size: 0.82rem !important;
+    }
+
+    .student-topbar {
+        min-height: 50px !important;
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        flex-wrap: nowrap !important;
+        gap: 6px !important;
+        padding: 6px 8px 6px 52px !important;
+        overflow: visible !important;
+        font-size: 0.82rem !important;
+    }
+
+    .student-topbar > div:first-child {
+        width: auto !important;
+        min-width: 0 !important;
+        flex: 1 1 auto !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 5px !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        padding-bottom: 0 !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    .student-topbar > div:first-child::-webkit-scrollbar {
+        display: none;
+    }
+
+    .student-topbar > div:last-child {
+        width: auto !important;
+        max-width: 42% !important;
+        min-width: 0 !important;
+        flex: 0 0 auto !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        justify-content: flex-end !important;
+        gap: 4px !important;
+        margin-left: auto !important;
+        overflow: visible !important;
+    }
+
+    .student-topbar button {
+        min-height: 30px !important;
+        max-height: 34px !important;
+        padding: 4px 7px !important;
+        font-size: 0.7rem !important;
+        line-height: 1.15 !important;
+        white-space: nowrap !important;
+    }
+
+    .student-topbar > div:last-child > span {
+        max-width: 7.5rem !important;
+        font-size: 0.72rem !important;
+        line-height: 1.15 !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        word-break: normal !important;
+    }
+
+    .student-profile-pic {
+        width: 34px !important;
+        height: 34px !important;
+        border-radius: 9px !important;
+    }
+
+    #profileDropBtn,
+    #keyDropBtn {
+        width: 30px !important;
+        height: 30px !important;
+        min-width: 30px !important;
+        padding: 0 !important;
+        font-size: 0.78rem !important;
+    }
+
+    .chip,
+    .student-portal-summary span,
+    .chip-row span {
+        font-size: 0.7rem !important;
+        line-height: 1.15 !important;
+        padding: 3px 6px !important;
+    }
+}
+
+@media (max-width: 430px) {
+    html,
+    body,
+    .wrapper,
+    .main-content {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+    }
+
+    .student-topbar {
+        gap: 5px !important;
+        padding: 6px 7px 6px 50px !important;
+    }
+
+    .student-topbar > div:first-child,
+    .student-topbar > div:last-child {
+        min-width: 0 !important;
+        max-width: 100% !important;
+    }
+
+    .student-topbar > div:first-child {
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        scrollbar-width: thin;
+    }
+
+    .student-topbar > div:last-child {
+        flex-wrap: nowrap !important;
+        max-width: 38% !important;
+    }
+
+    .student-topbar > div:last-child > span {
+        display: none !important;
+    }
+
+    .main-content > div[style*="display:flex"],
+    .student-portal-summary,
+    .chip-row {
+        max-width: 100% !important;
+    }
+
+    .main-content > div[style*="flex-wrap:nowrap"],
+    .main-content > div[style*="white-space:nowrap"],
+    .student-portal-summary,
+    .chip-row {
+        flex-wrap: wrap !important;
+        white-space: normal !important;
+        overflow-x: visible !important;
+    }
+
+    .main-content > div[style*="flex-wrap:nowrap"] > *,
+    .main-content > div[style*="white-space:nowrap"] > *,
+    .student-portal-summary > *,
+    .chip-row > * {
+        max-width: 100% !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+    }
+
+    #keyDropMenu,
+    #profileDropMenu {
+        left: auto !important;
+        right: 0 !important;
+        max-width: calc(100vw - 1rem) !important;
+    }
+}
+
+@media (max-width: 390px) {
+    .student-sidebar {
+        width: min(68vw, 214px) !important;
+        max-width: min(68vw, 214px) !important;
+    }
+
+    .sidebar-user-card img {
+        width: 76px !important;
+        height: 76px !important;
     }
 }

@@ -103,10 +103,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (isset($_POST['save_email'])) {
         $transport = strtolower(trim((string)($_POST['email_transport'] ?? '')));
-        if (!in_array($transport, ['nodemailer', 'php_mail'], true)) {
+        if (!in_array($transport, ['nodemailer', 'smtp', 'php_mail'], true)) {
             $transport = defined('EMAIL_TRANSPORT') ? strtolower((string)EMAIL_TRANSPORT) : 'nodemailer';
         }
-        if (!in_array($transport, ['nodemailer', 'php_mail'], true)) {
+        if (!in_array($transport, ['nodemailer', 'smtp', 'php_mail'], true)) {
             $transport = 'nodemailer';
         }
 
@@ -564,6 +564,7 @@ include '../../../includes/header.php';
                                     <label>Email Transport</label>
                                     <select name="email_transport" class="form-control">
                                         <option value="nodemailer" <?php echo $emailTransportSetting === 'nodemailer' ? 'selected' : ''; ?>>Nodemailer (SMTP)</option>
+                                        <option value="smtp" <?php echo $emailTransportSetting === 'smtp' ? 'selected' : ''; ?>>Native SMTP</option>
                                         <option value="php_mail" <?php echo $emailTransportSetting === 'php_mail' ? 'selected' : ''; ?>>PHP mail()</option>
                                     </select>
                                 </div>

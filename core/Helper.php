@@ -31,7 +31,7 @@ class Helper {
 
     private static function normalizeTransport($transport) {
         $value = strtolower(trim((string)$transport));
-        return in_array($value, ['nodemailer', 'php_mail'], true) ? $value : 'php_mail';
+        return in_array($value, ['nodemailer', 'smtp', 'php_mail'], true) ? $value : 'php_mail';
     }
 
     private static function resolveSmtpHostCandidates($hostname) {
@@ -255,7 +255,48 @@ class Helper {
             }
 
             if (!$allowPhpFallback) {
-                self::$lastEmailError = $transportError !== '' ? $transportError : 'Nodemailer transport failed.';
+                $smtpError = '';
+                if (self::sendViaSmtp($recipients, (string)$subject, (string)$message, $html, [
+                    'host' => $smtpHost,
+                    'port' => $smtpPort,
+                    'username' => $smtpUsername,
+                    'password' => $smtpPassword,
+                    'secure' => $smtpSecure,
+                    'from_email' => $fromEmail,
+                    'from_name' => $fromName,
+                    'connection_timeout' => $smtpConnectionTimeout,
+                    'socket_timeout' => $smtpSocketTimeout,
+                ], $smtpError)) {
+                    return true;
+                }
+                self::$lastEmailError = trim(($transportError !== '' ? $transportError . ' | ' : '') . ($smtpError !== '' ? $smtpError : 'SMTP transport failed.'));
+                if ($notifyAdminOnFailure) {
+                    self::recordEmailDeliveryFailure($recipients, (string)$subject, (string)$message, $html, 'smtp', self::$lastEmailError, $options);
+                }
+                return false;
+            }
+        }
+
+        if ($transport === 'smtp' || ($transport === 'nodemailer' && $transportError !== '')) {
+            $smtpError = '';
+            $transportUsed = 'smtp';
+            if (self::sendViaSmtp($recipients, (string)$subject, (string)$message, $html, [
+                'host' => $smtpHost,
+                'port' => $smtpPort,
+                'username' => $smtpUsername,
+                'password' => $smtpPassword,
+                'secure' => $smtpSecure,
+                'from_email' => $fromEmail,
+                'from_name' => $fromName,
+                'connection_timeout' => $smtpConnectionTimeout,
+                'socket_timeout' => $smtpSocketTimeout,
+            ], $smtpError)) {
+                return true;
+            }
+            $transportError = trim(($transportError !== '' ? $transportError . ' | ' : '') . $smtpError);
+
+            if (!$allowPhpFallback) {
+                self::$lastEmailError = $transportError !== '' ? $transportError : 'SMTP transport failed.';
                 if ($notifyAdminOnFailure) {
                     self::recordEmailDeliveryFailure($recipients, (string)$subject, (string)$message, $html, $transportUsed, self::$lastEmailError, $options);
                 }
@@ -319,6 +360,167 @@ class Helper {
      */
     public static function getLastEmailError() {
         return self::$lastEmailError;
+    }
+
+    private static function sendViaSmtp($recipients, $subject, $message, $html, array $config, &$error = '') {
+        $error = '';
+        $host = trim((string)($config['host'] ?? ''));
+        $port = (int)($config['port'] ?? 587);
+        $username = trim((string)($config['username'] ?? ''));
+        $password = (string)($config['password'] ?? '');
+        $fromEmail = trim((string)($config['from_email'] ?? $username));
+        $fromName = trim((string)($config['from_name'] ?? ''));
+        $secure = !empty($config['secure']);
+        $timeoutSeconds = max(2, (int)ceil(((int)($config['connection_timeout'] ?? 12000)) / 1000));
+        $socketTimeoutSeconds = max(2, (int)ceil(((int)($config['socket_timeout'] ?? 12000)) / 1000));
+
+        if ($host === '' || $port < 1 || $port > 65535) {
+            $error = 'SMTP host or port is not configured.';
+            return false;
+        }
+        if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
+            $error = 'SMTP from email is invalid.';
+            return false;
+        }
+        if (empty($recipients)) {
+            $error = 'No SMTP recipients provided.';
+            return false;
+        }
+
+        $remote = ($secure ? 'ssl://' : '') . $host;
+        $errno = 0;
+        $errstr = '';
+        $socket = @stream_socket_client($remote . ':' . $port, $errno, $errstr, $timeoutSeconds, STREAM_CLIENT_CONNECT);
+        if (!$socket) {
+            $error = 'SMTP connection failed: ' . trim((string)$errstr) . ($errno ? ' (' . $errno . ')' : '');
+            return false;
+        }
+        stream_set_timeout($socket, $socketTimeoutSeconds);
+
+        $read = function () use ($socket) {
+            $response = '';
+            while (($line = fgets($socket, 515)) !== false) {
+                $response .= $line;
+                if (strlen($line) < 4 || substr($line, 3, 1) !== '-') {
+                    break;
+                }
+            }
+            return $response;
+        };
+        $expect = function ($codes, $context) use ($read, &$error) {
+            $response = $read();
+            $code = (int)substr($response, 0, 3);
+            if (!in_array($code, (array)$codes, true)) {
+                $error = $context . ': ' . trim($response);
+                return false;
+            }
+            return true;
+        };
+        $write = function ($command) use ($socket) {
+            return fwrite($socket, $command . "\r\n") !== false;
+        };
+        $close = function () use ($socket, $write) {
+            @$write('QUIT');
+            @fclose($socket);
+        };
+
+        $serverName = 'localhost';
+        if (!empty($_SERVER['SERVER_NAME'])) {
+            $serverName = preg_replace('/[^A-Za-z0-9.-]/', '', (string)$_SERVER['SERVER_NAME']) ?: 'localhost';
+        }
+
+        if (!$expect(220, 'SMTP greeting failed')) {
+            $close();
+            return false;
+        }
+        $write('EHLO ' . $serverName);
+        if (!$expect(250, 'SMTP EHLO failed')) {
+            $close();
+            return false;
+        }
+
+        if (!$secure && $port !== 25) {
+            $write('STARTTLS');
+            if (!$expect(220, 'SMTP STARTTLS failed')) {
+                $close();
+                return false;
+            }
+            if (!@stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+                $error = 'SMTP TLS negotiation failed.';
+                $close();
+                return false;
+            }
+            $write('EHLO ' . $serverName);
+            if (!$expect(250, 'SMTP EHLO after STARTTLS failed')) {
+                $close();
+                return false;
+            }
+        }
+
+        if ($username !== '' && $password !== '') {
+            $write('AUTH LOGIN');
+            if (!$expect(334, 'SMTP AUTH LOGIN failed')) {
+                $close();
+                return false;
+            }
+            $write(base64_encode($username));
+            if (!$expect(334, 'SMTP username rejected')) {
+                $close();
+                return false;
+            }
+            $write(base64_encode($password));
+            if (!$expect(235, 'SMTP password rejected')) {
+                $close();
+                return false;
+            }
+        }
+
+        $write('MAIL FROM:<' . $fromEmail . '>');
+        if (!$expect(250, 'SMTP sender rejected')) {
+            $close();
+            return false;
+        }
+        foreach ($recipients as $recipient) {
+            $write('RCPT TO:<' . $recipient . '>');
+            if (!$expect([250, 251], 'SMTP recipient rejected')) {
+                $close();
+                return false;
+            }
+        }
+        $write('DATA');
+        if (!$expect(354, 'SMTP DATA rejected')) {
+            $close();
+            return false;
+        }
+
+        $encodedSubject = '=?UTF-8?B?' . base64_encode((string)$subject) . '?=';
+        $safeFromName = str_replace(['"', "\r", "\n"], ['', '', ''], $fromName !== '' ? $fromName : $fromEmail);
+        $headers = [
+            'From: "' . $safeFromName . '" <' . $fromEmail . '>',
+            'To: ' . implode(', ', $recipients),
+            'Subject: ' . $encodedSubject,
+            'MIME-Version: 1.0',
+            'Date: ' . date('r'),
+        ];
+        $body = (string)($html !== null && $html !== '' ? $html : $message);
+        if ($html !== null && $html !== '') {
+            $headers[] = 'Content-Type: text/html; charset=UTF-8';
+        } else {
+            $headers[] = 'Content-Type: text/plain; charset=UTF-8';
+        }
+        $headers[] = 'Content-Transfer-Encoding: 8bit';
+        $normalizedBody = str_replace(["\r\n", "\r"], "\n", $body);
+        $normalizedBody = str_replace("\n.", "\n..", $normalizedBody);
+        $normalizedBody = str_replace("\n", "\r\n", $normalizedBody);
+        $data = implode("\r\n", $headers) . "\r\n\r\n" . $normalizedBody;
+        fwrite($socket, $data . "\r\n.\r\n");
+        if (!$expect(250, 'SMTP message not accepted')) {
+            $close();
+            return false;
+        }
+
+        $close();
+        return true;
     }
 
     /**

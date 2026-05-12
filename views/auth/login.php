@@ -313,26 +313,72 @@ if (!empty($loggedModules)) {
     <link rel="stylesheet" href="../../assets/css/login.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/fold-global.css?v=<?php echo urlencode((string)APP_VERSION); ?>">
     <style>
+        html,
         body {
+            min-height: 100%;
+        }
+        body.auth-login-page {
+            min-height: 100vh;
+            min-height: 100dvh;
+            padding: clamp(10px, 3vh, 24px);
+            overflow: hidden;
             background: url('../../uploads/seminary.jpeg') no-repeat center center;
             background-size: cover;
         }
         .login-container {
-            max-width: 320px !important;
-            width: min(320px, calc(100% - 24px)) !important;
-            margin: 14px auto !important;
+            width: min(360px, 100%) !important;
+            max-width: 360px !important;
+            padding: 0 !important;
+            margin: 0 auto !important;
         }
         .login-card.unified-theme {
-            padding: 18px 14px !important;
-            border-radius: 12px;
+            max-height: calc(100dvh - clamp(20px, 6vh, 48px));
+            padding: clamp(14px, 3vh, 22px) clamp(14px, 4vw, 18px) !important;
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            box-shadow: 0 18px 44px rgba(8, 21, 43, 0.30), 0 0 0 1px rgba(255, 255, 255, 0.20);
+        }
+        .login-header {
+            margin-bottom: clamp(10px, 2vh, 16px);
         }
         .login-header .logo {
-            max-width: 64px !important;
-            margin-bottom: 6px !important;
+            width: clamp(54px, 14vw, 72px);
+            max-width: 72px !important;
+            margin-bottom: 7px !important;
+            filter: drop-shadow(0 6px 14px rgba(15, 23, 42, 0.18));
         }
         .login-header h2 {
-            font-size: 1.35rem;
-            margin-bottom: 8px;
+            font-size: clamp(1.35rem, 6vw, 1.75rem);
+            line-height: 1.05;
+            margin-bottom: 7px;
+            letter-spacing: 0;
+        }
+        .login-header .role-badge {
+            margin-top: 0;
+            padding: 4px 11px;
+            font-size: 10px;
+        }
+        .login-form .form-group {
+            margin-bottom: 11px;
+        }
+        .login-form label {
+            margin-bottom: 5px;
+        }
+        .login-card.unified-theme .form-control {
+            height: 46px;
+            border-radius: 11px;
+            padding: 10px 12px;
+            font-size: 15px;
+        }
+        .login-card.unified-theme .input-wrapper.has-action .form-control {
+            padding-right: 66px;
+        }
+        .login-card.unified-theme .btn-primary {
+            height: 46px;
+            border-radius: 11px;
+            font-size: 15px;
         }
         .login-card.unified-theme::before {
             background: linear-gradient(90deg, #0ea5e9, #2563eb);
@@ -345,6 +391,35 @@ if (!empty($loggedModules)) {
         .login-card.unified-theme .btn-primary:focus {
             background: linear-gradient(135deg, #1e40af, #1d4ed8) !important;
             border-color: #1e40af !important;
+        }
+        .login-card.unified-theme .btn-link {
+            padding: 2px 4px;
+            font-size: 12px;
+            line-height: 1.25;
+        }
+        .login-card.unified-theme .alert {
+            min-height: 0;
+            padding: 8px 10px;
+            margin-bottom: 10px;
+            border-radius: 10px;
+            font-size: 12px;
+            line-height: 1.25;
+        }
+        .account-pill {
+            display: inline-flex;
+            max-width: 100%;
+            align-items: center;
+            justify-content: center;
+            padding: 7px 12px;
+            border-radius: 999px;
+            background: #e0f2fe;
+            color: #075985;
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .module-chip-grid {
             display: grid;
@@ -393,6 +468,22 @@ if (!empty($loggedModules)) {
         .student-id-preview.is-visible {
             display: block;
         }
+        .login-guidance {
+            margin: 14px 2px 0;
+            color: #64748b;
+            font-size: 13px;
+            line-height: 1.45;
+            text-align: left;
+        }
+        .login-guidance a {
+            color: #2563eb;
+            font-weight: 700;
+            text-decoration: none;
+        }
+        .login-guidance a:hover,
+        .login-guidance a:focus {
+            text-decoration: underline;
+        }
         html[data-theme='dark'] .module-chip {
             background: #0f172a;
             border-color: #334155;
@@ -406,22 +497,87 @@ if (!empty($loggedModules)) {
             border-color: rgba(74, 222, 128, 0.45);
             color: #bbf7d0;
         }
+        html[data-theme='dark'] .login-guidance {
+            color: #cbd5e1;
+        }
+        html[data-theme='dark'] .login-guidance a {
+            color: #93c5fd;
+        }
+        html[data-theme='dark'] .account-pill {
+            background: rgba(14, 165, 233, 0.16);
+            color: #bae6fd;
+        }
         html[data-theme='dark'] .login-card.unified-theme::before {
             background: linear-gradient(90deg, #0284c7, #1d4ed8);
         }
-        @media (max-width: 576px) {
+        @media (max-width: 576px), (max-height: 640px) {
             .login-container {
-                max-width: 320px !important;
-                width: calc(100% - 16px) !important;
-                margin: 10px auto !important;
+                width: min(336px, 100%) !important;
             }
             .login-card.unified-theme {
-                padding: 16px 12px !important;
+                padding: 13px 12px !important;
+                border-radius: 14px;
+            }
+            .login-header {
+                margin-bottom: 9px;
+            }
+            .login-header .logo {
+                width: 52px;
+                margin-bottom: 5px !important;
+            }
+            .login-header h2 {
+                font-size: 1.28rem;
+                margin-bottom: 5px;
+            }
+            .login-header .role-badge {
+                padding: 3px 9px;
+                font-size: 9px;
+            }
+            .login-card.unified-theme .form-control,
+            .login-card.unified-theme .btn-primary {
+                height: 43px;
+                font-size: 14px;
+            }
+            .login-card.unified-theme .alert {
+                padding: 7px 9px;
+                margin-bottom: 8px;
+                font-size: 11px;
+            }
+            .account-pill {
+                padding: 6px 10px;
+                font-size: 12px;
+            }
+            .student-id-preview {
+                margin-top: 6px;
+                padding: 6px 8px;
+                font-size: 11px;
+            }
+            .login-guidance {
+                margin-top: 11px;
+                font-size: 12px;
+                line-height: 1.38;
+            }
+            .login-theme-footer {
+                right: 8px;
+                bottom: 8px;
+            }
+            .login-theme-toggle {
+                width: 32px;
+                height: 32px;
+            }
+        }
+        @media (max-height: 540px) {
+            .login-header .logo {
+                display: none;
+            }
+            .login-card.unified-theme {
+                padding-top: 11px !important;
+                padding-bottom: 11px !important;
             }
         }
     </style>
 </head>
-<body style="background: url('../../uploads/seminary.jpeg') no-repeat center center; background-size: cover;">
+<body class="auth-login-page">
 <div class="login-container">
     <div class="login-card unified-theme">
         <div class="login-header">
@@ -461,16 +617,22 @@ if (!empty($loggedModules)) {
                 <button type="submit" class="btn btn-primary btn-block">
                     Next
                 </button>
+                <p class="login-guidance">
+                    Use your registration number or SMNS email address to log in.
+                    For assistance, email
+                    <a href="mailto:seminarystmarysnational@gmail.com">seminarystmarysnational@gmail.com</a>
+                    or visit the ICT office.
+                </p>
             <?php else: ?>
                 <input type="hidden" name="username" value="<?php echo e($enteredUsername); ?>">
                 <div class="form-group text-center mb-3">
-                    <span class="badge badge-info" style="font-size:14px;padding:8px 20px;">
+                    <span class="account-pill">
                         Welcome, <?php echo e($profileName !== '' ? $profileName : $enteredUsername); ?>
                     </span>
                 </div>
                 <div class="form-group">
                     <label class="mb-1">Password</label>
-                    <div class="input-wrapper" style="position:relative;">
+                    <div class="input-wrapper has-action">
                         <input
                             type="password"
                             id="password"
@@ -480,7 +642,7 @@ if (!empty($loggedModules)) {
                             required
                             autofocus
                         >
-                        <button type="button" class="btn btn-sm btn-outline-secondary" style="position:absolute; right:10px; top:50%; transform:translateY(-50%);" onclick="togglePassword('password', this)">Show</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary password-toggle-btn" onclick="togglePassword('password', this)">Show</button>
                     </div>
                 </div>
                 <button type="submit" class="btn btn-primary btn-block">

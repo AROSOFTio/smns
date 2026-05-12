@@ -76,21 +76,90 @@ if (!isset($currentUser) || !is_array($currentUser)) {
     .logout-item { margin-top: 15px; border-top: 2px solid #e5e7eb; padding-top: 8px; }
     .logout-link { color: #dc2626 !important; }
     .logout-link:hover { background: #fee2e2 !important; color: #991b1b !important; }
+    .admin-sidebar-mobile-toggle {
+        display: none;
+    }
 
-    @media (max-width: 767.98px) {
+    @media (max-width: 768px) {
+        :root {
+            --admin-mobile-sidebar-width: min(78vw, 260px);
+        }
         .sidebar {
-            left: calc(-1 * var(--sidebar-width, 230px));
+            --mobile-sidebar-width: var(--admin-mobile-sidebar-width);
+            width: var(--admin-mobile-sidebar-width) !important;
+            max-width: var(--admin-mobile-sidebar-width) !important;
+            left: calc(-1 * var(--admin-mobile-sidebar-width)) !important;
+            margin-left: 0 !important;
+            transform: none !important;
+            visibility: visible !important;
+            border-radius: 0 12px 12px 0 !important;
+            z-index: 1200 !important;
+            box-shadow: 18px 0 40px rgba(15, 23, 42, 0.22) !important;
         }
         .sidebar.active {
-            left: 0;
+            left: 0 !important;
+            margin-left: 0 !important;
+            transform: translateX(0) !important;
+            visibility: visible !important;
+            display: flex !important;
+        }
+        .sidebar.collapsed .sidebar-header h3,
+        .sidebar.collapsed .sidebar-header p,
+        .sidebar.collapsed .sidebar-menu li.menu-section,
+        .sidebar.collapsed .sidebar-menu a span {
+            display: block !important;
+        }
+        .sidebar.collapsed .sidebar-menu a {
+            justify-content: flex-start !important;
+            text-align: left !important;
+        }
+        .sidebar.collapsed .sidebar-menu i {
+            margin-right: 10px !important;
         }
         .main-content {
             margin-left: 0 !important;
             width: 100% !important;
             max-width: 100% !important;
         }
+        .admin-sidebar-mobile-toggle {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 1300;
+            width: 38px;
+            height: 38px;
+            min-width: 38px;
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(15, 23, 42, 0.14);
+            border-radius: 10px;
+            background: #ffffff;
+            color: #0f172a;
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.18);
+            padding: 0;
+            font-size: 16px;
+            line-height: 1;
+            transition: left 0.25s ease, background 0.2s ease, color 0.2s ease;
+        }
+        body.smns-sidebar-open .admin-sidebar-mobile-toggle {
+            left: calc(var(--admin-mobile-sidebar-width) + 8px);
+            background: #0f172a;
+            color: #ffffff;
+        }
     }
 </style>
+
+<button
+    type="button"
+    class="admin-sidebar-mobile-toggle"
+    id="adminSidebarMobileToggle"
+    aria-label="Toggle admin sidebar"
+    aria-controls="sidebar"
+    aria-expanded="false"
+>
+    <i class="fas fa-bars" aria-hidden="true"></i>
+</button>
 
 <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
@@ -202,7 +271,6 @@ if (!isset($currentUser) || !is_array($currentUser)) {
                      <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=financial" class="<?php echo ($currentDir == 'reports' && $currentReportType === 'financial') ? 'active' : ''; ?>">Financial Summary</a></li>
                      <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=staff" class="<?php echo ($currentDir == 'reports' && $currentReportType === 'staff') ? 'active' : ''; ?>">Staff Workload</a></li>
                      <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/index.php?report=system" class="<?php echo ($currentDir == 'reports' && $currentReportType === 'system') ? 'active' : ''; ?>">System Overview</a></li>
-                     <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/unit-testing.php" class="<?php echo ($currentDir == 'reports' && $currentPage === 'unit-testing.php') ? 'active' : ''; ?>">Unit Testing Summary</a></li>
                      <li><a href="<?php echo BASE_URL; ?>/views/admin/reports/schedules.php" class="<?php echo ($currentDir == 'reports' && $currentPage === 'schedules.php') ? 'active' : ''; ?>">Scheduled Reports</a></li>
                  </ul>
              </li>
@@ -228,12 +296,6 @@ if (!isset($currentUser) || !is_array($currentUser)) {
                     <i class="fas fa-cog"></i><span>Settings</span>
                 </a>
             </li>
-            <li>
-                <a href="<?php echo BASE_URL; ?>/admin/unlock_user.php" class="<?php echo $currentPage == 'unlock_user.php' ? 'active' : ''; ?>">
-                    <i class="fas fa-unlock"></i><span>Unlock User Account</span>
-                </a>
-            </li>
-
             <li class="logout-item">
                 <a href="<?php echo BASE_URL; ?>/views/admin/logout.php" class="logout-link">
                     <i class="fas fa-sign-out-alt"></i><span>Logout</span>
@@ -245,6 +307,86 @@ if (!isset($currentUser) || !is_array($currentUser)) {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    var sidebar = document.getElementById('sidebar');
+    var adminToggle = document.getElementById('adminSidebarMobileToggle');
+    var overlay = document.querySelector('.sidebar-overlay');
+
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'sidebar-overlay';
+        document.body.appendChild(overlay);
+    }
+
+    function isMobileSidebar() {
+        return window.innerWidth <= 768;
+    }
+
+    function syncAdminSidebarToggle() {
+        if (!sidebar || !adminToggle) return;
+        var isOpen = sidebar.classList.contains('active') && isMobileSidebar();
+        adminToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        adminToggle.innerHTML = isOpen
+            ? '<i class="fas fa-times" aria-hidden="true"></i>'
+            : '<i class="fas fa-bars" aria-hidden="true"></i>';
+    }
+
+    function closeAdminSidebar() {
+        if (!sidebar) return;
+        sidebar.classList.remove('active');
+        sidebar.classList.remove('collapsed');
+        overlay.classList.remove('active');
+        document.body.classList.remove('smns-sidebar-open');
+        document.body.style.overflow = '';
+        syncAdminSidebarToggle();
+    }
+
+    function openAdminSidebar() {
+        if (!sidebar) return;
+        sidebar.classList.add('active');
+        sidebar.classList.remove('collapsed');
+        overlay.classList.add('active');
+        document.body.classList.add('smns-sidebar-open');
+        document.body.style.overflow = 'hidden';
+        syncAdminSidebarToggle();
+    }
+
+    if (adminToggle && sidebar && adminToggle.dataset.smnsAdminSidebarBound !== '1') {
+        adminToggle.dataset.smnsAdminSidebarBound = '1';
+        adminToggle.addEventListener('click', function(e) {
+            if (!isMobileSidebar()) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (sidebar.classList.contains('active')) {
+                closeAdminSidebar();
+            } else {
+                openAdminSidebar();
+            }
+        });
+    }
+
+    overlay.addEventListener('click', closeAdminSidebar);
+    overlay.addEventListener('touchstart', closeAdminSidebar, { passive: true });
+
+    document.querySelectorAll('.sidebar-menu a[href]:not(.has-submenu)').forEach(function(link) {
+        link.addEventListener('click', function() {
+            if (isMobileSidebar()) closeAdminSidebar();
+        });
+    });
+
+    window.addEventListener('resize', function() {
+        if (!isMobileSidebar()) closeAdminSidebar();
+        syncAdminSidebarToggle();
+    });
+
+    if (window.MutationObserver && sidebar) {
+        new MutationObserver(syncAdminSidebarToggle).observe(sidebar, {
+            attributes: true,
+            attributeFilter: ['class']
+        });
+    }
+
+    syncAdminSidebarToggle();
+
     document.querySelectorAll('.sidebar-menu .has-submenu').forEach(function(menuItem) {
         menuItem.addEventListener('click', function(e) {
             e.preventDefault();

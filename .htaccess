@@ -12,7 +12,12 @@
 Options -Indexes
 
 # Protect sensitive files
-<FilesMatch "^(config\.php|\.htaccess)$">
+<FilesMatch "^(config\.php|config\..*\.php|\.env|\.htaccess)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+<FilesMatch "\.(sql|bak|backup|old|orig|log|zip)$">
     Order allow,deny
     Deny from all
 </FilesMatch>

@@ -390,6 +390,20 @@ html[data-theme='dark'] #keyDropMenu input.form-control::placeholder {
 .marks-table tbody tr:nth-child(even) { background: #f9fbff; }
 .marks-table tbody tr:hover { background: #eef6ff; }
 .text-center { text-align: center; }
+.marks-table th:nth-child(1),
+.marks-table td:nth-child(1),
+.marks-table th:nth-child(2),
+.marks-table td:nth-child(2) { text-align: left; }
+.marks-table th:nth-child(3),
+.marks-table td:nth-child(3),
+.marks-table th:nth-child(4),
+.marks-table td:nth-child(4),
+.marks-table th:nth-child(6),
+.marks-table td:nth-child(6) { text-align: right; }
+.marks-table th:nth-child(7),
+.marks-table td:nth-child(7),
+.marks-table th:nth-child(8),
+.marks-table td:nth-child(8) { text-align: center; }
 .summary-row td { background: #f8fafc; font-weight: 700; }
 .cgpa-row td { background: #ecfdf3; color: #166534; font-weight: 700; }
 .grading-key { margin-top: 1rem; padding: 0.85rem 1rem; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; font-size: 0.82rem; color: #334155; }
@@ -457,6 +471,459 @@ html[data-theme='dark'] .table-responsive {
 .main-content{margin-left:var(--student-sidebar-width)!important;width:auto!important;max-width:none!important;min-width:0;overflow-x:hidden}
 .main-content.full-width{margin-left:0!important;width:auto!important;max-width:none!important}
 .chip-row{flex-wrap:wrap;row-gap:.4rem;white-space:normal}
+@media (max-width: 992px) {
+    .main-content,
+    .main-content.full-width {
+        margin-left: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+    }
+
+    .student-topbar {
+        flex-wrap: wrap !important;
+        align-items: flex-start !important;
+        gap: 0.65rem !important;
+        padding: 0.55rem 0.85rem !important;
+    }
+
+    .student-topbar > div:first-child,
+    .student-topbar > div:last-child {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin-left: 0 !important;
+        justify-content: flex-start !important;
+    }
+
+    .student-topbar > div:first-child {
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        padding-bottom: 0.2rem !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .student-topbar > div:last-child span {
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+    }
+
+    .main-content > div[style*="font-size:0.98rem"],
+    .main-content > div[style*="flex-wrap:nowrap"] {
+        flex-wrap: wrap !important;
+        white-space: normal !important;
+        align-items: flex-start !important;
+        padding-left: 0.85rem !important;
+        padding-right: 0.85rem !important;
+        overflow-x: visible !important;
+    }
+
+    .main-content > div[style*="font-size:0.98rem"] > span,
+    .main-content > div[style*="flex-wrap:nowrap"] > span {
+        margin-left: 0 !important;
+        max-width: 100% !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+    }
+
+    .results-wrap {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0.75rem 0.65rem !important;
+    }
+
+    .results-card {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow: hidden;
+    }
+
+    .results-header {
+        flex-wrap: wrap !important;
+        gap: 0.4rem !important;
+        padding: 0.8rem !important;
+    }
+
+    .results-header h4,
+    .student-meta,
+    .year-title,
+    .semester-title,
+    .grading-key {
+        overflow-wrap: anywhere;
+    }
+
+    .table-responsive {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .marks-table,
+    .results-table {
+        display: table !important;
+        width: max-content !important;
+        min-width: 680px !important;
+        max-width: none !important;
+        white-space: normal !important;
+    }
+
+    .marks-table th,
+    .marks-table td {
+        padding: 8px 9px !important;
+        font-size: 0.76rem !important;
+        vertical-align: middle;
+    }
+
+    .marks-table td:nth-child(2),
+    .marks-table th:nth-child(2) {
+        min-width: 190px;
+        white-space: normal !important;
+    }
+}
+
+@media (max-width: 576px) {
+    .student-topbar > div:first-child button {
+        font-size: 0.76rem !important;
+        padding: 5px 8px !important;
+        flex: 0 0 auto;
+    }
+
+    .results-wrap {
+        padding-left: 0.45rem !important;
+        padding-right: 0.45rem !important;
+    }
+
+    .results-card .p-3 {
+        padding: 0.65rem !important;
+    }
+
+    .marks-table,
+    .results-table {
+        min-width: 640px !important;
+    }
+}
+
+@media (max-width: 640px) {
+    .results-card,
+    .table-responsive {
+        overflow: visible !important;
+    }
+
+    .marks-table,
+    .results-table,
+    .marks-table tbody,
+    .results-table tbody,
+    .marks-table tr,
+    .results-table tr,
+    .marks-table td,
+    .results-table td {
+        display: block !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+    }
+
+    .marks-table,
+    .results-table {
+        border: 0 !important;
+        white-space: normal !important;
+    }
+
+    .marks-table thead,
+    .results-table thead {
+        display: none !important;
+    }
+
+    .marks-table tbody tr.result-course-row,
+    .results-table tbody tr.result-course-row {
+        margin: 0 0 0.75rem;
+        border: 1px solid #d7e3f2 !important;
+        border-radius: 12px !important;
+        background: #ffffff !important;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.07) !important;
+        overflow: hidden !important;
+    }
+
+    .marks-table tbody tr.result-course-row td,
+    .results-table tbody tr.result-course-row td {
+        display: grid !important;
+        grid-template-columns: minmax(84px, 34%) minmax(0, 1fr);
+        align-items: center;
+        column-gap: 0.65rem;
+        padding: 0.62rem 0.78rem !important;
+        border-bottom: 1px solid #edf2f7 !important;
+        text-align: right !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+        background: #ffffff !important;
+        color: #0f172a !important;
+        font-size: 0.8rem !important;
+    }
+
+    .marks-table tbody tr.result-course-row td:first-child,
+    .results-table tbody tr.result-course-row td:first-child {
+        background: #132235 !important;
+        color: #ffffff !important;
+        font-size: 0.9rem !important;
+        font-weight: 800;
+        border-bottom-color: #243b5a !important;
+    }
+
+    .marks-table tbody tr.result-course-row td::before,
+    .results-table tbody tr.result-course-row td::before {
+        display: block !important;
+        content: attr(data-label) !important;
+        color: #64748b;
+        font-size: 0.66rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        line-height: 1.35;
+        text-align: left;
+        text-transform: uppercase;
+    }
+
+    .marks-table tbody tr.result-course-row td:nth-child(1),
+    .marks-table tbody tr.result-course-row td:nth-child(2),
+    .marks-table tbody tr.result-course-row td:nth-child(5),
+    .marks-table tbody tr.result-course-row td:nth-child(7),
+    .marks-table tbody tr.result-course-row td:nth-child(8),
+    .results-table tbody tr.result-course-row td:nth-child(1),
+    .results-table tbody tr.result-course-row td:nth-child(2),
+    .results-table tbody tr.result-course-row td:nth-child(5),
+    .results-table tbody tr.result-course-row td:nth-child(7),
+    .results-table tbody tr.result-course-row td:nth-child(8) {
+        text-align: left !important;
+    }
+
+    .marks-table tbody tr.result-course-row td:nth-child(3),
+    .marks-table tbody tr.result-course-row td:nth-child(4),
+    .marks-table tbody tr.result-course-row td:nth-child(6),
+    .results-table tbody tr.result-course-row td:nth-child(3),
+    .results-table tbody tr.result-course-row td:nth-child(4),
+    .results-table tbody tr.result-course-row td:nth-child(6) {
+        text-align: right !important;
+    }
+
+    .marks-table tbody tr.result-course-row .badge-published,
+    .results-table tbody tr.result-course-row .badge-published {
+        display: inline-flex;
+        align-items: center;
+        width: auto;
+    }
+
+    .summary-row,
+    .cgpa-row {
+        display: block !important;
+        margin-top: 0.65rem !important;
+        border: 1px solid #bfdbfe !important;
+        border-radius: 12px !important;
+        background: #eff6ff !important;
+        overflow: hidden !important;
+    }
+
+    .summary-row td,
+    .cgpa-row td {
+        display: grid !important;
+        grid-template-columns: minmax(82px, 34%) minmax(0, 1fr);
+        column-gap: 0.75rem;
+        width: 100% !important;
+        text-align: right !important;
+        padding: 0.58rem 0.78rem !important;
+        border-bottom: 1px solid rgba(37, 99, 235, 0.16) !important;
+        background: transparent !important;
+        color: #1e3a8a !important;
+        font-size: 0.8rem !important;
+    }
+
+    .summary-row td::before,
+    .cgpa-row td::before {
+        display: block !important;
+        content: attr(data-label) !important;
+        color: #475569;
+        font-size: 0.67rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        text-align: left;
+        text-transform: uppercase;
+    }
+
+    .summary-row td:last-child,
+    .cgpa-row td:last-child,
+    .result-course-row td:last-child {
+        border-bottom: 0 !important;
+    }
+
+    .badge-published,
+    .badge-pending {
+        justify-self: end;
+        white-space: nowrap;
+    }
+
+    .grading-key {
+        padding: 0.75rem !important;
+        font-size: 0.78rem !important;
+        line-height: 1.55;
+    }
+
+    html[data-theme='dark'] .marks-table tbody tr.result-course-row,
+    html[data-theme='dark'] .results-table tbody tr.result-course-row {
+        background: #0f172a !important;
+        border-color: #334155 !important;
+        box-shadow: none !important;
+    }
+
+    html[data-theme='dark'] .marks-table tbody tr.result-course-row td,
+    html[data-theme='dark'] .results-table tbody tr.result-course-row td {
+        background: #0f172a !important;
+        color: #e2e8f0 !important;
+        border-bottom-color: #334155 !important;
+    }
+
+    html[data-theme='dark'] .marks-table tbody tr.result-course-row td:first-child,
+    html[data-theme='dark'] .results-table tbody tr.result-course-row td:first-child {
+        background: #132235 !important;
+        color: #f8fafc !important;
+    }
+
+    html[data-theme='dark'] .summary-row,
+    html[data-theme='dark'] .cgpa-row {
+        background: #172033 !important;
+        border-color: #334155 !important;
+    }
+
+    html[data-theme='dark'] .summary-row td,
+    html[data-theme='dark'] .cgpa-row td {
+        color: #e2e8f0 !important;
+        border-bottom-color: #334155 !important;
+    }
+
+    html[data-theme='dark'] .marks-table tbody tr.result-course-row td::before,
+    html[data-theme='dark'] .results-table tbody tr.result-course-row td::before,
+    html[data-theme='dark'] .summary-row td::before,
+    html[data-theme='dark'] .cgpa-row td::before {
+        color: #94a3b8 !important;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .main-content {
+        font-size: 0.82rem !important;
+    }
+
+    .student-topbar {
+        min-height: 50px !important;
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        flex-wrap: nowrap !important;
+        gap: 6px !important;
+        padding: 6px 8px 6px 52px !important;
+        overflow: visible !important;
+    }
+
+    .student-topbar > div:first-child {
+        width: auto !important;
+        max-width: none !important;
+        min-width: 0 !important;
+        flex: 1 1 auto !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        gap: 5px !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        padding-bottom: 0 !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    .student-topbar > div:first-child::-webkit-scrollbar {
+        display: none;
+    }
+
+    .student-topbar > div:last-child {
+        width: auto !important;
+        max-width: 42% !important;
+        min-width: 0 !important;
+        flex: 0 0 auto !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        justify-content: flex-end !important;
+        gap: 4px !important;
+        margin-left: auto !important;
+        overflow: visible !important;
+    }
+
+    .student-topbar button,
+    .student-topbar > div:first-child button {
+        min-height: 30px !important;
+        max-height: 34px !important;
+        padding: 4px 7px !important;
+        font-size: 0.68rem !important;
+        line-height: 1.15 !important;
+        white-space: nowrap !important;
+    }
+
+    #menuBtn,
+    #profileDropBtn,
+    #keyDropBtn {
+        width: 30px !important;
+        height: 30px !important;
+        min-width: 30px !important;
+        padding: 0 !important;
+        font-size: 0.78rem !important;
+    }
+
+    .student-profile-pic {
+        width: 34px !important;
+        height: 34px !important;
+        border-radius: 9px !important;
+    }
+
+    .student-topbar > div:last-child > span {
+        max-width: 7.5rem !important;
+        font-size: 0.72rem !important;
+        line-height: 1.15 !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        word-break: normal !important;
+    }
+
+    .results-header h4 {
+        font-size: 0.92rem !important;
+    }
+
+    .student-meta,
+    .year-title,
+    .semester-title,
+    .grading-key {
+        font-size: 0.78rem !important;
+    }
+}
+
+@media (max-width: 430px) {
+    .student-topbar {
+        padding-left: 50px !important;
+    }
+
+    .student-topbar > div:last-child {
+        max-width: 38% !important;
+    }
+
+    .student-topbar > div:last-child > span {
+        display: none !important;
+    }
+
+    .marks-table tbody tr.result-course-row td,
+    .results-table tbody tr.result-course-row td,
+    .summary-row td,
+    .cgpa-row td {
+        font-size: 0.76rem !important;
+        grid-template-columns: minmax(76px, 33%) minmax(0, 1fr) !important;
+        padding: 0.54rem 0.66rem !important;
+    }
+}
 </style>
 
 <div class="student-sidebar">
@@ -610,12 +1077,12 @@ html[data-theme='dark'] .table-responsive {
                                             <tr>
                                                 <th>Course Code</th>
                                                 <th>Course Name</th>
-                                                <th class="text-center">CU</th>
-                                                <th class="text-center">CW</th>
-                                                <th class="text-center">Exam</th>
                                                 <th class="text-center">Total</th>
+                                                <th class="text-center">CU</th>
                                                 <th class="text-center">Grade</th>
                                                 <th class="text-center">GP</th>
+                                                <th class="text-center">Type</th>
+                                                <th class="text-center">Status</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -651,15 +1118,15 @@ html[data-theme='dark'] .table-responsive {
                                                     $allPublished = false;
                                                 }
                                                 ?>
-                                                <tr>
-                                                    <td><strong><?php echo e($course['course_code'] ?? '-'); ?></strong></td>
-                                                    <td><?php echo e($course['course_name'] ?? '-'); ?></td>
-                                                    <td class="text-center"><?php echo e($course['credit_hours'] ?? '-'); ?></td>
-                                                    <td class="text-center"><?php echo $isPublished ? number_format((float)$course['assignment_marks'], 0) : 'PA'; ?></td>
-                                                    <td class="text-center"><?php echo $isPublished ? number_format((float)$course['final_exam_marks'], 0) : 'PA'; ?></td>
-                                                    <td class="text-center"><?php echo $isPublished ? number_format((float)$course['total_marks'], 0) : 'PA'; ?></td>
-                                                    <td class="text-center"><?php echo $isPublished && $displayGrade !== '' ? e($displayGrade) : 'PA'; ?></td>
-                                                    <td class="text-center"><?php echo $isPublished && $displayGradePoint !== null ? number_format((float)$displayGradePoint, 2) : 'PA'; ?></td>
+                                                <tr class="result-course-row">
+                                                    <td data-label="Course Code"><strong><?php echo e($course['course_code'] ?? '-'); ?></strong></td>
+                                                    <td data-label="Course Name"><?php echo e($course['course_name'] ?? '-'); ?></td>
+                                                    <td data-label="Total" class="text-center"><?php echo $isPublished ? number_format((float)$course['total_marks'], 0) : 'PA'; ?></td>
+                                                    <td data-label="CU" class="text-center"><?php echo e($course['credit_hours'] ?? '-'); ?></td>
+                                                    <td data-label="Grade" class="text-center"><?php echo $isPublished && $displayGrade !== '' ? e($displayGrade) : 'PA'; ?></td>
+                                                    <td data-label="GP" class="text-center"><?php echo $isPublished && $displayGradePoint !== null ? number_format((float)$displayGradePoint, 2) : 'PA'; ?></td>
+                                                    <td data-label="Type" class="text-center"><?php echo $isPublished ? 'FINAL' : 'PROVISIONAL'; ?></td>
+                                                    <td data-label="Status" class="text-center"><?php echo $isPublished ? '<span class="badge-published">Published</span>' : '<span class="badge-pending">PA</span>'; ?></td>
                                                 </tr>
                                             <?php endforeach; ?>
 
@@ -677,14 +1144,14 @@ html[data-theme='dark'] .table-responsive {
                                             ?>
 
                                             <tr class="summary-row">
-                                                <td colspan="2" class="text-center">Published Courses</td>
-                                                <td class="text-center"><?php echo $publishedCourses; ?>/<?php echo $totalCourses; ?></td>
-                                                <td colspan="3" class="text-center">Semester GPA</td>
-                                                <td colspan="2" class="text-center"><?php echo $sgpaText; ?></td>
+                                                <td data-label="Summary" colspan="2" class="text-center">Published Courses</td>
+                                                <td data-label="Count" class="text-center"><?php echo $publishedCourses; ?>/<?php echo $totalCourses; ?></td>
+                                                <td data-label="Summary" colspan="3" class="text-center">Semester GPA</td>
+                                                <td data-label="SGPA" colspan="2" class="text-center"><?php echo $sgpaText; ?></td>
                                             </tr>
                                             <tr class="cgpa-row">
-                                                <td colspan="6" class="text-center">Cumulative GPA (CGPA)</td>
-                                                <td colspan="2" class="text-center"><?php echo $cgpaText; ?></td>
+                                                <td data-label="Summary" colspan="6" class="text-center">Cumulative GPA (CGPA)</td>
+                                                <td data-label="CGPA" colspan="2" class="text-center"><?php echo $cgpaText; ?></td>
                                             </tr>
                                         </tbody>
                                     </table>

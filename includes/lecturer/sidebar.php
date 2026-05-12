@@ -16,6 +16,92 @@ if (!isset($currentUser) || !is_array($currentUser)) {
 }
 $lecturerProfile = $currentUser['profile'] ?? [];
 ?>
+<style>
+    .lecturer-sidebar-mobile-toggle {
+        display: none;
+    }
+
+    @media (max-width: 992px) {
+        body.smns-lecturer-mobile-shell .mobile-menu-btn {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
+
+        .lecturer-sidebar {
+            --mobile-sidebar-width: min(78vw, 260px);
+            width: var(--mobile-sidebar-width) !important;
+            max-width: var(--mobile-sidebar-width) !important;
+            height: 100vh !important;
+            height: 100dvh !important;
+            max-height: 100dvh !important;
+            left: calc(-1 * var(--mobile-sidebar-width)) !important;
+            margin-left: 0 !important;
+            top: 0 !important;
+            z-index: 1400 !important;
+            visibility: visible !important;
+            display: flex !important;
+            transform: none !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            box-shadow: 18px 0 40px rgba(15, 23, 42, 0.22) !important;
+        }
+
+        .lecturer-sidebar.active {
+            left: 0 !important;
+            margin-left: 0 !important;
+            transform: translateX(0) !important;
+            visibility: visible !important;
+            display: flex !important;
+        }
+
+        .main-content {
+            margin-left: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+
+        .lecturer-sidebar-mobile-toggle {
+            position: fixed;
+            top: 9px;
+            left: 10px;
+            z-index: 1600;
+            width: 34px;
+            height: 34px;
+            min-width: 34px;
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(15, 23, 42, 0.14);
+            border-radius: 9px;
+            background: #ffffff;
+            color: #0f172a;
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.18);
+            padding: 0;
+            font-size: 15px;
+            line-height: 1;
+            transition: left 0.25s ease, background 0.2s ease, color 0.2s ease;
+        }
+
+        body.smns-sidebar-open .lecturer-sidebar-mobile-toggle {
+            left: calc(var(--mobile-sidebar-width, min(72vw, 260px)) + 8px);
+            background: #0f172a;
+            color: #ffffff;
+        }
+    }
+</style>
+
+<button
+    type="button"
+    class="lecturer-sidebar-mobile-toggle"
+    id="lecturerSidebarMobileToggle"
+    aria-label="Toggle lecturer sidebar"
+    aria-controls="sidebar"
+    aria-expanded="false"
+>
+    <span aria-hidden="true">&#9776;</span>
+</button>
+
 <div class="sidebar lecturer-sidebar" id="sidebar">
     <div class="sidebar-header">
         <h3><?php echo APP_SHORT_NAME; ?></h3>
@@ -99,3 +185,114 @@ $lecturerProfile = $currentUser['profile'] ?? [];
         </ul>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.body.classList.add('smns-lecturer-mobile-shell');
+    document.querySelectorAll('.mobile-menu-btn').forEach(function(button) {
+        button.remove();
+    });
+
+    var sidebar = document.getElementById('sidebar');
+    var topbar = document.querySelector('.main-content .topbar');
+    var mobileToggle = document.getElementById('lecturerSidebarMobileToggle');
+    var overlay = document.querySelector('.sidebar-overlay');
+
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'sidebar-overlay';
+        document.body.appendChild(overlay);
+    }
+
+    function isMobileSidebar() {
+        return window.innerWidth <= 992;
+    }
+
+    function syncLecturerSidebarToggle() {
+        if (!sidebar || !mobileToggle) return;
+        var isOpen = sidebar.classList.contains('active') && isMobileSidebar();
+        mobileToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        mobileToggle.innerHTML = isOpen
+            ? '<span aria-hidden="true">&times;</span>'
+            : '<span aria-hidden="true">&#9776;</span>';
+    }
+
+    function closeLecturerSidebar() {
+        if (!sidebar) return;
+        sidebar.classList.remove('active');
+        sidebar.classList.remove('collapsed');
+        overlay.classList.remove('active');
+        document.body.classList.remove('smns-sidebar-open');
+        document.body.style.overflow = '';
+        syncLecturerSidebarToggle();
+    }
+
+    function openLecturerSidebar() {
+        if (!sidebar) return;
+        sidebar.classList.add('active');
+        sidebar.classList.remove('collapsed');
+        overlay.classList.add('active');
+        document.body.classList.add('smns-sidebar-open');
+        document.body.style.overflow = 'hidden';
+        syncLecturerSidebarToggle();
+    }
+
+    if (mobileToggle && sidebar && mobileToggle.dataset.smnsLecturerSidebarBound !== '1') {
+        mobileToggle.dataset.smnsLecturerSidebarBound = '1';
+        mobileToggle.addEventListener('click', function(e) {
+            if (!isMobileSidebar()) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (sidebar.classList.contains('active')) {
+                closeLecturerSidebar();
+            } else {
+                openLecturerSidebar();
+            }
+        });
+    }
+
+    overlay.addEventListener('click', closeLecturerSidebar);
+    overlay.addEventListener('touchstart', closeLecturerSidebar, { passive: true });
+
+    document.querySelectorAll('.lecturer-sidebar a[href]').forEach(function(link) {
+        link.addEventListener('click', function() {
+            if (isMobileSidebar()) closeLecturerSidebar();
+        });
+    });
+
+    window.addEventListener('resize', function() {
+        if (!isMobileSidebar()) closeLecturerSidebar();
+        syncLecturerSidebarToggle();
+    });
+
+    if (window.MutationObserver && sidebar) {
+        new MutationObserver(syncLecturerSidebarToggle).observe(sidebar, {
+            attributes: true,
+            attributeFilter: ['class']
+        });
+    }
+
+    syncLecturerSidebarToggle();
+
+    if (!sidebar || !topbar || document.getElementById('sidebarToggle')) return;
+
+    var left = topbar.querySelector('.topbar-left');
+    if (!left) {
+        left = document.createElement('div');
+        left.className = 'topbar-left';
+        while (topbar.firstChild) {
+            left.appendChild(topbar.firstChild);
+        }
+        topbar.appendChild(left);
+    }
+
+    var toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'sidebar-toggle';
+    toggle.id = 'sidebarToggle';
+    toggle.title = 'Toggle Sidebar';
+    toggle.setAttribute('aria-label', 'Toggle Sidebar');
+    toggle.innerHTML = '<i class="fas fa-bars"></i>';
+    left.insertBefore(toggle, left.firstChild);
+});
+</script>

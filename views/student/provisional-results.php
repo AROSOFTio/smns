@@ -390,6 +390,24 @@ html[data-theme='dark'] #keyDropMenu input.form-control::placeholder { color: #9
 .marks-table tbody tr:nth-child(even) { background: #f9fbff; }
 .marks-table tbody tr:hover { background: #eef6ff; }
 .text-center { text-align: center; }
+.marks-table th:nth-child(1),
+.marks-table td:nth-child(1),
+.marks-table th:nth-child(2),
+.marks-table td:nth-child(2) { text-align: left; }
+.marks-table th:nth-child(3),
+.marks-table td:nth-child(3),
+.marks-table th:nth-child(4),
+.marks-table td:nth-child(4),
+.marks-table th:nth-child(5),
+.marks-table td:nth-child(5),
+.marks-table th:nth-child(6),
+.marks-table td:nth-child(6),
+.marks-table th:nth-child(8),
+.marks-table td:nth-child(8) { text-align: right; }
+.marks-table th:nth-child(7),
+.marks-table td:nth-child(7),
+.marks-table th:nth-child(9),
+.marks-table td:nth-child(9) { text-align: center; }
 .summary-row td { background: #f8fafc; font-weight: 700; }
 .cgpa-row td { background: #ecfdf3; color: #166534; font-weight: 700; }
 .grading-key { margin-top: 1rem; padding: 0.85rem 1rem; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; font-size: 0.82rem; color: #334155; }
@@ -457,6 +475,497 @@ html[data-theme='dark'] .table-responsive {
 .main-content{margin-left:var(--student-sidebar-width)!important;width:auto!important;max-width:none!important;min-width:0;overflow-x:hidden}
 .main-content.full-width{margin-left:0!important;width:auto!important;max-width:none!important}
 .chip-row{flex-wrap:wrap;row-gap:.4rem;white-space:normal}
+@media (max-width: 992px) {
+    .main-content,
+    .main-content.full-width {
+        margin-left: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+    }
+
+    .student-topbar {
+        flex-wrap: wrap !important;
+        align-items: flex-start !important;
+        gap: 0.65rem !important;
+        padding: 0.55rem 0.85rem !important;
+    }
+
+    .student-topbar > div:first-child,
+    .student-topbar > div:last-child {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin-left: 0 !important;
+        justify-content: flex-start !important;
+    }
+
+    .student-topbar > div:first-child {
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        padding-bottom: 0.2rem !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .student-topbar > div:last-child span {
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+    }
+
+    .main-content > div[style*="font-size:0.98rem"],
+    .main-content > div[style*="flex-wrap:nowrap"] {
+        flex-wrap: wrap !important;
+        white-space: normal !important;
+        align-items: flex-start !important;
+        padding-left: 0.85rem !important;
+        padding-right: 0.85rem !important;
+        overflow-x: visible !important;
+    }
+
+    .main-content > div[style*="font-size:0.98rem"] > span,
+    .main-content > div[style*="flex-wrap:nowrap"] > span {
+        margin-left: 0 !important;
+        max-width: 100% !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+    }
+
+    .results-wrap {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0.75rem 0.65rem !important;
+    }
+
+    .results-card {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow: hidden;
+    }
+
+    .results-header {
+        flex-wrap: wrap !important;
+        gap: 0.4rem !important;
+        padding: 0.8rem !important;
+    }
+
+    .results-header h4,
+    .student-meta,
+    .year-title,
+    .semester-title,
+    .grading-key {
+        overflow-wrap: anywhere;
+    }
+
+    .table-responsive {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .marks-table,
+    .results-table {
+        display: table !important;
+        width: max-content !important;
+        min-width: 760px !important;
+        max-width: none !important;
+        white-space: normal !important;
+    }
+
+    .marks-table th,
+    .marks-table td {
+        padding: 8px 9px !important;
+        font-size: 0.76rem !important;
+        vertical-align: middle;
+    }
+
+    .marks-table td:nth-child(2),
+    .marks-table th:nth-child(2) {
+        min-width: 190px;
+        white-space: normal !important;
+    }
+}
+
+@media (max-width: 576px) {
+    .student-topbar > div:first-child button {
+        font-size: 0.76rem !important;
+        padding: 5px 8px !important;
+        flex: 0 0 auto;
+    }
+
+    .results-wrap {
+        padding-left: 0.45rem !important;
+        padding-right: 0.45rem !important;
+    }
+
+    .results-card .p-3 {
+        padding: 0.65rem !important;
+    }
+
+    .marks-table,
+    .results-table {
+        min-width: 720px !important;
+    }
+}
+
+@media (max-width: 640px) {
+    .results-card,
+    .table-responsive {
+        overflow: visible !important;
+    }
+
+    .marks-table,
+    .results-table,
+    .marks-table tbody,
+    .results-table tbody,
+    .marks-table tr,
+    .results-table tr,
+    .marks-table td,
+    .results-table td {
+        display: block !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+    }
+
+    .marks-table,
+    .results-table {
+        border: 0 !important;
+        white-space: normal !important;
+    }
+
+    .marks-table thead,
+    .results-table thead {
+        display: none !important;
+    }
+
+    .marks-table tbody tr,
+    .results-table tbody tr {
+        margin-bottom: 0.75rem;
+        border: 1px solid #dbe3ef;
+        border-radius: 8px;
+        background: #fff;
+        overflow: hidden;
+    }
+
+    .marks-table tbody tr:nth-child(even),
+    .results-table tbody tr:nth-child(even) {
+        background: #fff;
+    }
+
+    .marks-table tbody td,
+    .results-table tbody td {
+        display: flex !important;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+        border-bottom: 1px solid #edf2f7;
+        padding: 0.55rem 0.7rem !important;
+        text-align: right !important;
+        font-size: 0.82rem !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+    }
+
+    .marks-table tbody td:last-child,
+    .results-table tbody td:last-child {
+        border-bottom: 0;
+    }
+
+    .marks-table tbody td::before,
+    .results-table tbody td::before {
+        content: "";
+        flex: 0 0 42%;
+        color: #475569;
+        font-weight: 700;
+        text-align: left;
+        text-transform: uppercase;
+        font-size: 0.68rem;
+        letter-spacing: 0.02em;
+    }
+
+    .marks-table tbody td:nth-child(1)::before { content: "Course Code"; }
+    .marks-table tbody td:nth-child(2)::before { content: "Course Name"; }
+    .marks-table tbody td:nth-child(3)::before { content: "CU"; }
+    .marks-table tbody td:nth-child(4)::before { content: "CW"; }
+    .marks-table tbody td:nth-child(5)::before { content: "Exam"; }
+    .marks-table tbody td:nth-child(6)::before { content: "Total"; }
+    .marks-table tbody td:nth-child(7)::before { content: "Grade"; }
+    .marks-table tbody td:nth-child(8)::before { content: "GP"; }
+    .marks-table tbody td:nth-child(9)::before { content: "Status"; }
+
+    .summary-row,
+    .cgpa-row {
+        border-color: #bfdbfe !important;
+    }
+
+    .summary-row td,
+    .cgpa-row td {
+        display: block !important;
+        text-align: left !important;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+    }
+
+    .summary-row td::before,
+    .cgpa-row td::before {
+        display: none;
+    }
+
+    html[data-theme='dark'] .marks-table tbody tr,
+    html[data-theme='dark'] .results-table tbody tr {
+        background: #0f172a;
+        border-color: #334155;
+    }
+}
+
+@media (max-width: 640px) {
+    .results-card {
+        overflow: hidden !important;
+    }
+
+    .table-responsive {
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .marks-table,
+    .results-table {
+        display: table !important;
+        width: max-content !important;
+        min-width: 860px !important;
+        max-width: none !important;
+        border-collapse: collapse !important;
+        white-space: nowrap !important;
+    }
+
+    .marks-table thead,
+    .results-table thead {
+        display: table-header-group !important;
+    }
+
+    .marks-table tbody,
+    .results-table tbody {
+        display: table-row-group !important;
+        width: auto !important;
+        min-width: 0 !important;
+    }
+
+    .marks-table tr,
+    .results-table tr {
+        display: table-row !important;
+        width: auto !important;
+        margin: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        background: transparent !important;
+        overflow: visible !important;
+    }
+
+    .marks-table th,
+    .marks-table td,
+    .results-table th,
+    .results-table td {
+        display: table-cell !important;
+        width: auto !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        padding: 8px 10px !important;
+        border-bottom: 1px solid #edf2f7 !important;
+        white-space: nowrap !important;
+        vertical-align: middle !important;
+    }
+
+    .marks-table td::before,
+    .results-table td::before {
+        content: none !important;
+        display: none !important;
+    }
+
+    .marks-table th:nth-child(1),
+    .marks-table td:nth-child(1),
+    .marks-table th:nth-child(2),
+    .marks-table td:nth-child(2),
+    .results-table th:nth-child(1),
+    .results-table td:nth-child(1),
+    .results-table th:nth-child(2),
+    .results-table td:nth-child(2) {
+        text-align: left !important;
+    }
+
+    .marks-table th:nth-child(3),
+    .marks-table td:nth-child(3),
+    .marks-table th:nth-child(4),
+    .marks-table td:nth-child(4),
+    .marks-table th:nth-child(5),
+    .marks-table td:nth-child(5),
+    .marks-table th:nth-child(6),
+    .marks-table td:nth-child(6),
+    .marks-table th:nth-child(8),
+    .marks-table td:nth-child(8),
+    .results-table th:nth-child(3),
+    .results-table td:nth-child(3),
+    .results-table th:nth-child(4),
+    .results-table td:nth-child(4),
+    .results-table th:nth-child(5),
+    .results-table td:nth-child(5),
+    .results-table th:nth-child(6),
+    .results-table td:nth-child(6),
+    .results-table th:nth-child(8),
+    .results-table td:nth-child(8) {
+        text-align: right !important;
+    }
+
+    .marks-table th:nth-child(7),
+    .marks-table td:nth-child(7),
+    .marks-table th:nth-child(9),
+    .marks-table td:nth-child(9),
+    .results-table th:nth-child(7),
+    .results-table td:nth-child(7),
+    .results-table th:nth-child(9),
+    .results-table td:nth-child(9) {
+        text-align: center !important;
+    }
+
+    .marks-table th:nth-child(2),
+    .marks-table td:nth-child(2),
+    .results-table th:nth-child(2),
+    .results-table td:nth-child(2) {
+        min-width: 230px !important;
+        white-space: nowrap !important;
+    }
+
+    .summary-row td,
+    .cgpa-row td {
+        display: table-cell !important;
+        text-align: center !important;
+        background: inherit !important;
+        color: inherit !important;
+    }
+}
+
+@media (max-width: 640px) {
+    .results-card,
+    .table-responsive {
+        overflow: visible !important;
+    }
+
+    .marks-table,
+    .results-table,
+    .marks-table tbody,
+    .results-table tbody,
+    .marks-table tr,
+    .results-table tr,
+    .marks-table td,
+    .results-table td {
+        display: block !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+    }
+
+    .marks-table,
+    .results-table {
+        border: 0 !important;
+        white-space: normal !important;
+    }
+
+    .marks-table thead,
+    .results-table thead {
+        display: none !important;
+    }
+
+    .marks-table tbody tr {
+        margin-bottom: 0;
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        overflow: hidden !important;
+    }
+
+    .marks-table tbody td,
+    .results-table tbody td {
+        display: grid !important;
+        grid-template-columns: minmax(82px, 34%) minmax(0, 1fr);
+        align-items: start;
+        column-gap: 0.75rem;
+        padding: 0.72rem 0.85rem !important;
+        border-bottom: 1px solid #334155 !important;
+        text-align: right !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+        background: #0f172a;
+        color: #e5e7eb;
+    }
+
+    .marks-table tbody td:first-child,
+    .results-table tbody td:first-child {
+        background: #132235 !important;
+        color: #f8fafc !important;
+        font-size: 1rem !important;
+        font-weight: 800;
+        border-top: 1px solid #334155 !important;
+    }
+
+    .marks-table tbody td::before,
+    .results-table tbody td::before {
+        display: block !important;
+        color: #94a3b8;
+        font-size: 0.67rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        line-height: 1.35;
+        text-align: left;
+        text-transform: uppercase;
+    }
+
+    .marks-table tbody td:nth-child(1)::before { content: "Course Code" !important; }
+    .marks-table tbody td:nth-child(2)::before { content: "Course Name" !important; }
+    .marks-table tbody td:nth-child(3)::before { content: "CU" !important; }
+    .marks-table tbody td:nth-child(4)::before { content: "CW" !important; }
+    .marks-table tbody td:nth-child(5)::before { content: "Exam" !important; }
+    .marks-table tbody td:nth-child(6)::before { content: "Total" !important; }
+    .marks-table tbody td:nth-child(7)::before { content: "Grade" !important; }
+    .marks-table tbody td:nth-child(8)::before { content: "GP" !important; }
+    .marks-table tbody td:nth-child(9)::before { content: "Status" !important; }
+
+    .marks-table tbody td:nth-child(1),
+    .marks-table tbody td:nth-child(2),
+    .marks-table tbody td:nth-child(7),
+    .marks-table tbody td:nth-child(9),
+    .results-table tbody td:nth-child(1),
+    .results-table tbody td:nth-child(2),
+    .results-table tbody td:nth-child(7),
+    .results-table tbody td:nth-child(9) {
+        text-align: left !important;
+    }
+
+    .summary-row,
+    .cgpa-row {
+        display: block !important;
+        margin-top: 0.65rem !important;
+        border: 1px solid #334155 !important;
+        background: #172033 !important;
+    }
+
+    .summary-row td,
+    .cgpa-row td {
+        display: block !important;
+        width: 100% !important;
+        text-align: left !important;
+        padding: 0.62rem 0.85rem !important;
+        border-bottom: 1px solid #334155 !important;
+        background: transparent !important;
+        color: #e5e7eb !important;
+    }
+
+    .summary-row td::before,
+    .cgpa-row td::before {
+        display: none !important;
+        content: none !important;
+    }
+}
 </style>
 
 <div class="student-sidebar">

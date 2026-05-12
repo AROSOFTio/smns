@@ -155,7 +155,7 @@ class MfaService {
         // - email: send through configured email transport for real inbox testing
         $localDeliveryMode = strtolower(trim((string)self::getSettingValue(
             'mfa_local_delivery_mode',
-            (defined('MFA_LOCAL_DELIVERY_MODE') ? MFA_LOCAL_DELIVERY_MODE : 'fast')
+            (defined('MFA_LOCAL_DELIVERY_MODE') ? MFA_LOCAL_DELIVERY_MODE : 'email')
         )));
         if (!in_array($localDeliveryMode, ['auto', 'fast', 'email'], true)) {
             $localDeliveryMode = 'auto';

@@ -421,7 +421,7 @@ include '../../includes/header.php';
                         <a href="profile.php" class="dropdown-item">
                             <i class="fas fa-user"></i> My Profile
                         </a>
-                        <a href="settings.php" class="dropdown-item">
+                        <a href="<?php echo BASE_URL; ?>/views/admin/settings/index.php" class="dropdown-item">
                             <i class="fas fa-cog"></i> Settings
                         </a>
                         <div class="dropdown-divider"></div>
@@ -2420,6 +2420,179 @@ html[data-theme='dark'] .semester-dates span {
 
     .sessions-table th:nth-child(4),
     .sessions-table td:nth-child(4) { width: 16%; }
+}
+
+@media (max-width: 767.98px) {
+    .main-content,
+    .main-content.expanded {
+        margin-left: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+    }
+
+    .topbar {
+        min-height: 48px !important;
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        align-items: center !important;
+        column-gap: 6px !important;
+        padding: 6px 8px !important;
+        overflow: visible !important;
+    }
+
+    .topbar-left {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        gap: 6px !important;
+        overflow: hidden !important;
+        width: auto !important;
+        max-width: none !important;
+    }
+
+    .topbar-left h4 {
+        max-width: 54vw !important;
+        font-size: 0.9rem !important;
+        line-height: 1.2 !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+
+    .topbar-right {
+        flex: 0 0 auto !important;
+        width: auto !important;
+        max-width: none !important;
+        margin-left: auto !important;
+        gap: 4px !important;
+        flex-wrap: nowrap !important;
+        justify-self: end !important;
+        overflow: visible !important;
+    }
+
+    .sidebar.active {
+        left: 0 !important;
+        transform: translateX(0) !important;
+        visibility: visible !important;
+        display: flex !important;
+    }
+
+    .topbar-time {
+        display: none !important;
+    }
+
+    .user-dropdown-toggle {
+        padding: 2px 4px !important;
+    }
+
+    .user-dropdown-toggle > div:not(.user-avatar),
+    .user-dropdown-toggle .dropdown-arrow {
+        display: none !important;
+    }
+
+    .user-avatar {
+        width: 30px !important;
+        height: 30px !important;
+        min-width: 30px !important;
+        margin: 0 !important;
+    }
+
+    .content-area {
+        padding: 10px !important;
+    }
+
+    .stats-grid {
+        grid-template-columns: minmax(0, 1fr) !important;
+        gap: 10px !important;
+    }
+
+    .stats-grid .stat-card {
+        min-height: 70px !important;
+        padding: 10px !important;
+        gap: 8px !important;
+    }
+
+    .stats-grid .stat-icon {
+        width: 32px !important;
+        height: 32px !important;
+        flex: 0 0 32px !important;
+        font-size: 1rem !important;
+    }
+
+    .stats-grid .stat-details h3 {
+        font-size: 1.05rem !important;
+    }
+
+    .stats-grid .stat-details p,
+    .stats-grid .stat-change {
+        font-size: 0.72rem !important;
+    }
+
+    .quick-actions-section .action-grid,
+    .assigned-courses-grid {
+        grid-template-columns: minmax(0, 1fr) !important;
+        gap: 10px !important;
+    }
+
+    .quick-actions-section .action-card,
+    .assigned-courses-section,
+    .recent-activity,
+    .system-status {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 12px !important;
+        border-radius: 10px !important;
+        overflow: hidden;
+    }
+
+    .section-header {
+        flex-direction: row !important;
+        align-items: flex-start !important;
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+        margin-bottom: 12px !important;
+        padding-bottom: 10px !important;
+    }
+
+    .section-header h3,
+    .quick-actions-section h3,
+    .recent-activity h3 {
+        font-size: 1rem !important;
+        line-height: 1.2 !important;
+    }
+
+    #adminBalanceSearch {
+        min-width: 0 !important;
+        width: 100% !important;
+    }
+
+    #adminBalancePageSize {
+        width: 100% !important;
+    }
+
+    .table-responsive {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        border-radius: 10px;
+    }
+
+    .table-responsive table {
+        min-width: 620px;
+        font-size: 0.78rem !important;
+    }
+}
+
+@media (max-width: 430px) {
+    .topbar-left h4 {
+        max-width: 58vw !important;
+        font-size: 0.84rem !important;
+    }
+
+    .topbar-right {
+        max-width: none !important;
+    }
 }
 </style>
 
