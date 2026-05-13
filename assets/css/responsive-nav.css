@@ -530,6 +530,13 @@
         font-size: 0.82rem !important;
     }
 
+    html[data-theme='dark'] .topbar,
+    html[data-theme='dark'] .student-topbar {
+        background: var(--app-surface) !important;
+        border-bottom-color: var(--app-border) !important;
+        color: var(--app-text) !important;
+    }
+
     .topbar-left,
     .student-topbar > div:first-child {
         min-width: 0;
@@ -652,10 +659,79 @@
     .user-dropdown-menu {
         position: fixed !important;
         top: 60px !important;
+        left: 10px !important;
         right: 10px !important;
-        left: auto !important;
-        min-width: 210px !important;
-        max-width: calc(100vw - 20px);
+        width: auto !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        max-height: calc(100dvh - 76px) !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Admin: Topbar overflow (More) dropdown */
+    .smns-topbar-overflow {
+        display: none;
+        position: relative;
+    }
+
+    .smns-topbar-overflow .topbar-overflow-toggle {
+        width: 30px !important;
+        height: 30px !important;
+        min-width: 30px !important;
+        border-radius: 8px !important;
+        background: #f8fafc !important;
+        border: 1px solid #e2e8f0 !important;
+        color: #0f172a !important;
+        font-size: 0.86rem !important;
+        padding: 0 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    .smns-topbar-overflow .topbar-overflow-menu {
+        position: fixed !important;
+        top: 60px !important;
+        left: 10px !important;
+        right: 10px !important;
+        background: #ffffff !important;
+        border: 1px solid rgba(15, 23, 42, 0.10) !important;
+        border-radius: 12px !important;
+        box-shadow: 0 10px 26px rgba(15, 23, 42, 0.14) !important;
+        padding: 10px !important;
+        z-index: 1400 !important;
+        display: none !important;
+        max-height: calc(100dvh - 76px) !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .smns-topbar-overflow.active .topbar-overflow-menu {
+        display: block !important;
+    }
+
+    .smns-topbar-overflow .topbar-overflow-menu > * {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .smns-topbar-overflow .topbar-overflow-menu .btn,
+    .smns-topbar-overflow .topbar-overflow-menu a.btn,
+    .smns-topbar-overflow .topbar-overflow-menu button,
+    .smns-topbar-overflow .topbar-overflow-menu form {
+        width: 100% !important;
+        max-width: 100% !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere !important;
+    }
+
+    .smns-topbar-overflow .topbar-overflow-menu form {
+        margin: 0 !important;
+        display: block !important;
     }
 
     body:not(.smns-admin-mobile-shell) .lecturer-sidebar ~ .main-content .topbar {
@@ -669,6 +745,12 @@
         background: #ffffff !important;
         border-bottom: 1px solid rgba(15, 23, 42, 0.08) !important;
         box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06) !important;
+    }
+
+    html[data-theme='dark'] body:not(.smns-admin-mobile-shell) .lecturer-sidebar ~ .main-content .topbar {
+        background: var(--app-surface) !important;
+        border-bottom-color: var(--app-border) !important;
+        color: var(--app-text) !important;
     }
 
     body:not(.smns-admin-mobile-shell) .lecturer-sidebar ~ .main-content .topbar-left {
@@ -744,6 +826,12 @@
         background: #f8fafc !important;
         border: 1px solid #e2e8f0 !important;
         box-shadow: none !important;
+    }
+
+    html[data-theme='dark'] body:not(.smns-admin-mobile-shell) .lecturer-sidebar ~ .main-content .user-dropdown-toggle {
+        background: var(--app-surface-2) !important;
+        border-color: var(--app-border) !important;
+        color: var(--app-text) !important;
     }
 
     body:not(.smns-admin-mobile-shell) .lecturer-sidebar ~ .main-content .user-dropdown-toggle > div:not(.user-avatar):not(.user-avatar-sm),

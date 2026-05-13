@@ -198,6 +198,35 @@ body {
     row-gap: 0.4rem;
 }
 
+.chip-row,
+.student-portal-summary,
+.student-portal-summary span,
+.student-portal-summary .dashboard-inline-label,
+.student-portal-summary .dashboard-pill,
+.chip-row span,
+.chip-row .chip {
+    font-size: 0.78rem !important;
+    line-height: 1.2 !important;
+}
+
+.student-portal-summary {
+    gap: 0.45rem !important;
+    padding-top: 0.42rem !important;
+    padding-bottom: 0.18rem !important;
+}
+
+.student-portal-summary .dashboard-pill,
+.chip-row .chip,
+.student-portal-summary .status-badge {
+    padding: 3px 8px !important;
+    border-radius: 6px !important;
+}
+
+.student-portal-summary .dashboard-inline-label,
+.chip-row span[style*="margin-left:auto"] {
+    margin-left: auto !important;
+}
+
 .student-summary-grow {
     display: flex;
     align-items: center;
@@ -309,6 +338,9 @@ html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:active {
 
     .student-sidebar {
         z-index: 1100;
+        --mobile-sidebar-width: min(58vw, 200px);
+        width: var(--mobile-sidebar-width) !important;
+        max-width: var(--mobile-sidebar-width) !important;
     }
 
     .student-topbar {
@@ -480,13 +512,14 @@ html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:active {
     }
 
     .sidebar-user-card img {
-        width: 104px;
-        height: 104px;
+        width: 88px;
+        height: 88px;
     }
 
     .student-sidebar {
-        width: min(64vw, 224px) !important;
-        max-width: min(64vw, 224px) !important;
+        --mobile-sidebar-width: min(56vw, 190px);
+        width: var(--mobile-sidebar-width) !important;
+        max-width: var(--mobile-sidebar-width) !important;
     }
 
     .student-sidebar ul {
@@ -495,14 +528,14 @@ html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:active {
     }
 
     .student-sidebar li {
-        padding: 7px 8px !important;
-        font-size: 0.74rem !important;
+        padding: 6px 7px !important;
+        font-size: 0.7rem !important;
         margin-bottom: 3px !important;
     }
 
     .student-sidebar .sidebar-menu a,
     .student-sidebar a {
-        font-size: 0.76rem !important;
+        font-size: 0.72rem !important;
         line-height: 1.2;
     }
 
@@ -540,7 +573,112 @@ html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:active {
 
 @media (max-width: 767.98px) {
     .main-content {
-        font-size: 0.82rem !important;
+        font-size: 0.78rem !important;
+    }
+
+    .main-content h1,
+    .main-content h2,
+    .main-content h3,
+    .main-content h4,
+    .main-content h5,
+    .content-area h1,
+    .content-area h2,
+    .content-area h3,
+    .content-area h4,
+    .content-area h5 {
+        line-height: 1.2 !important;
+        overflow-wrap: anywhere;
+    }
+
+    .main-content h1,
+    .content-area h1 {
+        font-size: 1.08rem !important;
+    }
+
+    .main-content h2,
+    .content-area h2 {
+        font-size: 1rem !important;
+    }
+
+    .main-content h3,
+    .content-area h3 {
+        font-size: 0.94rem !important;
+    }
+
+    .main-content h4,
+    .content-area h4,
+    .main-content h5,
+    .content-area h5 {
+        font-size: 0.86rem !important;
+    }
+
+    .main-content,
+    .main-content p,
+    .main-content label,
+    .main-content small,
+    .main-content span,
+    .main-content div,
+    .main-content a,
+    .main-content button,
+    .main-content input,
+    .main-content select,
+    .main-content textarea,
+    .content-area,
+    .content-area p,
+    .content-area label,
+    .content-area small,
+    .content-area span,
+    .content-area div,
+    .content-area a,
+    .content-area button,
+    .content-area input,
+    .content-area select,
+    .content-area textarea {
+        font-size: 0.78rem !important;
+        line-height: 1.25 !important;
+    }
+
+    .main-content .btn,
+    .main-content button,
+    .main-content .form-control,
+    .main-content .custom-select,
+    .content-area .btn,
+    .content-area button,
+    .content-area .form-control,
+    .content-area .custom-select {
+        font-size: 0.76rem !important;
+    }
+
+    .main-content .card,
+    .main-content .card-body,
+    .main-content .alert,
+    .main-content .badge,
+    .main-content .status-badge,
+    .content-area .card,
+    .content-area .card-body,
+    .content-area .alert,
+    .content-area .badge,
+    .content-area .status-badge {
+        font-size: 0.76rem !important;
+        line-height: 1.25 !important;
+    }
+
+    .main-content table,
+    .main-content th,
+    .main-content td,
+    .content-area table,
+    .content-area th,
+    .content-area td {
+        font-size: 0.74rem !important;
+        line-height: 1.25 !important;
+    }
+
+    .sidebar-user-name {
+        font-size: 0.68rem !important;
+    }
+
+    .sidebar-user-no {
+        font-size: 0.78rem !important;
     }
 
     .student-topbar {
@@ -644,6 +782,59 @@ html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:active {
         padding: 6px 7px 6px 50px !important;
     }
 
+    .main-content,
+    .main-content p,
+    .main-content label,
+    .main-content small,
+    .main-content span,
+    .main-content div,
+    .main-content a,
+    .main-content button,
+    .main-content input,
+    .main-content select,
+    .main-content textarea,
+    .content-area,
+    .content-area p,
+    .content-area label,
+    .content-area small,
+    .content-area span,
+    .content-area div,
+    .content-area a,
+    .content-area button,
+    .content-area input,
+    .content-area select,
+    .content-area textarea {
+        font-size: 0.72rem !important;
+    }
+
+    .main-content h1,
+    .content-area h1 {
+        font-size: 1rem !important;
+    }
+
+    .main-content h2,
+    .content-area h2 {
+        font-size: 0.94rem !important;
+    }
+
+    .main-content h3,
+    .content-area h3,
+    .main-content h4,
+    .content-area h4,
+    .main-content h5,
+    .content-area h5 {
+        font-size: 0.82rem !important;
+    }
+
+    .main-content table,
+    .main-content th,
+    .main-content td,
+    .content-area table,
+    .content-area th,
+    .content-area td {
+        font-size: 0.7rem !important;
+    }
+
     .student-topbar > div:first-child,
     .student-topbar > div:last-child {
         min-width: 0 !important;
@@ -699,12 +890,13 @@ html[data-theme='dark'] #keyDropMenu input:-webkit-autofill:active {
 
 @media (max-width: 390px) {
     .student-sidebar {
-        width: min(68vw, 214px) !important;
-        max-width: min(68vw, 214px) !important;
+        --mobile-sidebar-width: min(58vw, 176px);
+        width: var(--mobile-sidebar-width) !important;
+        max-width: var(--mobile-sidebar-width) !important;
     }
 
     .sidebar-user-card img {
-        width: 76px !important;
-        height: 76px !important;
+        width: 68px !important;
+        height: 68px !important;
     }
 }

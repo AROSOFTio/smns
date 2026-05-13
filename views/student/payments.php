@@ -1620,9 +1620,199 @@ html[data-theme='dark'] .ledger-amount-negative {
     .ledger-photo { justify-self: start; }
 }
 @media (max-width: 768px) {
+    .main-content,
+    .main-content.full-width {
+        margin-left: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+    }
+
+    .prn-wrap {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0.65rem 0.55rem 1rem !important;
+        overflow: hidden !important;
+    }
+
+    .prn-card {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0.7rem !important;
+        overflow: hidden !important;
+    }
+
+    .prn-tabs,
+    .tx-tabs {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        flex-wrap: nowrap !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+
+    .prn-tab,
+    .tx-tab {
+        flex: 0 0 auto !important;
+        white-space: nowrap !important;
+        font-size: 0.78rem !important;
+        padding: 8px 10px !important;
+    }
+
+    .summary-grid {
+        display: flex !important;
+        grid-template-columns: none !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        gap: 0.5rem !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        padding-bottom: 0.35rem !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+
+    .sum-card {
+        flex: 0 0 190px !important;
+        min-width: 190px !important;
+        padding: 0.65rem !important;
+    }
+
+    .sum-label {
+        font-size: 0.68rem !important;
+        line-height: 1.2 !important;
+    }
+
+    .sum-value {
+        font-size: 0.86rem !important;
+    }
+
+    .inv-head,
+    .fees-year-head {
+        font-size: 0.78rem !important;
+        padding: 9px 10px !important;
+        gap: 0.6rem !important;
+    }
+
+    .inv-head span,
+    .fees-year-head span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .inv-body,
+    .tx-body,
+    .fees-year-body {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        overflow-y: visible !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+
+    .tbl {
+        display: table !important;
+        width: max-content !important;
+        min-width: 760px !important;
+        max-width: none !important;
+        table-layout: auto !important;
+        border-collapse: collapse !important;
+        white-space: normal !important;
+    }
+
+    .tbl thead {
+        display: table-header-group !important;
+    }
+
+    .tbl tbody {
+        display: table-row-group !important;
+    }
+
+    .tbl tr {
+        display: table-row !important;
+    }
+
+    .tbl th,
+    .tbl td {
+        display: table-cell !important;
+        min-width: 92px !important;
+        max-width: 240px !important;
+        padding: 0.48rem 0.55rem !important;
+        font-size: 0.74rem !important;
+        line-height: 1.25 !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere !important;
+        vertical-align: middle !important;
+    }
+
+    .tbl th:nth-child(2),
+    .tbl td:nth-child(2),
+    .tbl th:nth-child(3),
+    .tbl td:nth-child(3) {
+        min-width: 140px !important;
+    }
+
+    .group-total {
+        display: flex !important;
+        grid-template-columns: none !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        gap: 0.45rem !important;
+        padding-bottom: 0.25rem !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+
+    .group-total div {
+        flex: 0 0 185px !important;
+        min-width: 185px !important;
+        font-size: 0.72rem !important;
+        line-height: 1.25 !important;
+    }
+
+    .fees-year-body {
+        padding: 0.55rem !important;
+    }
+
+    .fees-sem-title {
+        font-size: 0.76rem !important;
+        padding: 4px 8px !important;
+    }
+
     .tx-form-row input {
         min-width: 0;
         width: 100%;
+    }
+}
+
+@media (max-width: 430px) {
+    .prn-wrap {
+        padding: 0.5rem 0.45rem 0.85rem !important;
+    }
+
+    .prn-card {
+        padding: 0.55rem !important;
+    }
+
+    .tbl {
+        min-width: 700px !important;
+    }
+
+    .tbl th,
+    .tbl td {
+        min-width: 84px !important;
+        padding: 0.42rem 0.5rem !important;
+    }
+
+    .sum-card,
+    .group-total div {
+        flex-basis: 170px !important;
+        min-width: 170px !important;
     }
 }
 </style>

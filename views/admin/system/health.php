@@ -1047,7 +1047,7 @@ include '../../../includes/header.php';
 
 <?php include '../../../includes/admin/sidebar.php'; ?>
 
-<div class="main-content">
+<div class="main-content system-health-page">
     <div class="topbar">
         <div class="topbar-left">
             <h4>
@@ -1072,15 +1072,15 @@ include '../../../includes/header.php';
                                 <i class="fas fa-heartbeat"></i> System Status Overview
                             </h5>
                         </div>
-                        <div class="card-body">
+                        <div class="card-body system-overview-body">
                             <?php
                             $passCount = count(array_filter($checks, function($check) { return $check['status'] === 'pass'; }));
                             $totalChecks = max(1, count($checks));
                             $healthPercentage = round(($passCount / $totalChecks) * 100);
                             ?>
                             
-                            <div class="row">
-                                <div class="col-md-3 text-center">
+                            <div class="row system-overview-layout">
+                                <div class="col-md-3 text-center system-health-score-col">
                                     <div class="health-score">
                                         <div class="score-circle <?php echo $healthPercentage >= 90 ? 'excellent' : ($healthPercentage >= 70 ? 'good' : 'poor'); ?>">
                                             <?php echo $healthPercentage; ?>%
@@ -1088,7 +1088,7 @@ include '../../../includes/header.php';
                                         <p>System Health</p>
                                     </div>
                                 </div>
-                                <div class="col-md-9">
+                                <div class="col-md-9 system-health-info-col">
                                     <div class="health-summary">
                                         <div class="summary-item">
                                             <span class="badge badge-success"><?php echo count(array_filter($checks, function($c) { return $c['status'] === 'pass'; })); ?></span>
@@ -1489,6 +1489,170 @@ include '../../../includes/header.php';
 .smtp-fail {
     border-color: #f5c6cb;
     background: #fff5f5;
+}
+
+@media (max-width: 767.98px) {
+    .system-health-page .topbar {
+        grid-template-columns: minmax(0, 1fr);
+        row-gap: 4px;
+    }
+
+    .system-health-page .topbar-left h4 {
+        max-width: 100% !important;
+        white-space: normal !important;
+        font-size: 0.86rem !important;
+    }
+
+    .system-health-page .topbar-left .btn-link {
+        padding: 0 4px 0 0;
+        font-size: 0.78rem;
+    }
+
+    .system-health-page .topbar-right {
+        justify-self: start !important;
+    }
+
+    .system-health-page .topbar-right small {
+        font-size: 0.72rem;
+    }
+
+    .system-health-page .container-fluid {
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    .system-health-page .card {
+        padding: 0 !important;
+        overflow: hidden;
+    }
+
+    .system-health-page .card-header {
+        padding: 10px 12px;
+    }
+
+    .system-health-page .card-header h5 {
+        font-size: 0.92rem;
+        line-height: 1.25;
+    }
+
+    .system-health-page .card-body {
+        padding: 12px;
+    }
+
+    .system-overview-body {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+
+    .system-overview-layout {
+        min-width: 520px;
+        flex-wrap: nowrap;
+        align-items: center;
+        margin-left: 0;
+        margin-right: 0;
+    }
+
+    .system-health-score-col {
+        flex: 0 0 120px;
+        max-width: 120px;
+        padding-left: 8px;
+        padding-right: 12px;
+    }
+
+    .system-health-info-col {
+        flex: 1 0 360px;
+        max-width: none;
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+
+    .health-score .score-circle {
+        width: 64px;
+        height: 64px;
+        font-size: 1rem;
+    }
+
+    .health-score p {
+        margin: 8px 0 0;
+        font-size: 0.76rem;
+        line-height: 1.2;
+    }
+
+    .health-summary {
+        gap: 10px;
+        flex-wrap: nowrap;
+    }
+
+    .summary-item {
+        min-width: 94px;
+        gap: 6px;
+        font-size: 0.78rem;
+        white-space: nowrap;
+    }
+
+    .system-health-info-col .alert {
+        margin-top: 10px !important;
+        padding: 8px 10px;
+        font-size: 0.78rem;
+        line-height: 1.35;
+    }
+
+    .health-checks {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+
+    .health-check-item {
+        min-width: 620px;
+        align-items: flex-start;
+        padding: 11px 0;
+    }
+
+    .check-status {
+        width: 30px;
+        font-size: 1rem;
+    }
+
+    .check-details {
+        margin-left: 8px;
+    }
+
+    .check-details h6 {
+        font-size: 0.84rem;
+    }
+
+    .check-details p,
+    .health-check-subdetail {
+        font-size: 0.76rem;
+        line-height: 1.35;
+    }
+
+    .check-badge {
+        margin-left: 10px;
+    }
+
+    .smtp-diagnostic-summary,
+    .smtp-detail-card {
+        padding: 10px 12px;
+        border-radius: 10px;
+        font-size: 0.8rem;
+    }
+}
+
+@media (max-width: 430px) {
+    .system-overview-layout {
+        min-width: 480px;
+    }
+
+    .system-health-info-col {
+        flex-basis: 330px;
+    }
+
+    .health-check-item {
+        min-width: 560px;
+    }
 }
 
 html[data-theme='dark'] .alert.alert-success.mt-3 {

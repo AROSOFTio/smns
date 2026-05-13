@@ -1,8 +1,8 @@
 /* Enhanced Admin Dashboard Styles */
 .main-content {
     margin-left: var(--sidebar-width, 230px);
-    width: calc(100vw - var(--sidebar-width, 230px));
-    max-width: calc(100vw - var(--sidebar-width, 230px));
+    width: calc(100% - var(--sidebar-width, 230px));
+    max-width: calc(100% - var(--sidebar-width, 230px));
     padding: 0;
     background: #f8f9fa;
 }
@@ -10,8 +10,8 @@
 .sidebar.collapsed + .main-content,
 .main-content.expanded {
     margin-left: var(--sidebar-collapsed-width, 70px);
-    width: calc(100vw - var(--sidebar-collapsed-width, 70px));
-    max-width: calc(100vw - var(--sidebar-collapsed-width, 70px));
+    width: calc(100% - var(--sidebar-collapsed-width, 70px));
+    max-width: calc(100% - var(--sidebar-collapsed-width, 70px));
 }
 
 .main-content > .content-area {
@@ -431,6 +431,42 @@
     textarea {
         max-width: 100% !important;
         font-size: 0.82rem !important;
+    }
+
+    /* System Health > System Maintenance toolbar (mobile) */
+    .system-health-page .btn-toolbar {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 10px !important;
+    }
+
+    .system-health-page .btn-toolbar .btn-group {
+        width: 100% !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        margin-right: 0 !important;
+        gap: 10px !important;
+    }
+
+    .system-health-page .btn-toolbar .btn-group > .btn,
+    .system-health-page .btn-toolbar .btn-group > a.btn,
+    .system-health-page .btn-toolbar .btn-group > form,
+    .system-health-page .btn-toolbar .btn-group > form > .btn {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    .system-health-page .btn-toolbar .btn-group > form {
+        display: block !important;
+        margin: 0 !important;
+    }
+
+    .system-health-page .btn-toolbar .btn-group .btn,
+    .system-health-page .btn-toolbar .btn-group a.btn {
+        overflow-wrap: normal !important;
+        word-break: normal !important;
     }
 }
 

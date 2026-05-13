@@ -531,25 +531,63 @@ html[data-theme='dark'] .badge-provisional {
         overflow-y: hidden !important;
         border: 1px solid #334155;
         -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
+        touch-action: pan-x;
     }
 
     .tbl {
-        width: max-content !important;
-        min-width: 860px !important;
-        max-width: none !important;
-        white-space: nowrap !important;
+        width: 100% !important;
+        min-width: 720px !important;
+        max-width: 100% !important;
+        white-space: normal !important;
+        table-layout: fixed !important;
     }
 
     .tbl th,
     .tbl td {
         padding: 8px 10px !important;
-        white-space: nowrap !important;
-        vertical-align: middle !important;
+        vertical-align: top !important;
+        box-sizing: border-box;
     }
+
+    .tbl th:nth-child(1),
+    .tbl td:nth-child(1) { width: 96px; }
+    .tbl th:nth-child(3),
+    .tbl td:nth-child(3) { width: 72px; }
+    .tbl th:nth-child(4),
+    .tbl td:nth-child(4) { width: 64px; }
+    .tbl th:nth-child(5),
+    .tbl td:nth-child(5) { width: 72px; }
+    .tbl th:nth-child(6),
+    .tbl td:nth-child(6) { width: 110px; }
+    .tbl th:nth-child(7),
+    .tbl td:nth-child(7) { width: 110px; }
+    .tbl th:nth-child(8),
+    .tbl td:nth-child(8) { width: 130px; }
 
     .tbl th:nth-child(2),
     .tbl td:nth-child(2) {
-        min-width: 280px !important;
+        min-width: 240px !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+    }
+
+    .tbl th:nth-child(1),
+    .tbl td:nth-child(1),
+    .tbl th:nth-child(3),
+    .tbl td:nth-child(3),
+    .tbl th:nth-child(4),
+    .tbl td:nth-child(4),
+    .tbl th:nth-child(5),
+    .tbl td:nth-child(5),
+    .tbl th:nth-child(6),
+    .tbl td:nth-child(6),
+    .tbl th:nth-child(7),
+    .tbl td:nth-child(7),
+    .tbl th:nth-child(8),
+    .tbl td:nth-child(8) {
+        white-space: nowrap !important;
+        vertical-align: middle !important;
     }
 
     .tbl th:nth-child(3),

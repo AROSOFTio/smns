@@ -148,41 +148,13 @@ if ($studentId > 0) {
             r.grade,
             r.grade_points,
             r.status AS result_status
-        FROM course_registrations cr
-        INNER JOIN courses c ON cr.course_id = c.id
-        INNER JOIN semesters s ON cr.semester_id = s.id
+        FROM results r
+        INNER JOIN courses c ON r.course_id = c.id
+        INNER JOIN semesters s ON r.semester_id = s.id
         INNER JOIN academic_years ay ON s.academic_year_id = ay.id
-        LEFT JOIN results r
-            ON r.student_id = cr.student_id
-            AND r.course_id = cr.course_id
-            AND r.semester_id = cr.semester_id
-        WHERE cr.student_id = :student_id
-          AND EXISTS (
-                SELECT 1
-                FROM results rp
-                WHERE rp.student_id = cr.student_id
-                  AND rp.semester_id = cr.semester_id
-                  AND rp.status = 'published'
-          )
+        WHERE r.student_id = :student_id
+          AND r.status = 'published'
           AND (c.semester_offered = s.semester_number OR c.semester_offered = 3)
-          AND (
-                NOT EXISTS (
-                    SELECT 1
-                    FROM semester_registrations srx
-                    WHERE srx.student_id = cr.student_id
-                      AND srx.semester_id = cr.semester_id
-                      AND srx.status = 'approved'
-                )
-                OR c.level_year = (
-                    SELECT sry.year_of_study
-                    FROM semester_registrations sry
-                    WHERE sry.student_id = cr.student_id
-                      AND sry.semester_id = cr.semester_id
-                      AND sry.status = 'approved'
-                    ORDER BY sry.id DESC
-                    LIMIT 1
-                )
-          )
         ORDER BY COALESCE(c.level_year, 1) ASC, course_semester ASC, c.course_code ASC
     ";
 
@@ -604,204 +576,129 @@ html[data-theme='dark'] .table-responsive {
 }
 
 @media (max-width: 640px) {
-    .results-card,
-    .table-responsive {
-        overflow: visible !important;
+    .results-card {
+        overflow: hidden !important;
     }
 
-    .marks-table,
-    .results-table,
-    .marks-table tbody,
-    .results-table tbody,
-    .marks-table tr,
-    .results-table tr,
-    .marks-table td,
-    .results-table td {
-        display: block !important;
-        width: 100% !important;
-        min-width: 0 !important;
-        max-width: 100% !important;
+    .table-responsive {
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
+        touch-action: pan-x;
     }
 
     .marks-table,
     .results-table {
-        border: 0 !important;
+        display: table !important;
+        width: 100% !important;
+        min-width: 640px !important;
+        max-width: 100% !important;
+        border-collapse: collapse !important;
         white-space: normal !important;
+        table-layout: fixed !important;
     }
 
     .marks-table thead,
     .results-table thead {
-        display: none !important;
+        display: table-header-group !important;
     }
 
-    .marks-table tbody tr.result-course-row,
-    .results-table tbody tr.result-course-row {
-        margin: 0 0 0.75rem;
-        border: 1px solid #d7e3f2 !important;
-        border-radius: 12px !important;
-        background: #ffffff !important;
-        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.07) !important;
-        overflow: hidden !important;
+    .marks-table tbody,
+    .results-table tbody {
+        display: table-row-group !important;
     }
 
-    .marks-table tbody tr.result-course-row td,
-    .results-table tbody tr.result-course-row td {
-        display: grid !important;
-        grid-template-columns: minmax(84px, 34%) minmax(0, 1fr);
-        align-items: center;
-        column-gap: 0.65rem;
-        padding: 0.62rem 0.78rem !important;
-        border-bottom: 1px solid #edf2f7 !important;
-        text-align: right !important;
-        white-space: normal !important;
-        overflow-wrap: anywhere;
-        background: #ffffff !important;
-        color: #0f172a !important;
-        font-size: 0.8rem !important;
-    }
-
-    .marks-table tbody tr.result-course-row td:first-child,
-    .results-table tbody tr.result-course-row td:first-child {
-        background: #132235 !important;
-        color: #ffffff !important;
-        font-size: 0.9rem !important;
-        font-weight: 800;
-        border-bottom-color: #243b5a !important;
-    }
-
-    .marks-table tbody tr.result-course-row td::before,
-    .results-table tbody tr.result-course-row td::before {
-        display: block !important;
-        content: attr(data-label) !important;
-        color: #64748b;
-        font-size: 0.66rem;
-        font-weight: 800;
-        letter-spacing: 0.02em;
-        line-height: 1.35;
-        text-align: left;
-        text-transform: uppercase;
-    }
-
-    .marks-table tbody tr.result-course-row td:nth-child(1),
-    .marks-table tbody tr.result-course-row td:nth-child(2),
-    .marks-table tbody tr.result-course-row td:nth-child(5),
-    .marks-table tbody tr.result-course-row td:nth-child(7),
-    .marks-table tbody tr.result-course-row td:nth-child(8),
-    .results-table tbody tr.result-course-row td:nth-child(1),
-    .results-table tbody tr.result-course-row td:nth-child(2),
-    .results-table tbody tr.result-course-row td:nth-child(5),
-    .results-table tbody tr.result-course-row td:nth-child(7),
-    .results-table tbody tr.result-course-row td:nth-child(8) {
-        text-align: left !important;
-    }
-
-    .marks-table tbody tr.result-course-row td:nth-child(3),
-    .marks-table tbody tr.result-course-row td:nth-child(4),
-    .marks-table tbody tr.result-course-row td:nth-child(6),
-    .results-table tbody tr.result-course-row td:nth-child(3),
-    .results-table tbody tr.result-course-row td:nth-child(4),
-    .results-table tbody tr.result-course-row td:nth-child(6) {
-        text-align: right !important;
-    }
-
-    .marks-table tbody tr.result-course-row .badge-published,
-    .results-table tbody tr.result-course-row .badge-published {
-        display: inline-flex;
-        align-items: center;
-        width: auto;
-    }
-
+    .marks-table tr,
+    .results-table tr,
     .summary-row,
     .cgpa-row {
-        display: block !important;
-        margin-top: 0.65rem !important;
-        border: 1px solid #bfdbfe !important;
-        border-radius: 12px !important;
-        background: #eff6ff !important;
-        overflow: hidden !important;
+        display: table-row !important;
     }
 
-    .summary-row td,
-    .cgpa-row td {
-        display: grid !important;
-        grid-template-columns: minmax(82px, 34%) minmax(0, 1fr);
-        column-gap: 0.75rem;
-        width: 100% !important;
-        text-align: right !important;
-        padding: 0.58rem 0.78rem !important;
-        border-bottom: 1px solid rgba(37, 99, 235, 0.16) !important;
-        background: transparent !important;
-        color: #1e3a8a !important;
-        font-size: 0.8rem !important;
+    .marks-table th,
+    .marks-table td,
+    .results-table th,
+    .results-table td {
+        display: table-cell !important;
+        vertical-align: top;
+        box-sizing: border-box;
     }
 
-    .summary-row td::before,
-    .cgpa-row td::before {
-        display: block !important;
-        content: attr(data-label) !important;
-        color: #475569;
-        font-size: 0.67rem;
-        font-weight: 800;
-        letter-spacing: 0.02em;
-        text-align: left;
-        text-transform: uppercase;
+    .marks-table th:nth-child(1),
+    .marks-table td:nth-child(1),
+    .results-table th:nth-child(1),
+    .results-table td:nth-child(1) { width: 110px; }
+    .marks-table th:nth-child(3),
+    .marks-table td:nth-child(3),
+    .results-table th:nth-child(3),
+    .results-table td:nth-child(3) { width: 70px; }
+    .marks-table th:nth-child(4),
+    .marks-table td:nth-child(4),
+    .results-table th:nth-child(4),
+    .results-table td:nth-child(4) { width: 60px; }
+    .marks-table th:nth-child(5),
+    .marks-table td:nth-child(5),
+    .results-table th:nth-child(5),
+    .results-table td:nth-child(5) { width: 70px; }
+    .marks-table th:nth-child(6),
+    .marks-table td:nth-child(6),
+    .results-table th:nth-child(6),
+    .results-table td:nth-child(6) { width: 60px; }
+    .marks-table th:nth-child(7),
+    .marks-table td:nth-child(7),
+    .results-table th:nth-child(7),
+    .results-table td:nth-child(7) { width: 90px; }
+    .marks-table th:nth-child(8),
+    .marks-table td:nth-child(8),
+    .results-table th:nth-child(8),
+    .results-table td:nth-child(8) { width: 110px; }
+
+    .marks-table th:nth-child(2),
+    .marks-table td:nth-child(2),
+    .results-table th:nth-child(2),
+    .results-table td:nth-child(2) {
+        white-space: normal !important;
+        min-width: 220px;
+        overflow-wrap: anywhere;
     }
 
-    .summary-row td:last-child,
-    .cgpa-row td:last-child,
-    .result-course-row td:last-child {
-        border-bottom: 0 !important;
+    .marks-table th:nth-child(1),
+    .marks-table td:nth-child(1),
+    .results-table th:nth-child(1),
+    .results-table td:nth-child(1),
+    .marks-table th:nth-child(3),
+    .marks-table td:nth-child(3),
+    .marks-table th:nth-child(4),
+    .marks-table td:nth-child(4),
+    .marks-table th:nth-child(5),
+    .marks-table td:nth-child(5),
+    .marks-table th:nth-child(6),
+    .marks-table td:nth-child(6),
+    .marks-table th:nth-child(7),
+    .marks-table td:nth-child(7),
+    .marks-table th:nth-child(8),
+    .marks-table td:nth-child(8),
+    .results-table th:nth-child(3),
+    .results-table td:nth-child(3),
+    .results-table th:nth-child(4),
+    .results-table td:nth-child(4),
+    .results-table th:nth-child(5),
+    .results-table td:nth-child(5),
+    .results-table th:nth-child(6),
+    .results-table td:nth-child(6),
+    .results-table th:nth-child(7),
+    .results-table td:nth-child(7),
+    .results-table th:nth-child(8),
+    .results-table td:nth-child(8) {
+        white-space: nowrap !important;
+        vertical-align: middle;
     }
 
-    .badge-published,
-    .badge-pending {
-        justify-self: end;
-        white-space: nowrap;
-    }
-
-    .grading-key {
-        padding: 0.75rem !important;
-        font-size: 0.78rem !important;
-        line-height: 1.55;
-    }
-
-    html[data-theme='dark'] .marks-table tbody tr.result-course-row,
-    html[data-theme='dark'] .results-table tbody tr.result-course-row {
-        background: #0f172a !important;
-        border-color: #334155 !important;
-        box-shadow: none !important;
-    }
-
-    html[data-theme='dark'] .marks-table tbody tr.result-course-row td,
-    html[data-theme='dark'] .results-table tbody tr.result-course-row td {
-        background: #0f172a !important;
-        color: #e2e8f0 !important;
-        border-bottom-color: #334155 !important;
-    }
-
-    html[data-theme='dark'] .marks-table tbody tr.result-course-row td:first-child,
-    html[data-theme='dark'] .results-table tbody tr.result-course-row td:first-child {
-        background: #132235 !important;
-        color: #f8fafc !important;
-    }
-
-    html[data-theme='dark'] .summary-row,
-    html[data-theme='dark'] .cgpa-row {
-        background: #172033 !important;
-        border-color: #334155 !important;
-    }
-
-    html[data-theme='dark'] .summary-row td,
-    html[data-theme='dark'] .cgpa-row td {
-        color: #e2e8f0 !important;
-        border-bottom-color: #334155 !important;
-    }
-
-    html[data-theme='dark'] .marks-table tbody tr.result-course-row td::before,
-    html[data-theme='dark'] .results-table tbody tr.result-course-row td::before,
-    html[data-theme='dark'] .summary-row td::before,
-    html[data-theme='dark'] .cgpa-row td::before {
-        color: #94a3b8 !important;
+    .marks-table td::before,
+    .results-table td::before {
+        content: none !important;
+        display: none !important;
     }
 }
 
@@ -924,6 +821,350 @@ html[data-theme='dark'] .table-responsive {
         padding: 0.54rem 0.66rem !important;
     }
 }
+
+@media (max-width: 767.98px) {
+    .results-program-summary,
+    .results-chip-strip {
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+
+    .results-program-summary > *,
+    .results-chip-strip > * {
+        flex: 0 0 auto !important;
+        max-width: none !important;
+        white-space: nowrap !important;
+        overflow-wrap: normal !important;
+    }
+
+    .results-program-summary > span[style*="margin-left:auto"] {
+        margin-left: 0 !important;
+    }
+
+    .results-chip-strip {
+        padding-bottom: 0.45rem !important;
+    }
+
+    .results-card .p-3 {
+        padding: 0.75rem !important;
+    }
+}
+
+.results-program-summary,
+.results-program-summary span,
+.results-program-summary .status-badge {
+    font-size: 0.78rem !important;
+    line-height: 1.2 !important;
+}
+
+.results-program-summary {
+    gap: 0.45rem !important;
+    padding-top: 0.42rem !important;
+    padding-bottom: 0.18rem !important;
+}
+
+.results-program-summary .status-badge,
+.results-program-summary span span {
+    padding: 3px 8px !important;
+    border-radius: 6px !important;
+}
+
+@media (max-width: 640px) {
+    .results-card {
+        overflow: hidden !important;
+    }
+
+    .results-card .table-responsive {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        overflow-y: visible !important;
+        -webkit-overflow-scrolling: touch;
+        border: 1px solid #e2e8f0;
+        border-radius: 0 0 10px 10px;
+    }
+
+    .marks-table,
+    .results-table {
+        display: table !important;
+        width: max-content !important;
+        min-width: 760px !important;
+        max-width: none !important;
+        border: 1px solid #e2e8f0 !important;
+        border-collapse: collapse !important;
+        white-space: normal !important;
+    }
+
+    .marks-table thead,
+    .results-table thead {
+        display: table-header-group !important;
+    }
+
+    .marks-table tbody,
+    .results-table tbody {
+        display: table-row-group !important;
+        width: auto !important;
+        min-width: 0 !important;
+    }
+
+    .marks-table tr,
+    .results-table tr,
+    .marks-table tbody tr.result-course-row,
+    .results-table tbody tr.result-course-row,
+    .summary-row,
+    .cgpa-row {
+        display: table-row !important;
+        width: auto !important;
+        margin: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        overflow: visible !important;
+    }
+
+    .marks-table th,
+    .results-table th,
+    .marks-table td,
+    .results-table td,
+    .marks-table tbody tr.result-course-row td,
+    .results-table tbody tr.result-course-row td,
+    .summary-row td,
+    .cgpa-row td {
+        display: table-cell !important;
+        width: auto !important;
+        min-width: 82px !important;
+        max-width: 220px !important;
+        padding: 0.48rem 0.55rem !important;
+        border-bottom: 1px solid #edf2f7 !important;
+        border-radius: 0 !important;
+        background: transparent;
+        box-shadow: none !important;
+        color: inherit;
+        font-size: 0.74rem !important;
+        line-height: 1.25;
+        text-align: center !important;
+        vertical-align: middle !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+    }
+
+    .marks-table th,
+    .results-table th {
+        background: #eaf2ff !important;
+        color: #0f172a !important;
+        font-size: 0.68rem !important;
+        text-transform: uppercase;
+    }
+
+    .marks-table th:nth-child(1),
+    .marks-table td:nth-child(1),
+    .results-table th:nth-child(1),
+    .results-table td:nth-child(1) {
+        min-width: 108px !important;
+        text-align: left !important;
+    }
+
+    .marks-table th:nth-child(2),
+    .marks-table td:nth-child(2),
+    .results-table th:nth-child(2),
+    .results-table td:nth-child(2) {
+        min-width: 210px !important;
+        text-align: left !important;
+    }
+
+    .marks-table td::before,
+    .results-table td::before,
+    .summary-row td::before,
+    .cgpa-row td::before {
+        display: none !important;
+        content: none !important;
+    }
+
+    .summary-row td {
+        background: #f8fafc !important;
+        color: #0f172a !important;
+        font-weight: 700 !important;
+    }
+
+    .cgpa-row td {
+        background: #ecfdf3 !important;
+        color: #166534 !important;
+        font-weight: 700 !important;
+    }
+
+    .badge-published,
+    .badge-pending {
+        display: inline-block !important;
+        justify-self: auto !important;
+        white-space: nowrap !important;
+    }
+
+    html[data-theme='dark'] .results-card .table-responsive {
+        border-color: #334155;
+    }
+
+    html[data-theme='dark'] .marks-table th,
+    html[data-theme='dark'] .results-table th {
+        background: #1e293b !important;
+        color: #f8fafc !important;
+    }
+
+    html[data-theme='dark'] .marks-table td,
+    html[data-theme='dark'] .results-table td,
+    html[data-theme='dark'] .marks-table tbody tr.result-course-row td,
+    html[data-theme='dark'] .results-table tbody tr.result-course-row td {
+        background: #0f172a !important;
+        color: #e2e8f0 !important;
+        border-color: #334155 !important;
+    }
+
+    html[data-theme='dark'] .summary-row td {
+        background: #182235 !important;
+        color: #f8fafc !important;
+    }
+
+    html[data-theme='dark'] .cgpa-row td {
+        background: #0f2b1f !important;
+        color: #bbf7d0 !important;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .results-card {
+        overflow: hidden !important;
+    }
+
+    .results-card .table-responsive {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: scroll !important;
+        overflow-y: visible !important;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
+        touch-action: pan-x;
+        padding-bottom: 0.5rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 0 0 10px 10px;
+        scrollbar-width: auto;
+    }
+
+    .results-card .table-responsive::-webkit-scrollbar {
+        height: 10px;
+    }
+
+    .results-card .table-responsive::-webkit-scrollbar-thumb {
+        background: #94a3b8;
+        border-radius: 999px;
+    }
+
+    .results-card .table-responsive::-webkit-scrollbar-track {
+        background: #e2e8f0;
+        border-radius: 999px;
+    }
+
+    .results-card .marks-table,
+    .results-card .results-table {
+        display: table !important;
+        width: max-content !important;
+        min-width: 860px !important;
+        max-width: none !important;
+        border-collapse: collapse !important;
+        white-space: normal !important;
+        table-layout: auto !important;
+    }
+
+    .results-card .marks-table thead,
+    .results-card .results-table thead {
+        display: table-header-group !important;
+    }
+
+    .results-card .marks-table tbody,
+    .results-card .results-table tbody {
+        display: table-row-group !important;
+    }
+
+    .results-card .marks-table tr,
+    .results-card .results-table tr,
+    .results-card .summary-row,
+    .results-card .cgpa-row {
+        display: table-row !important;
+        width: auto !important;
+        margin: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        overflow: visible !important;
+    }
+
+    .results-card .marks-table th,
+    .results-card .marks-table td,
+    .results-card .results-table th,
+    .results-card .results-table td,
+    .results-card .summary-row td,
+    .results-card .cgpa-row td {
+        display: table-cell !important;
+        width: auto !important;
+        min-width: 84px !important;
+        max-width: 230px !important;
+        padding: 0.48rem 0.55rem !important;
+        border: 1px solid #edf2f7 !important;
+        font-size: 0.72rem !important;
+        line-height: 1.25 !important;
+        vertical-align: middle !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere !important;
+        background: transparent;
+        color: inherit;
+        text-align: center !important;
+    }
+
+    .results-card .marks-table th,
+    .results-card .results-table th {
+        background: #eaf2ff !important;
+        color: #0f172a !important;
+        font-weight: 800 !important;
+    }
+
+    .results-card .marks-table th:nth-child(1),
+    .results-card .marks-table td:nth-child(1),
+    .results-card .marks-table th:nth-child(2),
+    .results-card .marks-table td:nth-child(2),
+    .results-card .results-table th:nth-child(1),
+    .results-card .results-table td:nth-child(1),
+    .results-card .results-table th:nth-child(2),
+    .results-card .results-table td:nth-child(2) {
+        min-width: 145px !important;
+        text-align: left !important;
+    }
+
+    .results-card .marks-table td::before,
+    .results-card .results-table td::before,
+    .results-card .summary-row td::before,
+    .results-card .cgpa-row td::before {
+        display: none !important;
+        content: none !important;
+    }
+
+    .results-card .summary-row td {
+        background: #f8fafc !important;
+        color: #0f172a !important;
+        font-weight: 800 !important;
+    }
+
+    .results-card .cgpa-row td {
+        background: #ecfdf3 !important;
+        color: #166534 !important;
+        font-weight: 800 !important;
+    }
+}
 </style>
 
 <div class="student-sidebar">
@@ -1022,7 +1263,7 @@ html[data-theme='dark'] .table-responsive {
         </div>
     </div>
 
-    <div style="padding:0.7rem 1.2rem 0.2rem 1.2rem; font-size:0.98rem; font-weight:600; display:flex; align-items:center; gap:0.7rem; flex-wrap:wrap;">
+    <div class="results-program-summary" style="padding:0.7rem 1.2rem 0.2rem 1.2rem; font-size:0.98rem; font-weight:600; display:flex; align-items:center; gap:0.7rem; flex-wrap:wrap;">
         <span>PROGRAMME: <?php echo e($registeredProgramName); ?></span>
         <span class="status-badge status-active" style="font-size:0.85rem; padding:3px 10px;"><?php echo !empty($studentProfile['status']) ? strtoupper(e($studentProfile['status'])) : 'ACTIVE'; ?></span>
         <span style="margin-left:auto; font-size:1.05rem; color:#222;">ACADEMIC STATUS: <span style="<?php echo e($academicStatusStyle); ?> border-radius:6px; padding:4px 12px; font-weight:600;">
@@ -1030,7 +1271,7 @@ html[data-theme='dark'] .table-responsive {
         </span></span>
     </div>
 
-    <div style="padding:0.45rem 1.2rem 0.2rem 1.2rem; display:flex; align-items:center; gap:0.35rem; flex-wrap:nowrap; white-space:nowrap;">
+    <div class="results-chip-strip" style="padding:0.45rem 1.2rem 0.2rem 1.2rem; display:flex; align-items:center; gap:0.35rem; flex-wrap:nowrap; white-space:nowrap;">
         <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">CURRENT YR. <span style="color:#2563eb;"><?php echo e($currentSemester['academic_year']); ?></span></span>
         <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span>
         <span style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7; color:#166534; border:1px solid #86efac; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;' : 'background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;'; ?>">

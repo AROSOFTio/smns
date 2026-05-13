@@ -244,6 +244,36 @@ body{background:#f2f4f7}.student-sidebar{width:230px;background:linear-gradient(
 .main-content{margin-left:var(--student-sidebar-width)!important;width:auto!important;max-width:none!important;min-width:0;overflow-x:hidden}
 .main-content.full-width{margin-left:0!important;width:auto!important;max-width:none!important}
 .chip-row{flex-wrap:wrap;row-gap:.4rem;white-space:normal}
+@media(max-width:767.98px){
+  .main-content,.main-content.full-width{margin-left:0!important;width:100%!important;max-width:100%!important;overflow-x:hidden!important}
+  .chip-row{display:flex!important;flex-wrap:nowrap!important;align-items:center!important;width:100%!important;max-width:100%!important;overflow-x:auto!important;overflow-y:hidden!important;white-space:nowrap!important;padding:.35rem .65rem .45rem!important;gap:.35rem!important;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+  .chip-row>*{flex:0 0 auto!important;max-width:none!important;white-space:nowrap!important;overflow-wrap:normal!important}
+  .chip-row span[style*="margin-left:auto"]{margin-left:0!important}
+  .cal-wrap{padding:.65rem .55rem 1rem!important;width:100%!important;max-width:100%!important;overflow:hidden!important}
+  .cal-card{padding:.7rem!important;width:100%!important;max-width:100%!important;overflow:hidden!important}
+  .cal-head{display:flex!important;flex-wrap:nowrap!important;align-items:center!important;gap:.7rem!important;width:100%!important;max-width:100%!important;overflow-x:auto!important;overflow-y:hidden!important;margin-bottom:.75rem!important;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+  .cal-head>div{flex:0 0 180px!important;min-width:180px!important}
+  .cal-head>div:last-child{display:none!important}
+  .cal-year-pick{width:180px!important;font-size:.78rem!important;padding:6px 8px!important}
+  .cal-title{flex:0 0 auto!important;width:auto!important;min-width:max-content!important;text-align:left!important;font-size:1.05rem!important;font-weight:600!important;line-height:1.2!important;white-space:nowrap!important;margin:0!important}
+  .cal-block{width:100%!important;max-width:100%!important;overflow-x:auto!important;overflow-y:visible!important;margin-bottom:.85rem!important;border-radius:0!important;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+  .cal-block-head{min-width:720px!important;font-size:1.05rem!important;padding:7px 10px!important;border-radius:0!important}
+  .cal-current{font-size:.78rem!important;padding:3px 8px!important}
+  .cal-table{display:table!important;width:max-content!important;min-width:720px!important;max-width:none!important;border-collapse:collapse!important;white-space:normal!important}
+  .cal-table thead{display:table-header-group!important}
+  .cal-table tbody{display:table-row-group!important}
+  .cal-table tr{display:table-row!important}
+  .cal-table th,.cal-table td{display:table-cell!important;min-width:120px!important;max-width:240px!important;padding:.52rem .65rem!important;font-size:.78rem!important;line-height:1.25!important;white-space:normal!important;overflow-wrap:anywhere!important;vertical-align:middle!important}
+  .cal-table th:nth-child(1),.cal-table td:nth-child(1),.cal-table th:nth-child(2),.cal-table td:nth-child(2){min-width:150px!important;text-align:left!important}
+  .status-pill{font-size:.78rem!important;padding:4px 8px!important;gap:5px!important;white-space:nowrap!important}
+}
+@media(max-width:430px){
+  .cal-wrap{padding:.5rem .45rem .85rem!important}
+  .cal-card{padding:.55rem!important}
+  .cal-block-head,.cal-table{min-width:660px!important}
+  .cal-table th,.cal-table td{min-width:108px!important;padding:.45rem .55rem!important}
+  .cal-table th:nth-child(1),.cal-table td:nth-child(1),.cal-table th:nth-child(2),.cal-table td:nth-child(2){min-width:135px!important}
+}
 </style>
 
 <div class="student-sidebar">

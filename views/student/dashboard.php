@@ -546,6 +546,215 @@ include '../../includes/header.php';
 .bio-card .btn-sm {
     font-size: 0.82rem !important;
 }
+.bio-content-shell {
+    padding: 2.5rem 3rem 1rem 3rem;
+}
+@media (max-width: 767.98px) {
+    .bio-content-shell {
+        padding: 0.75rem !important;
+        max-width: 100vw;
+        overflow-x: hidden;
+    }
+
+    .bio-card {
+        margin-top: 0.75rem !important;
+        padding: 0.9rem !important;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .bio-header {
+        align-items: flex-start !important;
+        gap: 0.75rem !important;
+        flex-wrap: wrap;
+        margin-bottom: 1rem !important;
+    }
+
+    .bio-header > div:nth-child(2) {
+        flex: 1 1 calc(100% - 56px);
+        min-width: 0;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.25rem 0.45rem;
+    }
+
+    .bio-header-name,
+    .bio-header-id {
+        overflow-wrap: anywhere;
+        line-height: 1.2;
+    }
+
+    .bio-header-name {
+        flex: 1 1 100%;
+        font-size: 0.96rem !important;
+    }
+
+    .bio-header-id {
+        order: 3;
+        font-size: 0.86rem !important;
+    }
+
+    .bio-header .status-badge {
+        order: 2;
+        margin-left: 0 !important;
+        margin-top: 0 !important;
+        font-size: 0.72rem !important;
+        padding: 4px 8px !important;
+    }
+
+    .student-mobile-dropdown-only {
+        display: block !important;
+    }
+
+    .student-mobile-topbar-hidden {
+        display: none !important;
+    }
+
+    .bio-action-group {
+        flex: 1 1 100%;
+        margin-left: 0 !important;
+        display: grid !important;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
+    }
+
+    .bio-btn {
+        width: 100%;
+        min-height: 34px;
+        white-space: normal;
+    }
+
+    .bio-section-tabs {
+        gap: 0.55rem !important;
+        margin-top: 1rem !important;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding-bottom: 0.35rem;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+
+    .bio-section-tabs .tab {
+        flex: 0 0 auto;
+        padding: 8px 2px !important;
+        font-size: 0.74rem !important;
+        white-space: nowrap;
+    }
+
+    #bioTabPanels {
+        min-height: 0 !important;
+        max-width: 100%;
+    }
+
+    .bio-content-shell .student-portal-summary {
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 0.45rem !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        padding: 0.25rem 0 0.45rem !important;
+        margin-bottom: 0.85rem !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+
+    .bio-content-shell .student-portal-summary > *,
+    .bio-content-shell .student-summary-grow,
+    .bio-content-shell .student-summary-grow > * {
+        flex: 0 0 auto !important;
+        width: auto !important;
+        max-width: none !important;
+        white-space: nowrap !important;
+        overflow-wrap: normal !important;
+    }
+
+    .bio-content-shell .student-summary-grow {
+        display: flex !important;
+        margin-left: 0 !important;
+        gap: 0.45rem !important;
+    }
+
+    .bio-card .tab-panel.active {
+        display: block !important;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto !important;
+        overflow-y: visible;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+
+    .bio-details-table {
+        display: table !important;
+        width: max-content !important;
+        min-width: 680px !important;
+        max-width: none !important;
+        margin-top: 0.5rem !important;
+        table-layout: auto !important;
+        white-space: normal !important;
+    }
+
+    .bio-details-table tbody {
+        display: table-row-group !important;
+        width: auto !important;
+        min-width: 0 !important;
+    }
+
+    .bio-details-table tr {
+        display: table-row !important;
+    }
+
+    .bio-details-table td {
+        display: table-cell !important;
+        width: auto !important;
+        min-width: 120px !important;
+        max-width: 260px !important;
+        border-bottom: 1px solid #f1f5f9 !important;
+        padding: 0.5rem 0.65rem !important;
+        font-size: 0.78rem !important;
+        vertical-align: top;
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+    }
+
+    .tab-panel[data-panel="password"] form {
+        max-width: 100% !important;
+    }
+}
+
+@media (max-width: 430px) {
+    .bio-content-shell {
+        padding: 0.55rem !important;
+    }
+
+    .bio-card {
+        padding: 0.75rem !important;
+    }
+
+    .bio-action-group {
+        grid-template-columns: 1fr;
+    }
+
+    .bio-details-table {
+        min-width: 620px !important;
+    }
+
+    .bio-details-table td {
+        min-width: 108px !important;
+        max-width: 220px !important;
+        padding: 0.45rem 0.55rem !important;
+    }
+}
+
+@media (min-width: 768px) {
+    .student-mobile-dropdown-only {
+        display: none !important;
+    }
+}
 @media print {
     .student-sidebar,
     .student-topbar,
@@ -772,7 +981,7 @@ html[data-theme='dark'] .profile-lock-modal .text-muted {
                 <img src="/assets/img/student_sample.jpg" alt="Profile" class="student-profile-pic" style="width:48px;height:48px;">
             <?php endif; ?>
             <span style="font-size:0.98rem; color:#222; font-weight:600; white-space:nowrap;"> <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?> </span>
-            <a href="<?php echo e($linkMailbox); ?>" title="My Mailbox" style="position:relative; display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border:1px solid #dbe3ef; border-radius:50%; color:#1f7aa8; text-decoration:none; background:#fff;">
+            <a href="<?php echo e($linkMailbox); ?>" class="student-mobile-topbar-hidden" title="My Mailbox" style="position:relative; display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border:1px solid #dbe3ef; border-radius:50%; color:#1f7aa8; text-decoration:none; background:#fff;">
                 <i class="far fa-envelope"></i>
                 <?php if ($mailUnreadCount > 0): ?>
                     <span style="position:absolute; top:-6px; right:-6px; min-width:16px; height:16px; padding:0 4px; border-radius:999px; background:#ef4444; color:#fff; font-size:10px; font-weight:700; line-height:16px; text-align:center;"><?php echo $mailUnreadCount > 99 ? '99+' : $mailUnreadCount; ?></span>
@@ -784,12 +993,13 @@ html[data-theme='dark'] .profile-lock-modal .text-muted {
                 </button>
                 <div id="profileDropMenu" style="display:none; position:absolute; top:120%; right:0; background:#fff; border:1px solid #e5e7eb; border-radius:6px; box-shadow:0 2px 8px rgba(0,0,0,0.08); min-width:140px; z-index:100;">
                     <a href="dashboard.php" style="display:block; padding:8px 14px; color:#1f2937; text-decoration:none; font-weight:600; font-size:0.92rem; border-bottom:1px solid #f1f5f9;">Profile</a>
+                    <a href="<?php echo e($linkMailbox); ?>" class="student-mobile-dropdown-only" style="display:none; padding:8px 14px; color:#1f2937; text-decoration:none; font-weight:600; font-size:0.92rem; border-bottom:1px solid #f1f5f9;"><i class="far fa-envelope"></i> My Mailbox<?php echo $mailUnreadCount > 0 ? ' (' . ($mailUnreadCount > 99 ? '99+' : (int)$mailUnreadCount) . ')' : ''; ?></a>
                     <a href="services.php?tab=apply" style="display:block; padding:8px 14px; color:#1f2937; text-decoration:none; font-weight:600; font-size:0.92rem; border-bottom:1px solid #f1f5f9;">Services</a>
                     <a href="change-password.php" style="display:block; padding:8px 14px; color:#1f2937; text-decoration:none; font-weight:600; font-size:0.92rem; border-bottom:1px solid #f1f5f9;"><i class="fas fa-key"></i> Change Password</a>
                     <a href="logout.php" style="display:block; padding:8px 14px; color:#dc2626; text-decoration:none; font-weight:600; font-size:0.92rem;">Logout</a>
                 </div>
             </div>
-            <div class="profile-dropdown" style="position:relative;">
+            <div class="profile-dropdown student-mobile-topbar-hidden" style="position:relative;">
                 <button id="keyDropBtn" style="background:var(--key-btn-bg, #fff); border:1px solid var(--key-btn-border, #e5e7eb); border-radius:50%; width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; color:var(--key-btn-color, #0f172a);">
                     <i class="fas fa-key"></i>
                 </button>
@@ -1005,7 +1215,7 @@ document.addEventListener('click', function() {
         </div>
     <?php endif; ?>
 
-    <div style="padding:2.5rem 3rem 1rem 3rem;">
+    <div class="bio-content-shell">
         <?php if ($session->getFlash('success')): ?>
             <div class="alert alert-success"><?php echo e($session->getFlash('success')); ?></div>
         <?php endif; ?>
@@ -1156,6 +1366,3 @@ if (reloadBtn) {
 </script>
 
 <?php include '../../includes/footer.php'; ?>
-
-
-

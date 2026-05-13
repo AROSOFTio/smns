@@ -149,44 +149,15 @@ if ($studentId > 0) {
             r.grade,
             r.grade_points,
             r.status AS result_status
-        FROM course_registrations cr
-        INNER JOIN courses c ON cr.course_id = c.id
-        INNER JOIN semesters s ON cr.semester_id = s.id
+        FROM results r
+        INNER JOIN courses c ON r.course_id = c.id
+        INNER JOIN semesters s ON r.semester_id = s.id
         INNER JOIN academic_years ay ON s.academic_year_id = ay.id
-        LEFT JOIN results r
-            ON r.student_id = cr.student_id
-            AND r.course_id = cr.course_id
-            AND r.semester_id = cr.semester_id
-        WHERE cr.student_id = :student_id
+        WHERE r.student_id = :student_id
           AND ay.start_date >= :start_date
           AND ay.start_date <= :end_date
-          AND EXISTS (
-                SELECT 1
-                FROM results rp
-                WHERE rp.student_id = cr.student_id
-                  AND rp.semester_id = cr.semester_id
-                  AND rp.status IN ('approved', 'submitted', 'draft')
-          )
-          AND (r.status IS NULL OR r.status IN ('approved', 'submitted', 'draft'))
+          AND r.status IN ('approved', 'submitted', 'draft', 'published')
           AND (c.semester_offered = s.semester_number OR c.semester_offered = 3)
-          AND (
-                NOT EXISTS (
-                    SELECT 1
-                    FROM semester_registrations srx
-                    WHERE srx.student_id = cr.student_id
-                      AND srx.semester_id = cr.semester_id
-                      AND srx.status = 'approved'
-                )
-                OR c.level_year = (
-                    SELECT sry.year_of_study
-                    FROM semester_registrations sry
-                    WHERE sry.student_id = cr.student_id
-                      AND sry.semester_id = cr.semester_id
-                      AND sry.status = 'approved'
-                    ORDER BY sry.id DESC
-                    LIMIT 1
-                )
-          )
         ORDER BY COALESCE(c.level_year, 1) ASC, course_semester ASC, c.course_code ASC
     ";
 
@@ -608,116 +579,6 @@ html[data-theme='dark'] .table-responsive {
 }
 
 @media (max-width: 640px) {
-    .results-card,
-    .table-responsive {
-        overflow: visible !important;
-    }
-
-    .marks-table,
-    .results-table,
-    .marks-table tbody,
-    .results-table tbody,
-    .marks-table tr,
-    .results-table tr,
-    .marks-table td,
-    .results-table td {
-        display: block !important;
-        width: 100% !important;
-        min-width: 0 !important;
-        max-width: 100% !important;
-    }
-
-    .marks-table,
-    .results-table {
-        border: 0 !important;
-        white-space: normal !important;
-    }
-
-    .marks-table thead,
-    .results-table thead {
-        display: none !important;
-    }
-
-    .marks-table tbody tr,
-    .results-table tbody tr {
-        margin-bottom: 0.75rem;
-        border: 1px solid #dbe3ef;
-        border-radius: 8px;
-        background: #fff;
-        overflow: hidden;
-    }
-
-    .marks-table tbody tr:nth-child(even),
-    .results-table tbody tr:nth-child(even) {
-        background: #fff;
-    }
-
-    .marks-table tbody td,
-    .results-table tbody td {
-        display: flex !important;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 0.75rem;
-        border-bottom: 1px solid #edf2f7;
-        padding: 0.55rem 0.7rem !important;
-        text-align: right !important;
-        font-size: 0.82rem !important;
-        white-space: normal !important;
-        overflow-wrap: anywhere;
-    }
-
-    .marks-table tbody td:last-child,
-    .results-table tbody td:last-child {
-        border-bottom: 0;
-    }
-
-    .marks-table tbody td::before,
-    .results-table tbody td::before {
-        content: "";
-        flex: 0 0 42%;
-        color: #475569;
-        font-weight: 700;
-        text-align: left;
-        text-transform: uppercase;
-        font-size: 0.68rem;
-        letter-spacing: 0.02em;
-    }
-
-    .marks-table tbody td:nth-child(1)::before { content: "Course Code"; }
-    .marks-table tbody td:nth-child(2)::before { content: "Course Name"; }
-    .marks-table tbody td:nth-child(3)::before { content: "CU"; }
-    .marks-table tbody td:nth-child(4)::before { content: "CW"; }
-    .marks-table tbody td:nth-child(5)::before { content: "Exam"; }
-    .marks-table tbody td:nth-child(6)::before { content: "Total"; }
-    .marks-table tbody td:nth-child(7)::before { content: "Grade"; }
-    .marks-table tbody td:nth-child(8)::before { content: "GP"; }
-    .marks-table tbody td:nth-child(9)::before { content: "Status"; }
-
-    .summary-row,
-    .cgpa-row {
-        border-color: #bfdbfe !important;
-    }
-
-    .summary-row td,
-    .cgpa-row td {
-        display: block !important;
-        text-align: left !important;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.25);
-    }
-
-    .summary-row td::before,
-    .cgpa-row td::before {
-        display: none;
-    }
-
-    html[data-theme='dark'] .marks-table tbody tr,
-    html[data-theme='dark'] .results-table tbody tr {
-        background: #0f172a;
-        border-color: #334155;
-    }
-}
-
-@media (max-width: 640px) {
     .results-card {
         overflow: hidden !important;
     }
@@ -726,16 +587,19 @@ html[data-theme='dark'] .table-responsive {
         overflow-x: auto !important;
         overflow-y: hidden !important;
         -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
+        touch-action: pan-x;
     }
 
     .marks-table,
     .results-table {
         display: table !important;
-        width: max-content !important;
-        min-width: 860px !important;
-        max-width: none !important;
+        width: 100% !important;
+        min-width: 680px !important;
+        max-width: 100% !important;
         border-collapse: collapse !important;
-        white-space: nowrap !important;
+        white-space: normal !important;
+        table-layout: fixed !important;
     }
 
     .marks-table thead,
@@ -753,7 +617,8 @@ html[data-theme='dark'] .table-responsive {
     .marks-table tr,
     .results-table tr {
         display: table-row !important;
-        width: auto !important;
+        vertical-align: top;
+        box-sizing: border-box;
         margin: 0 !important;
         border: 0 !important;
         border-radius: 0 !important;
@@ -781,6 +646,48 @@ html[data-theme='dark'] .table-responsive {
         content: none !important;
         display: none !important;
     }
+
+    .marks-table th:nth-child(2),
+    .marks-table td:nth-child(2),
+    .results-table th:nth-child(2),
+    .results-table td:nth-child(2) {
+        white-space: normal !important;
+        min-width: 230px !important;
+        overflow-wrap: anywhere;
+    }
+
+    .marks-table th:nth-child(1),
+    .marks-table td:nth-child(1),
+    .results-table th:nth-child(1),
+    .results-table td:nth-child(1) { width: 110px; }
+    .marks-table th:nth-child(3),
+    .marks-table td:nth-child(3),
+    .results-table th:nth-child(3),
+    .results-table td:nth-child(3) { width: 60px; }
+    .marks-table th:nth-child(4),
+    .marks-table td:nth-child(4),
+    .results-table th:nth-child(4),
+    .results-table td:nth-child(4) { width: 60px; }
+    .marks-table th:nth-child(5),
+    .marks-table td:nth-child(5),
+    .results-table th:nth-child(5),
+    .results-table td:nth-child(5) { width: 60px; }
+    .marks-table th:nth-child(6),
+    .marks-table td:nth-child(6),
+    .results-table th:nth-child(6),
+    .results-table td:nth-child(6) { width: 70px; }
+    .marks-table th:nth-child(7),
+    .marks-table td:nth-child(7),
+    .results-table th:nth-child(7),
+    .results-table td:nth-child(7) { width: 70px; }
+    .marks-table th:nth-child(8),
+    .marks-table td:nth-child(8),
+    .results-table th:nth-child(8),
+    .results-table td:nth-child(8) { width: 70px; }
+    .marks-table th:nth-child(9),
+    .marks-table td:nth-child(9),
+    .results-table th:nth-child(9),
+    .results-table td:nth-child(9) { width: 120px; }
 
     .marks-table th:nth-child(1),
     .marks-table td:nth-child(1),
@@ -844,126 +751,133 @@ html[data-theme='dark'] .table-responsive {
     }
 }
 
-@media (max-width: 640px) {
-    .results-card,
-    .table-responsive {
-        overflow: visible !important;
-    }
-
-    .marks-table,
-    .results-table,
-    .marks-table tbody,
-    .results-table tbody,
-    .marks-table tr,
-    .results-table tr,
-    .marks-table td,
-    .results-table td {
-        display: block !important;
-        width: 100% !important;
-        min-width: 0 !important;
-        max-width: 100% !important;
-    }
-
-    .marks-table,
-    .results-table {
-        border: 0 !important;
-        white-space: normal !important;
-    }
-
-    .marks-table thead,
-    .results-table thead {
-        display: none !important;
-    }
-
-    .marks-table tbody tr {
-        margin-bottom: 0;
-        border: 0 !important;
-        border-radius: 0 !important;
-        background: transparent !important;
-        box-shadow: none !important;
+@media (max-width: 767.98px) {
+    .results-card {
         overflow: hidden !important;
     }
 
-    .marks-table tbody td,
-    .results-table tbody td {
-        display: grid !important;
-        grid-template-columns: minmax(82px, 34%) minmax(0, 1fr);
-        align-items: start;
-        column-gap: 0.75rem;
-        padding: 0.72rem 0.85rem !important;
-        border-bottom: 1px solid #334155 !important;
-        text-align: right !important;
-        white-space: normal !important;
-        overflow-wrap: anywhere;
-        background: #0f172a;
-        color: #e5e7eb;
-    }
-
-    .marks-table tbody td:first-child,
-    .results-table tbody td:first-child {
-        background: #132235 !important;
-        color: #f8fafc !important;
-        font-size: 1rem !important;
-        font-weight: 800;
-        border-top: 1px solid #334155 !important;
-    }
-
-    .marks-table tbody td::before,
-    .results-table tbody td::before {
-        display: block !important;
-        color: #94a3b8;
-        font-size: 0.67rem;
-        font-weight: 800;
-        letter-spacing: 0.02em;
-        line-height: 1.35;
-        text-align: left;
-        text-transform: uppercase;
-    }
-
-    .marks-table tbody td:nth-child(1)::before { content: "Course Code" !important; }
-    .marks-table tbody td:nth-child(2)::before { content: "Course Name" !important; }
-    .marks-table tbody td:nth-child(3)::before { content: "CU" !important; }
-    .marks-table tbody td:nth-child(4)::before { content: "CW" !important; }
-    .marks-table tbody td:nth-child(5)::before { content: "Exam" !important; }
-    .marks-table tbody td:nth-child(6)::before { content: "Total" !important; }
-    .marks-table tbody td:nth-child(7)::before { content: "Grade" !important; }
-    .marks-table tbody td:nth-child(8)::before { content: "GP" !important; }
-    .marks-table tbody td:nth-child(9)::before { content: "Status" !important; }
-
-    .marks-table tbody td:nth-child(1),
-    .marks-table tbody td:nth-child(2),
-    .marks-table tbody td:nth-child(7),
-    .marks-table tbody td:nth-child(9),
-    .results-table tbody td:nth-child(1),
-    .results-table tbody td:nth-child(2),
-    .results-table tbody td:nth-child(7),
-    .results-table tbody td:nth-child(9) {
-        text-align: left !important;
-    }
-
-    .summary-row,
-    .cgpa-row {
-        display: block !important;
-        margin-top: 0.65rem !important;
-        border: 1px solid #334155 !important;
-        background: #172033 !important;
-    }
-
-    .summary-row td,
-    .cgpa-row td {
+    .results-card .table-responsive {
         display: block !important;
         width: 100% !important;
-        text-align: left !important;
-        padding: 0.62rem 0.85rem !important;
-        border-bottom: 1px solid #334155 !important;
-        background: transparent !important;
-        color: #e5e7eb !important;
+        max-width: 100% !important;
+        overflow-x: scroll !important;
+        overflow-y: visible !important;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
+        touch-action: pan-x;
+        padding-bottom: 0.5rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 0 0 10px 10px;
+        scrollbar-width: auto;
     }
 
-    .summary-row td::before,
-    .cgpa-row td::before {
+    .results-card .table-responsive::-webkit-scrollbar {
+        height: 10px;
+    }
+
+    .results-card .table-responsive::-webkit-scrollbar-thumb {
+        background: #94a3b8;
+        border-radius: 999px;
+    }
+
+    .results-card .table-responsive::-webkit-scrollbar-track {
+        background: #e2e8f0;
+        border-radius: 999px;
+    }
+
+    .results-card .marks-table,
+    .results-card .results-table {
+        display: table !important;
+        width: max-content !important;
+        min-width: 760px !important;
+        max-width: none !important;
+        border-collapse: collapse !important;
+        white-space: normal !important;
+        table-layout: auto !important;
+    }
+
+    .results-card .marks-table thead,
+    .results-card .results-table thead {
+        display: table-header-group !important;
+    }
+
+    .results-card .marks-table tbody,
+    .results-card .results-table tbody {
+        display: table-row-group !important;
+    }
+
+    .results-card .marks-table tr,
+    .results-card .results-table tr,
+    .results-card .summary-row,
+    .results-card .cgpa-row {
+        display: table-row !important;
+        width: auto !important;
+        margin: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        overflow: visible !important;
+    }
+
+    .results-card .marks-table th,
+    .results-card .marks-table td,
+    .results-card .results-table th,
+    .results-card .results-table td,
+    .results-card .summary-row td,
+    .results-card .cgpa-row td {
+        display: table-cell !important;
+        width: auto !important;
+        min-width: 84px !important;
+        max-width: 230px !important;
+        padding: 0.48rem 0.55rem !important;
+        border: 1px solid #edf2f7 !important;
+        font-size: 0.72rem !important;
+        line-height: 1.25 !important;
+        vertical-align: middle !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere !important;
+        background: transparent;
+        color: inherit;
+        text-align: center !important;
+    }
+
+    .results-card .marks-table th,
+    .results-card .results-table th {
+        background: #eaf2ff !important;
+        color: #0f172a !important;
+        font-weight: 800 !important;
+    }
+
+    .results-card .marks-table th:nth-child(1),
+    .results-card .marks-table td:nth-child(1),
+    .results-card .marks-table th:nth-child(2),
+    .results-card .marks-table td:nth-child(2),
+    .results-card .results-table th:nth-child(1),
+    .results-card .results-table td:nth-child(1),
+    .results-card .results-table th:nth-child(2),
+    .results-card .results-table td:nth-child(2) {
+        min-width: 145px !important;
+        text-align: left !important;
+    }
+
+    .results-card .marks-table td::before,
+    .results-card .results-table td::before,
+    .results-card .summary-row td::before,
+    .results-card .cgpa-row td::before {
         display: none !important;
         content: none !important;
+    }
+
+    .results-card .summary-row td {
+        background: #f8fafc !important;
+        color: #0f172a !important;
+        font-weight: 800 !important;
+    }
+
+    .results-card .cgpa-row td {
+        background: #ecfdf3 !important;
+        color: #166534 !important;
+        font-weight: 800 !important;
     }
 }
 </style>
@@ -1139,17 +1053,23 @@ html[data-theme='dark'] .table-responsive {
 
                                             <?php foreach ($data['courses'] as $course): ?>
                                                 <?php
-                                                $isPublished = (($course['result_status'] ?? '') === 'published');
+                                                $resultStatus = strtolower((string)($course['result_status'] ?? ''));
+                                                $hasMarks = ($course['total_marks'] !== null && $course['total_marks'] !== '');
                                                 $cu = (int)($course['credit_hours'] ?? 0);
                                                 $resolvedScale = $resolveTranscriptScale($course['total_marks'] ?? null);
-                                                $displayGrade = $isPublished && $resolvedScale['grade'] !== ''
-                                                    ? (string)$resolvedScale['grade']
-                                                    : '';
-                                                $displayGradePoint = $isPublished
-                                                    ? $resolvedScale['grade_point']
+                                                $storedGrade = trim((string)($course['grade'] ?? ''));
+                                                $storedGradePoint = ($course['grade_points'] !== null && $course['grade_points'] !== '')
+                                                    ? (float)$course['grade_points']
                                                     : null;
+                                                $displayGrade = $hasMarks
+                                                    ? ($storedGrade !== '' ? $storedGrade : (string)$resolvedScale['grade'])
+                                                    : '';
+                                                $displayGradePoint = $hasMarks
+                                                    ? ($storedGradePoint !== null ? $storedGradePoint : $resolvedScale['grade_point'])
+                                                    : null;
+                                                $statusLabel = $resultStatus !== '' ? strtoupper(str_replace('_', ' ', $resultStatus)) : 'PA';
 
-                                                if ($isPublished && $displayGradePoint !== null) {
+                                                if ($hasMarks && $displayGradePoint !== null) {
                                                     $semesterCredits += $cu;
                                                     $semesterPoints += ((float)$displayGradePoint) * $cu;
                                                     $publishedCourses++;
@@ -1161,17 +1081,13 @@ html[data-theme='dark'] .table-responsive {
                                                     <td><strong><?php echo e($course['course_code'] ?? '-'); ?></strong></td>
                                                     <td><?php echo e($course['course_name'] ?? '-'); ?></td>
                                                     <td class="text-center"><?php echo e($course['credit_hours'] ?? '-'); ?></td>
-                                                    <td class="text-center"><?php echo $isPublished ? number_format((float)$course['assignment_marks'], 0) : 'PA'; ?></td>
-                                                    <td class="text-center"><?php echo $isPublished ? number_format((float)$course['final_exam_marks'], 0) : 'PA'; ?></td>
-                                                    <td class="text-center"><?php echo $isPublished ? number_format((float)$course['total_marks'], 0) : 'PA'; ?></td>
-                                                    <td class="text-center"><?php echo $isPublished && $displayGrade !== '' ? e($displayGrade) : 'PA'; ?></td>
-                                                    <td class="text-center"><?php echo $isPublished && $displayGradePoint !== null ? number_format((float)$displayGradePoint, 2) : 'PA'; ?></td>
+                                                    <td class="text-center"><?php echo $course['assignment_marks'] !== null ? number_format((float)$course['assignment_marks'], 0) : 'PA'; ?></td>
+                                                    <td class="text-center"><?php echo $course['final_exam_marks'] !== null ? number_format((float)$course['final_exam_marks'], 0) : 'PA'; ?></td>
+                                                    <td class="text-center"><?php echo $hasMarks ? number_format((float)$course['total_marks'], 0) : 'PA'; ?></td>
+                                                    <td class="text-center"><?php echo $displayGrade !== '' ? e($displayGrade) : 'PA'; ?></td>
+                                                    <td class="text-center"><?php echo $displayGradePoint !== null ? number_format((float)$displayGradePoint, 2) : 'PA'; ?></td>
                                                     <td class="text-center">
-                                                        <?php if ($isPublished): ?>
-                                                            <span class="badge-published">Published</span>
-                                                        <?php else: ?>
-                                                            <span class="badge-pending">PA</span>
-                                                        <?php endif; ?>
+                                                        <span class="<?php echo $hasMarks ? 'badge-published' : 'badge-pending'; ?>"><?php echo e($statusLabel); ?></span>
                                                     </td>
                                                 </tr>
                                             <?php endforeach; ?>

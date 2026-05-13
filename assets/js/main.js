@@ -89,6 +89,11 @@ function initAutoFoldSections(root) {
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
+    // Avoid layout "shaking" on refresh when restoring sidebar state.
+    // We temporarily disable transitions, apply the saved state, then re-enable.
+    try {
+        document.body.classList.add('smns-no-transitions');
+    } catch (e) {}
     // Update time immediately and then every second
     if (document.getElementById('current-date-time')) {
         updateDateTime();
@@ -274,6 +279,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
         });
+    }
+
+    // Re-enable transitions after initial layout settles.
+    try {
+        requestAnimationFrame(function() {
+            requestAnimationFrame(function() {
+                document.body.classList.remove('smns-no-transitions');
+            });
+        });
+    } catch (e) {
+        try { document.body.classList.remove('smns-no-transitions'); } catch (e2) {}
     }
 
     initAutoFoldSections(document);

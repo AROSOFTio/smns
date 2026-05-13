@@ -38,6 +38,16 @@ body {
     position: relative;
 }
 
+/* Prevent visible layout jitter when JS restores UI state on load */
+body.smns-no-transitions .sidebar,
+body.smns-no-transitions .main-content,
+body.smns-no-transitions .sidebar-toggle,
+body.smns-no-transitions #sidebarToggle,
+body.smns-no-transitions .admin-sidebar-mobile-toggle,
+body.smns-no-transitions .mobile-menu-btn {
+    transition: none !important;
+}
+
 /* Layout */
 .wrapper {
     display: flex;

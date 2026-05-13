@@ -534,6 +534,8 @@
     }
     html[data-theme='dark'] .sidebar,
     html[data-theme='dark'] .student-sidebar,
+    html[data-theme='dark'] .lecturer-sidebar,
+    html[data-theme='dark'] .finance-sidebar,
     html[data-theme='dark'] .topbar,
     html[data-theme='dark'] .student-topbar,
     html[data-theme='dark'] .card,
@@ -1538,6 +1540,18 @@
             return;
         }
 
+        var overflowPlaceholders = new WeakMap();
+
+        function isMobileTopbar() {
+            return window.innerWidth <= 767.98;
+        }
+
+        function closeAllTopbarOverflows() {
+            document.querySelectorAll('.smns-topbar-overflow.active').forEach(function(wrap) {
+                wrap.classList.remove('active');
+            });
+        }
+
         function createTimeBlock() {
             var wrap = document.createElement('div');
             wrap.className = 'topbar-time smns-injected-topbar-time';
@@ -1622,6 +1636,7 @@
 
             button.addEventListener('click', function(e) {
                 e.stopPropagation();
+                closeAllTopbarOverflows();
                 var isActive = dropdown.classList.contains('active');
                 document.querySelectorAll('.user-dropdown.active').forEach(function(openDropdown) {
                     openDropdown.classList.remove('active');
@@ -1644,6 +1659,134 @@
             dropdown.appendChild(menu);
             userInfo.appendChild(dropdown);
             return userInfo;
+        }
+
+        function ensureOverflowDropdown(standard) {
+            var existing = standard.querySelector('.smns-topbar-overflow');
+            if (existing) {
+                return existing;
+            }
+
+            var wrap = document.createElement('div');
+            wrap.className = 'smns-topbar-overflow';
+
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'topbar-overflow-toggle';
+            btn.setAttribute('aria-label', 'More actions');
+            btn.innerHTML = '<i class="fas fa-ellipsis-v" aria-hidden="true"></i>';
+
+            var menu = document.createElement('div');
+            menu.className = 'topbar-overflow-menu';
+
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                // Close user dropdowns
+                document.querySelectorAll('.user-dropdown.active').forEach(function(dropdown) {
+                    dropdown.classList.remove('active');
+                    var userMenu = dropdown.querySelector('.user-dropdown-menu');
+                    if (userMenu) userMenu.classList.remove('show');
+                });
+
+                // Close notification dropdown if open
+                var nd = document.getElementById('notificationDropdown');
+                if (nd) nd.classList.remove('show');
+
+                var isOpen = wrap.classList.contains('active');
+                closeAllTopbarOverflows();
+                if (!isOpen) {
+                    wrap.classList.add('active');
+                }
+            });
+
+            menu.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+
+            wrap.appendChild(btn);
+            wrap.appendChild(menu);
+
+            // Insert before user dropdown if present; else append.
+            var user = standard.querySelector('.user-dropdown') || standard.querySelector('.smns-injected-user-info');
+            if (user && user.parentNode === standard) {
+                standard.insertBefore(wrap, user);
+            } else {
+                standard.appendChild(wrap);
+            }
+
+            return wrap;
+        }
+
+        function syncTopbarOverflow(topbar) {
+            if (String(topbarData.module) !== 'admin') {
+                return;
+            }
+
+            var right = topbar.querySelector('.topbar-right');
+            if (!(right instanceof HTMLElement)) {
+                return;
+            }
+
+            var standard = right.querySelector('.smns-standard-topbar-actions');
+            if (!(standard instanceof HTMLElement)) {
+                return;
+            }
+
+            var overflowWrap = ensureOverflowDropdown(standard);
+            var overflowMenu = overflowWrap.querySelector('.topbar-overflow-menu');
+            var overflowBtn = overflowWrap.querySelector('.topbar-overflow-toggle');
+            if (!(overflowMenu instanceof HTMLElement) || !(overflowBtn instanceof HTMLElement)) {
+                return;
+            }
+
+            function restore() {
+                while (overflowMenu.firstChild) {
+                    var node = overflowMenu.firstChild;
+                    overflowMenu.removeChild(node);
+                    if (node && node.nodeType === 1 && overflowPlaceholders.has(node)) {
+                        var ph = overflowPlaceholders.get(node);
+                        if (ph && ph.parentNode) {
+                            ph.parentNode.insertBefore(node, ph);
+                            ph.parentNode.removeChild(ph);
+                        } else {
+                            right.insertBefore(node, standard);
+                        }
+                        overflowPlaceholders.delete(node);
+                    } else {
+                        right.insertBefore(node, standard);
+                    }
+                }
+                overflowWrap.classList.remove('active');
+                overflowWrap.style.display = 'none';
+            }
+
+            if (!isMobileTopbar()) {
+                restore();
+                return;
+            }
+
+            // Move any extra right-side items (excluding the standard actions container) into overflow menu.
+            var extras = Array.prototype.slice.call(right.children).filter(function(el) {
+                return el !== standard;
+            });
+
+            // Only move if there are extras.
+            if (!extras.length) {
+                restore();
+                return;
+            }
+
+            extras.forEach(function(el) {
+                if (!(el instanceof HTMLElement)) return;
+                if (!overflowPlaceholders.has(el)) {
+                    var placeholder = document.createComment('smns-overflow');
+                    overflowPlaceholders.set(el, placeholder);
+                    right.insertBefore(placeholder, el);
+                }
+                overflowMenu.appendChild(el);
+            });
+
+            overflowWrap.style.display = '';
         }
 
         function refreshInjectedDateTime() {
@@ -1723,14 +1866,23 @@
                 standard.appendChild(createUserDropdown());
             }
 
+            // Admin mobile: move extra right-side items into a "More" dropdown.
+            syncTopbarOverflow(topbar);
+
             topbar.classList.add('smns-topbar-enhanced');
         }
 
         document.querySelectorAll('.topbar').forEach(enhanceTopbar);
+        document.querySelectorAll('.topbar').forEach(syncTopbarOverflow);
         refreshInjectedDateTime();
         window.setInterval(refreshInjectedDateTime, 1000);
 
+        window.addEventListener('resize', function() {
+            document.querySelectorAll('.topbar').forEach(syncTopbarOverflow);
+        });
+
         document.addEventListener('click', function() {
+            closeAllTopbarOverflows();
             document.querySelectorAll('.user-dropdown.active').forEach(function(dropdown) {
                 dropdown.classList.remove('active');
                 var menu = dropdown.querySelector('.user-dropdown-menu');
