@@ -301,6 +301,7 @@ body { background: #f8fafc; }
 .marks-table {
     width: 100%;
     border-collapse: collapse;
+    border-spacing: 0;
     border: 1px solid #e2e8f0;
 }
 .marks-table th, .marks-table td {
@@ -318,15 +319,43 @@ body { background: #f8fafc; }
 
 /* ── Provisional table fixed column widths ─────────────────── */
 .student-provisional-table { table-layout: fixed; }
-.student-provisional-table .col-code   { width: 100px; text-align: left; }
-.student-provisional-table .col-name   { width: 200px; text-align: left; white-space: normal; overflow-wrap: anywhere; }
-.student-provisional-table .col-cu     { width: 48px;  text-align: center; }
-.student-provisional-table .col-cw     { width: 55px;  text-align: center; }
-.student-provisional-table .col-exam   { width: 58px;  text-align: center; }
-.student-provisional-table .col-total  { width: 58px;  text-align: center; }
-.student-provisional-table .col-grade  { width: 58px;  text-align: center; }
-.student-provisional-table .col-gp     { width: 65px;  text-align: center; }
-.student-provisional-table .col-status { width: 100px; text-align: center; }
+.student-provisional-table col.col-code,
+.student-provisional-table th.col-code,
+.student-provisional-table td.col-code   { width: 100px; }
+.student-provisional-table col.col-name,
+.student-provisional-table th.col-name,
+.student-provisional-table td.col-name   { width: 200px; }
+.student-provisional-table col.col-cu,
+.student-provisional-table th.col-cu,
+.student-provisional-table td.col-cu     { width: 48px; }
+.student-provisional-table col.col-cw,
+.student-provisional-table th.col-cw,
+.student-provisional-table td.col-cw     { width: 55px; }
+.student-provisional-table col.col-exam,
+.student-provisional-table th.col-exam,
+.student-provisional-table td.col-exam   { width: 58px; }
+.student-provisional-table col.col-total,
+.student-provisional-table th.col-total,
+.student-provisional-table td.col-total  { width: 58px; }
+.student-provisional-table col.col-grade,
+.student-provisional-table th.col-grade,
+.student-provisional-table td.col-grade  { width: 58px; }
+.student-provisional-table col.col-gp,
+.student-provisional-table th.col-gp,
+.student-provisional-table td.col-gp     { width: 65px; }
+.student-provisional-table col.col-status,
+.student-provisional-table th.col-status,
+.student-provisional-table td.col-status { width: 100px; }
+.student-provisional-table .col-code,
+.student-provisional-table .col-name { text-align: left; }
+.student-provisional-table .col-cu,
+.student-provisional-table .col-cw,
+.student-provisional-table .col-exam,
+.student-provisional-table .col-total,
+.student-provisional-table .col-grade,
+.student-provisional-table .col-gp,
+.student-provisional-table .col-status { text-align: center; }
+.student-provisional-table .col-name { white-space: normal; overflow-wrap: anywhere; }
 
 /* All non-name columns: no wrap */
 .student-provisional-table th:not(.col-name),
@@ -369,9 +398,18 @@ body { background: #f8fafc; }
 
 /* The table inside the wrapper: never collapse below 680px */
 .table-scroll-wrap .marks-table {
-    min-width: 680px;
+    display: table !important;
+    min-width: 742px;
     width: 100%;
     border: none;          /* outer wrapper already has the border */
+}
+.table-scroll-wrap .marks-table thead { display: table-header-group !important; }
+.table-scroll-wrap .marks-table tbody { display: table-row-group !important; }
+.table-scroll-wrap .marks-table tr { display: table-row !important; }
+.table-scroll-wrap .marks-table th,
+.table-scroll-wrap .marks-table td {
+    display: table-cell !important;
+    box-sizing: border-box;
 }
 
 /* ── Mobile scroll hint ─────────────────────────────────────── */
@@ -488,9 +526,16 @@ html[data-theme='dark'] #menuBtn { color: var(--app-text) !important; }
     .marks-table td         { padding: 8px 9px !important; font-size: 0.79rem !important; }
 
     /* Slightly tighter column widths on mid-mobile */
-    .student-provisional-table .col-code   { width: 90px; }
-    .student-provisional-table .col-name   { width: 180px; }
-    .student-provisional-table .col-status { width: 90px; }
+    .table-scroll-wrap .student-provisional-table { min-width: 702px; }
+    .student-provisional-table col.col-code,
+    .student-provisional-table th.col-code,
+    .student-provisional-table td.col-code   { width: 90px; }
+    .student-provisional-table col.col-name,
+    .student-provisional-table th.col-name,
+    .student-provisional-table td.col-name   { width: 180px; }
+    .student-provisional-table col.col-status,
+    .student-provisional-table th.col-status,
+    .student-provisional-table td.col-status { width: 90px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -514,9 +559,16 @@ html[data-theme='dark'] #menuBtn { color: var(--app-text) !important; }
     .marks-table td { padding: 7px 8px !important; font-size: 0.76rem !important; }
 
     /* Even tighter columns on tiny screens */
-    .student-provisional-table .col-code   { width: 80px; }
-    .student-provisional-table .col-name   { width: 155px; }
-    .student-provisional-table .col-status { width: 82px; }
+    .table-scroll-wrap .student-provisional-table { min-width: 659px; }
+    .student-provisional-table col.col-code,
+    .student-provisional-table th.col-code,
+    .student-provisional-table td.col-code   { width: 80px; }
+    .student-provisional-table col.col-name,
+    .student-provisional-table th.col-name,
+    .student-provisional-table td.col-name   { width: 155px; }
+    .student-provisional-table col.col-status,
+    .student-provisional-table th.col-status,
+    .student-provisional-table td.col-status { width: 82px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -528,8 +580,13 @@ html[data-theme='dark'] #menuBtn { color: var(--app-text) !important; }
     .results-wrap { padding: 0.4rem !important; }
     .marks-table th,
     .marks-table td { padding: 6px 7px !important; font-size: 0.72rem !important; }
-    .student-provisional-table .col-code { width: 72px; }
-    .student-provisional-table .col-name { width: 140px; }
+    .table-scroll-wrap .student-provisional-table { min-width: 636px; }
+    .student-provisional-table col.col-code,
+    .student-provisional-table th.col-code,
+    .student-provisional-table td.col-code { width: 72px; }
+    .student-provisional-table col.col-name,
+    .student-provisional-table th.col-name,
+    .student-provisional-table td.col-name { width: 140px; }
 }
 </style>
 

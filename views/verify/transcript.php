@@ -29,6 +29,7 @@ if ($providedToken !== '') {
         $message = 'Verification failed. The supplied token does not match an issued transcript.';
     } else {
         $student = [
+            'id' => (int)($issuedTranscript['student_id'] ?? 0),
             'student_id' => (string)($issuedTranscript['student_identifier'] ?? ''),
             'first_name' => (string)($issuedTranscript['first_name'] ?? ''),
             'last_name' => (string)($issuedTranscript['last_name'] ?? ''),
@@ -38,6 +39,9 @@ if ($providedToken !== '') {
         if (($issuedTranscript['status'] ?? '') !== 'active') {
             $status = 'invalid';
             $message = 'Verification failed. This issued transcript is no longer active.';
+        } elseif (empty($issuedTranscript['snapshot_hash_valid'])) {
+            $status = 'invalid';
+            $message = 'Verification failed. The stored transcript snapshot no longer matches the issued hash.';
         } elseif (empty($issuedTranscript['ledger_valid'])) {
             $status = 'invalid';
             $message = 'Verification failed. The issuance ledger chain is not valid.';
@@ -194,8 +198,12 @@ if ($providedToken !== '') {
             <?php if ($status === 'valid' && $student): ?>
                 <div id="transcriptDisplay" class="mt-4">
                     <?php
-                    $studentId = (int)$student['id'];
-                    include_once '../student/transcript_template.php';
+                    $studentId = (int)($student['id'] ?? 0);
+                    if ($studentId > 0) {
+                        include_once '../student/transcript_template.php';
+                    } else {
+                        echo '<div class="alert alert-warning">Transcript preview is unavailable because the verified student record could not be resolved.</div>';
+                    }
                     ?>
                 </div>
             <?php endif; ?>

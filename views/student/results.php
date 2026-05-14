@@ -311,6 +311,7 @@ body { background: #f8fafc; }
 .marks-table {
     width: 100%;
     border-collapse: collapse;
+    border-spacing: 0;
     border: 1px solid #e2e8f0;
 }
 .marks-table th, .marks-table td {
@@ -328,14 +329,39 @@ body { background: #f8fafc; }
 
 /* ── Results table fixed column widths ─────────────────────── */
 .student-results-table { table-layout: fixed; }
-.student-results-table .col-code  { width: 100px; text-align: left; }
-.student-results-table .col-name  { width: 220px; text-align: left; white-space: normal; overflow-wrap: anywhere; }
-.student-results-table .col-cu    { width: 48px;  text-align: center; }
-.student-results-table .col-cw    { width: 55px;  text-align: center; }
-.student-results-table .col-exam  { width: 58px;  text-align: center; }
-.student-results-table .col-total { width: 58px;  text-align: center; }
-.student-results-table .col-grade { width: 58px;  text-align: center; }
-.student-results-table .col-gp    { width: 65px;  text-align: center; }
+.student-results-table col.col-code,
+.student-results-table th.col-code,
+.student-results-table td.col-code  { width: 100px; }
+.student-results-table col.col-name,
+.student-results-table th.col-name,
+.student-results-table td.col-name  { width: 220px; }
+.student-results-table col.col-cu,
+.student-results-table th.col-cu,
+.student-results-table td.col-cu    { width: 48px; }
+.student-results-table col.col-cw,
+.student-results-table th.col-cw,
+.student-results-table td.col-cw    { width: 55px; }
+.student-results-table col.col-exam,
+.student-results-table th.col-exam,
+.student-results-table td.col-exam  { width: 58px; }
+.student-results-table col.col-total,
+.student-results-table th.col-total,
+.student-results-table td.col-total { width: 58px; }
+.student-results-table col.col-grade,
+.student-results-table th.col-grade,
+.student-results-table td.col-grade { width: 58px; }
+.student-results-table col.col-gp,
+.student-results-table th.col-gp,
+.student-results-table td.col-gp    { width: 65px; }
+.student-results-table .col-code,
+.student-results-table .col-name { text-align: left; }
+.student-results-table .col-cu,
+.student-results-table .col-cw,
+.student-results-table .col-exam,
+.student-results-table .col-total,
+.student-results-table .col-grade,
+.student-results-table .col-gp { text-align: center; }
+.student-results-table .col-name { white-space: normal; overflow-wrap: anywhere; }
 
 /* All non-name columns: no wrap */
 .student-results-table th:not(.col-name),
@@ -377,9 +403,18 @@ body { background: #f8fafc; }
 
 /* Table inside wrapper: never collapse below min-width */
 .table-scroll-wrap .marks-table {
-    min-width: 640px;
+    display: table !important;
+    min-width: 662px;
     width: 100%;
     border: none;
+}
+.table-scroll-wrap .marks-table thead { display: table-header-group !important; }
+.table-scroll-wrap .marks-table tbody { display: table-row-group !important; }
+.table-scroll-wrap .marks-table tr { display: table-row !important; }
+.table-scroll-wrap .marks-table th,
+.table-scroll-wrap .marks-table td {
+    display: table-cell !important;
+    box-sizing: border-box;
 }
 
 /* ── Mobile scroll hint ─────────────────────────────────────── */
@@ -492,8 +527,13 @@ html[data-theme='dark'] #menuBtn { color: var(--app-text, #e2e8f0) !important; }
     .marks-table th,
     .marks-table td         { padding: 8px 9px !important; font-size: 0.79rem !important; }
 
-    .student-results-table .col-code  { width: 88px; }
-    .student-results-table .col-name  { width: 190px; }
+    .table-scroll-wrap .student-results-table { min-width: 620px; }
+    .student-results-table col.col-code,
+    .student-results-table th.col-code,
+    .student-results-table td.col-code  { width: 88px; }
+    .student-results-table col.col-name,
+    .student-results-table th.col-name,
+    .student-results-table td.col-name  { width: 190px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -516,8 +556,13 @@ html[data-theme='dark'] #menuBtn { color: var(--app-text, #e2e8f0) !important; }
     .marks-table th,
     .marks-table td { padding: 7px 8px !important; font-size: 0.76rem !important; }
 
-    .student-results-table .col-code  { width: 78px; }
-    .student-results-table .col-name  { width: 160px; }
+    .table-scroll-wrap .student-results-table { min-width: 580px; }
+    .student-results-table col.col-code,
+    .student-results-table th.col-code,
+    .student-results-table td.col-code  { width: 78px; }
+    .student-results-table col.col-name,
+    .student-results-table th.col-name,
+    .student-results-table td.col-name  { width: 160px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -529,8 +574,13 @@ html[data-theme='dark'] #menuBtn { color: var(--app-text, #e2e8f0) !important; }
     .results-wrap { padding: 0.4rem !important; }
     .marks-table th,
     .marks-table td { padding: 6px 7px !important; font-size: 0.72rem !important; }
-    .student-results-table .col-code { width: 70px; }
-    .student-results-table .col-name { width: 145px; }
+    .table-scroll-wrap .student-results-table { min-width: 560px; }
+    .student-results-table col.col-code,
+    .student-results-table th.col-code,
+    .student-results-table td.col-code { width: 70px; }
+    .student-results-table col.col-name,
+    .student-results-table th.col-name,
+    .student-results-table td.col-name { width: 145px; }
 }
 </style>
 

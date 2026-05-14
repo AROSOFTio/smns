@@ -167,9 +167,15 @@ class TranscriptIssuanceService {
             $row['program_name'] = (string)($effectiveProgram['program_name'] ?? ($row['program_name'] ?? ''));
         }
 
-        $row['snapshot'] = $this->decodeSnapshot((string)($row['snapshot_json'] ?? ''));
+        $snapshotJson = (string)($row['snapshot_json'] ?? '');
+        $row['snapshot'] = $this->decodeSnapshot($snapshotJson);
+        $row['snapshot_hash_valid'] = hash_equals(
+            strtolower((string)($row['transcript_hash'] ?? '')),
+            hash('sha256', $snapshotJson)
+        );
         $row['verification_url'] = $this->buildVerificationUrl((string)$row['verification_token']);
-        $row['ledger_valid'] = $this->isLedgerChainValid((int)($row['id'] ?? 0));
+        $row['ledger_valid'] = $this->isLedgerChainValid((int)($row['id'] ?? 0))
+            && $this->isIssuedLedgerEntryConsistent((int)($row['id'] ?? 0), $row);
         return $row;
     }
 
@@ -382,6 +388,49 @@ class TranscriptIssuanceService {
                 return false;
             }
             $previousHash = (string)($row['entry_hash'] ?? '');
+        }
+
+        return true;
+    }
+
+    private function isIssuedLedgerEntryConsistent(int $issuanceId, array $issuance): bool
+    {
+        if ($issuanceId <= 0) {
+            return false;
+        }
+
+        $stmt = $this->conn->prepare("
+            SELECT event_type, payload_json
+            FROM transcript_issuance_ledger
+            WHERE issuance_id = :issuance_id
+            ORDER BY id ASC
+            LIMIT 1
+        ");
+        $stmt->execute(['issuance_id' => $issuanceId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!$row || (string)($row['event_type'] ?? '') !== 'issued') {
+            return false;
+        }
+
+        $payload = $this->decodeSnapshot((string)($row['payload_json'] ?? ''));
+        $checks = [
+            'student_id' => (string)(int)($issuance['student_id'] ?? 0),
+            'transcript_hash' => strtolower((string)($issuance['transcript_hash'] ?? '')),
+            'verification_code' => strtoupper((string)($issuance['verification_code'] ?? '')),
+            'verification_token' => strtolower((string)($issuance['verification_token'] ?? '')),
+            'export_format' => strtolower((string)($issuance['export_format'] ?? '')),
+        ];
+
+        foreach ($checks as $field => $expected) {
+            $actual = (string)($payload[$field] ?? '');
+            if ($field === 'transcript_hash' || $field === 'verification_token' || $field === 'export_format') {
+                $actual = strtolower($actual);
+            } elseif ($field === 'verification_code') {
+                $actual = strtoupper($actual);
+            }
+            if (!hash_equals($expected, $actual)) {
+                return false;
+            }
         }
 
         return true;
