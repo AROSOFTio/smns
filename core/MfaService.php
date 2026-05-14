@@ -172,7 +172,7 @@ class MfaService {
 
         $emailOptions = [
             'context_label' => 'MFA OTP',
-            'allow_php_fallback' => false,
+            'allow_php_fallback' => defined('EMAIL_FALLBACK_PHP_MAIL') ? (bool)EMAIL_FALLBACK_PHP_MAIL : true,
         ];
 
         if (self::isLocalRequest()) {
