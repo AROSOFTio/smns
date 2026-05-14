@@ -32,8 +32,25 @@ define('DB_SSL_KEY', '/path/to/client-key.pem');
 // Application Configuration
 define('APP_NAME', 'Seminary Results Management System');
 define('APP_SHORT_NAME', 'SMNS');
-define('APP_VERSION', '1.0.0');
-define('BASE_URL', rtrim(smnsEnv('SMNS_BASE_URL', 'https://your-domain.example/smns'), '/'));
+define('APP_VERSION', '1.1.3');
+
+$baseUrlFromEnv = getenv('SMNS_BASE_URL');
+if (!is_string($baseUrlFromEnv) || trim($baseUrlFromEnv) === '') {
+    $host = (string)($_SERVER['HTTP_HOST'] ?? 'localhost');
+    $isHttps = !empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off' && (string)$_SERVER['HTTPS'] !== '0';
+    $scheme = $isHttps ? 'https' : 'http';
+    $scriptName = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? ''));
+    $appRoot = '';
+    $marker = '/views/';
+    $viewsPos = strpos($scriptName, $marker);
+    if ($viewsPos !== false) {
+        $appRoot = substr($scriptName, 0, $viewsPos);
+    } elseif ($scriptName !== '') {
+        $appRoot = rtrim(str_replace('/index.php', '', $scriptName), '/');
+    }
+    $baseUrlFromEnv = $scheme . '://' . $host . ($appRoot !== '' ? $appRoot : '');
+}
+define('BASE_URL', rtrim((string)$baseUrlFromEnv, '/'));
 define('BASE_PATH', __DIR__);
 
 // Timezone
