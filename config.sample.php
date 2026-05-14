@@ -179,7 +179,7 @@ define('SMTP_PASSWORD', smnsEnv('SMTP_PASSWORD', smnsEnv('SMTP_PASS', '')));
 define('SMTP_SECURE', false);
 define('SMTP_FROM_EMAIL', smnsEnv('SMTP_FROM_EMAIL', SMTP_USERNAME));
 define('SMTP_FROM_NAME', APP_NAME);
-define('EMAIL_TRANSPORT', 'nodemailer');
+define('EMAIL_TRANSPORT', 'smtp');
 define('EMAIL_FALLBACK_PHP_MAIL', true);
 define('NODE_BIN', 'node');
 define('NODEMAILER_SCRIPT', BASE_PATH . '/scripts/mailer/send-email.js');

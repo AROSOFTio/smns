@@ -34,6 +34,21 @@ class Helper {
         return in_array($value, ['nodemailer', 'smtp', 'php_mail'], true) ? $value : 'php_mail';
     }
 
+    private static function isPhpFunctionAvailable($functionName) {
+        $functionName = strtolower(trim((string)$functionName));
+        if ($functionName === '' || !function_exists($functionName)) {
+            return false;
+        }
+
+        $disabled = strtolower((string)ini_get('disable_functions'));
+        if ($disabled === '') {
+            return true;
+        }
+
+        $disabledFunctions = array_map('trim', explode(',', $disabled));
+        return !in_array($functionName, $disabledFunctions, true);
+    }
+
     private static function resolveSmtpHostCandidates($hostname) {
         $hostname = trim((string)$hostname);
         if ($hostname === '') {
@@ -203,7 +218,10 @@ class Helper {
             $nodeBin = $options['node_bin'] ?? (defined('NODE_BIN') ? NODE_BIN : 'node');
             $transportUsed = 'nodemailer';
 
-            if (is_file($nodeScript)) {
+            if (!self::isPhpFunctionAvailable('exec')) {
+                $transportError = 'Nodemailer transport unavailable because PHP exec() is disabled.';
+                error_log($transportError . ' Falling back to SMTP transport.');
+            } elseif (is_file($nodeScript)) {
                 $resolvedSmtp = self::resolveSmtpHostCandidates($smtpHost);
                 $payload = [
                     'to' => $recipients,
