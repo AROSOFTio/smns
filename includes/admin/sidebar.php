@@ -80,7 +80,7 @@ if (!isset($currentUser) || !is_array($currentUser)) {
         display: none;
     }
 
-    @media (max-width: 768px) {
+    @media (max-width: 768px), (max-width: 1024px) and (max-height: 540px) and (orientation: landscape) {
         :root {
             --admin-mobile-sidebar-width: min(78vw, 260px);
         }
@@ -318,7 +318,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function isMobileSidebar() {
-        return window.innerWidth <= 768;
+        return window.innerWidth <= 768 ||
+            (window.innerWidth <= 1024 && window.innerHeight <= 540 && window.matchMedia('(orientation: landscape)').matches);
     }
 
     function syncAdminSidebarToggle() {

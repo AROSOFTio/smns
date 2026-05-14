@@ -6,6 +6,11 @@
     'use strict';
 
     // Mobile menu functionality
+    function isCompactNavigationViewport() {
+        return window.innerWidth <= 768 ||
+            (window.innerWidth <= 1024 && window.innerHeight <= 540 && window.matchMedia('(orientation: landscape)').matches);
+    }
+
     function initMobileMenu() {
         const isAdminPath = /\/views\/admin\/|\/admin\//.test(window.location.pathname);
         let mobileBtn = null;
@@ -135,7 +140,7 @@
             if (adminToggle && adminToggle.dataset.smnsMobileNavBound !== '1') {
                 adminToggle.dataset.smnsMobileNavBound = '1';
                 adminToggle.addEventListener('click', function (event) {
-                    if (window.innerWidth > 768) {
+                    if (!isCompactNavigationViewport()) {
                         return;
                     }
 
@@ -176,7 +181,7 @@
 
         // Handle window resize
         window.addEventListener('resize', () => {
-            if (window.innerWidth > 768) {
+            if (!isCompactNavigationViewport()) {
                 closeMobileMenu();
             } else {
                 syncMobileButtonOffset();

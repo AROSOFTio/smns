@@ -344,6 +344,50 @@ body { background: #f8fafc; }
 .tbl { width:100%; border-collapse:collapse; border:1px solid #e2e8f0; }
 .tbl th,.tbl td { padding:8px 10px; border-bottom:1px solid #edf2f7; font-size:.83rem; }
 .tbl th { background:#f8fafc; color:#1f2937; font-weight:700; }
+.result-courses-table { table-layout: fixed; }
+.result-courses-table .col-code { width: 11%; }
+.result-courses-table .col-title { width: 32%; }
+.result-courses-table .col-mark { width: 8%; }
+.result-courses-table .col-cu { width: 7%; }
+.result-courses-table .col-grade { width: 8%; }
+.result-courses-table .col-gp { width: 10%; }
+.result-courses-table .col-remark { width: 11%; }
+.result-courses-table .col-status { width: 13%; }
+.result-courses-table th,
+.result-courses-table td { vertical-align: middle; }
+.result-courses-table th:nth-child(1),
+.result-courses-table td:nth-child(1),
+.result-courses-table th:nth-child(2),
+.result-courses-table td:nth-child(2) { text-align: left; }
+.result-courses-table th:nth-child(3),
+.result-courses-table td:nth-child(3),
+.result-courses-table th:nth-child(4),
+.result-courses-table td:nth-child(4),
+.result-courses-table th:nth-child(6),
+.result-courses-table td:nth-child(6) { text-align: right; }
+.result-courses-table th:nth-child(5),
+.result-courses-table td:nth-child(5),
+.result-courses-table th:nth-child(7),
+.result-courses-table td:nth-child(7),
+.result-courses-table th:nth-child(8),
+.result-courses-table td:nth-child(8) { text-align: center; }
+.result-courses-table th:nth-child(2),
+.result-courses-table td:nth-child(2) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.result-courses-table th:not(:nth-child(2)),
+.result-courses-table td:not(:nth-child(2)) {
+    white-space: nowrap;
+}
+.result-courses-table th {
+    line-height: 1.2;
+}
+.result-courses-table .badge-published,
+.result-courses-table .badge-provisional {
+    display: inline-block;
+    white-space: nowrap;
+}
 .badge-published { background:#dcfce7; border:1px solid #86efac; color:#166534; padding:2px 8px; border-radius:999px; font-size:.75rem; }
 .badge-provisional { background:#ffedd5; border:1px solid #fdba74; color:#9a3412; padding:2px 8px; border-radius:999px; font-size:.75rem; }
 .semester-title { background:#f8fafc; border:1px solid #e2e8f0; border-bottom:none; padding:.65rem .9rem; font-size:.94rem; font-weight:600; color:#334155; margin-top:1rem; }
@@ -528,26 +572,78 @@ html[data-theme='dark'] .badge-provisional {
 
     .mobile-table-scroll {
         overflow-x: auto !important;
-        overflow-y: hidden !important;
+        overflow-y: visible !important;
         border: 1px solid #334155;
+        padding-bottom: 0.35rem;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior-x: contain;
         touch-action: pan-x;
+        scrollbar-width: auto;
+    }
+
+    .mobile-table-scroll::-webkit-scrollbar {
+        height: 10px;
+    }
+
+    .mobile-table-scroll::-webkit-scrollbar-thumb {
+        background: #94a3b8;
+        border-radius: 999px;
+    }
+
+    .mobile-table-scroll::-webkit-scrollbar-track {
+        background: #e2e8f0;
+        border-radius: 999px;
     }
 
     .tbl {
-        width: 100% !important;
-        min-width: 720px !important;
-        max-width: 100% !important;
+        width: max-content !important;
+        min-width: 700px !important;
+        max-width: none !important;
         white-space: normal !important;
         table-layout: fixed !important;
     }
+
+    .result-courses-table .col-code { width: 82px; }
+    .result-courses-table .col-title { width: 210px; }
+    .result-courses-table .col-mark { width: 72px; }
+    .result-courses-table .col-cu { width: 64px; }
+    .result-courses-table .col-grade { width: 72px; }
+    .result-courses-table .col-gp { width: 92px; }
+    .result-courses-table .col-remark { width: 112px; }
+    .result-courses-table .col-status { width: 132px; }
 
     .tbl th,
     .tbl td {
         padding: 8px 10px !important;
         vertical-align: top !important;
         box-sizing: border-box;
+    }
+
+    .result-courses-table th,
+    .result-courses-table td {
+        background-clip: padding-box;
+    }
+
+    .result-courses-table th:nth-child(1),
+    .result-courses-table td:nth-child(1) {
+        position: sticky;
+        left: 0;
+        z-index: 3;
+        background: #fff;
+        box-shadow: 1px 0 0 #e2e8f0;
+    }
+
+    .result-courses-table th:nth-child(1) {
+        z-index: 4;
+        background: #f8fafc;
+    }
+
+    html[data-theme='dark'] .result-courses-table th:nth-child(1) {
+        background: #1f2937 !important;
+    }
+
+    html[data-theme='dark'] .result-courses-table td:nth-child(1) {
+        background: var(--app-surface-1) !important;
     }
 
     .tbl th:nth-child(1),
@@ -628,6 +724,81 @@ html[data-theme='dark'] .badge-provisional {
 
     .top-logout-link {
         padding: 5px 8px !important;
+    }
+}
+
+@media (max-width: 576px) {
+    .mobile-table-scroll {
+        overflow-x: visible !important;
+        border: 0 !important;
+        padding-bottom: 0 !important;
+    }
+
+    .mobile-table-scroll .result-courses-table {
+        display: block !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        border: 0 !important;
+    }
+
+    .mobile-table-scroll .result-courses-table colgroup,
+    .mobile-table-scroll .result-courses-table thead {
+        display: none !important;
+    }
+
+    .mobile-table-scroll .result-courses-table tbody,
+    .mobile-table-scroll .result-courses-table tr,
+    .mobile-table-scroll .result-courses-table td {
+        display: block !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+    }
+
+    .mobile-table-scroll .result-courses-table tr {
+        margin: 0 0 0.75rem !important;
+        border: 1px solid #dbe3ef !important;
+        border-radius: 8px !important;
+        background: #fff !important;
+        overflow: hidden !important;
+    }
+
+    .mobile-table-scroll .result-courses-table td {
+        display: grid !important;
+        grid-template-columns: minmax(82px, 34%) minmax(0, 1fr);
+        gap: 0.65rem;
+        padding: 0.58rem 0.7rem !important;
+        border-bottom: 1px solid #edf2f7 !important;
+        text-align: right !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere !important;
+    }
+
+    .mobile-table-scroll .result-courses-table td:last-child {
+        border-bottom: 0 !important;
+    }
+
+    .mobile-table-scroll .result-courses-table td::before {
+        content: attr(data-label);
+        color: #475569;
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        text-align: left;
+    }
+
+    html[data-theme='dark'] .mobile-table-scroll .result-courses-table tr {
+        background: var(--app-surface-1) !important;
+        border-color: var(--app-border) !important;
+    }
+
+    html[data-theme='dark'] .mobile-table-scroll .result-courses-table td {
+        border-bottom-color: var(--app-border) !important;
+    }
+
+    html[data-theme='dark'] .mobile-table-scroll .result-courses-table td::before {
+        color: #cbd5e1;
     }
 }
 </style>
@@ -719,7 +890,17 @@ html[data-theme='dark'] .badge-provisional {
                         <?php foreach ($semesters as $semNum => $data): ?>
                             <div class="semester-title">YEAR <?php echo (int)$year; ?> - <?php echo e($data['academic_year']); ?> - SEMESTER <?php echo (int)$semNum; ?></div>
                             <div class="mobile-table-scroll">
-                                <table class="tbl">
+                                <table class="tbl result-courses-table">
+                                    <colgroup>
+                                        <col class="col-code">
+                                        <col class="col-title">
+                                        <col class="col-mark">
+                                        <col class="col-cu">
+                                        <col class="col-grade">
+                                        <col class="col-gp">
+                                        <col class="col-remark">
+                                        <col class="col-status">
+                                    </colgroup>
                                     <thead>
                                         <tr>
                                             <th>CODE</th><th>TITLE</th><th>MARK</th><th>CUs</th><th>GRADE</th><th>GD POINT</th><th>REMARK</th><th>STATUS</th>
@@ -758,24 +939,24 @@ html[data-theme='dark'] .badge-provisional {
                                         }
                                         ?>
                                         <tr>
-                                            <td><?php echo e($c['course_code'] ?? '-'); ?></td>
-                                            <td><?php echo e($c['course_name'] ?? '-'); ?></td>
-                                            <td><?php echo $isPublished && $c['total_marks'] !== null ? number_format((float)$c['total_marks'], 0) : '-'; ?></td>
-                                            <td><?php echo e($c['credit_hours'] ?? '-'); ?></td>
-                                            <td><?php echo $isPublished && $displayGrade !== '' ? e($displayGrade) : '-'; ?></td>
-                                            <td><?php echo $isPublished && $gradePoints !== null ? number_format((float)$gradePoints, 2) : '-'; ?></td>
-                                            <td><?php echo $isPublished ? 'FINAL' : 'PROVISIONAL'; ?></td>
-                                            <td><?php echo $isPublished ? '<span class="badge-published">Published</span>' : '<span class="badge-provisional">' . e(ucfirst($status !== '' ? $status : 'provisional')) . '</span>'; ?></td>
+                                            <td data-label="Code"><?php echo e($c['course_code'] ?? '-'); ?></td>
+                                            <td data-label="Title"><?php echo e($c['course_name'] ?? '-'); ?></td>
+                                            <td data-label="Mark"><?php echo $isPublished && $c['total_marks'] !== null ? number_format((float)$c['total_marks'], 0) : '-'; ?></td>
+                                            <td data-label="CUs"><?php echo e($c['credit_hours'] ?? '-'); ?></td>
+                                            <td data-label="Grade"><?php echo $isPublished && $displayGrade !== '' ? e($displayGrade) : '-'; ?></td>
+                                            <td data-label="GD Point"><?php echo $isPublished && $gradePoints !== null ? number_format((float)$gradePoints, 2) : '-'; ?></td>
+                                            <td data-label="Remark"><?php echo $isPublished ? 'FINAL' : 'PROVISIONAL'; ?></td>
+                                            <td data-label="Status"><?php echo $isPublished ? '<span class="badge-published">Published</span>' : '<span class="badge-provisional">' . e(ucfirst($status !== '' ? $status : 'provisional')) . '</span>'; ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                     <?php
                                     $sgpa = ($semesterCredits > 0 && $allPublished) ? ($semesterPoints / $semesterCredits) : null;
                                     ?>
                                     <tr>
-                                        <td colspan="2"><strong>Published Courses</strong></td>
-                                        <td colspan="2"><?php echo e($publishedCourses); ?>/<?php echo e($totalCourses); ?></td>
-                                        <td colspan="2"><strong>Semester GPA</strong></td>
-                                        <td colspan="2"><?php echo $sgpa !== null ? number_format((float)$sgpa, 2) : 'PA'; ?></td>
+                                        <td data-label="Summary" colspan="2"><strong>Published Courses</strong></td>
+                                        <td data-label="Count" colspan="2"><?php echo e($publishedCourses); ?>/<?php echo e($totalCourses); ?></td>
+                                        <td data-label="Summary" colspan="2"><strong>Semester GPA</strong></td>
+                                        <td data-label="SGPA" colspan="2"><?php echo $sgpa !== null ? number_format((float)$sgpa, 2) : 'PA'; ?></td>
                                     </tr>
                                     </tbody>
                                 </table>
@@ -809,6 +990,3 @@ document.getElementById('menuBtn').addEventListener('click', function() {
 </script>
 
 <?php include '../../includes/footer.php'; ?>
-
-
-

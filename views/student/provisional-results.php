@@ -36,7 +36,7 @@ if (!empty($studentSemesterContext['id'])) {
 
 $approvedFeesAmount = 0.0;
 $outstandingBalance = 0.0;
-$balanceOnAccount = 0.0;
+$balanceOnAccount   = 0.0;
 if ($studentId > 0 && $currentSemester['id'] > 0) {
     $financialSnapshot = getStudentFinancialSnapshot(
         $conn,
@@ -48,7 +48,7 @@ if ($studentId > 0 && $currentSemester['id'] > 0) {
     );
     $approvedFeesAmount = (float)($financialSnapshot['approved_total_fees'] ?? 0);
     $outstandingBalance = (float)($financialSnapshot['balance_due'] ?? 0);
-    $balanceOnAccount = (float)($financialSnapshot['balance_on_account'] ?? $outstandingBalance);
+    $balanceOnAccount   = (float)($financialSnapshot['balance_on_account'] ?? $outstandingBalance);
 }
 
 $academicStatusMeta = getStudentAcademicStatusMeta(
@@ -57,14 +57,13 @@ $academicStatusMeta = getStudentAcademicStatusMeta(
     (int)($currentSemester['id'] ?? 0),
     (string)($studentProfile['academic_status'] ?? '')
 );
-$academicStatus = (string)($academicStatusMeta['label'] ?? 'Status Pending');
+$academicStatus      = (string)($academicStatusMeta['label'] ?? 'Status Pending');
 $academicStatusStyle = (string)($academicStatusMeta['style'] ?? getAcademicStatusChipStyle('neutral'));
 
-// Resolve programme from the effective academic trail to avoid stale profile labels.
 $registeredProgramName = '-';
 if (!empty($studentProfile['id'])) {
     $effectiveProgram = getStudentEffectiveProgram($conn, (int)$studentProfile['id'], [
-        'program_id' => (int)($studentProfile['program_id'] ?? 0),
+        'program_id'   => (int)($studentProfile['program_id'] ?? 0),
         'program_code' => (string)($studentProfile['program_code'] ?? ''),
         'program_name' => (string)($studentProfile['program_name'] ?? ''),
     ]);
@@ -75,55 +74,39 @@ if (!empty($studentProfile['id'])) {
     }
 }
 
-// Navigation links with safe fallbacks for pages that may not exist yet.
-$studentViewsPath = BASE_PATH . '/views/student/';
-$linkDashboard = 'dashboard.php';
-$linkResults = 'results.php';
+$studentViewsPath     = BASE_PATH . '/views/student/';
+$linkDashboard        = 'dashboard.php';
+$linkResults          = 'results.php';
 $linkProvisionalResults = 'provisional-results.php';
-$linkInvoices = file_exists($studentViewsPath . 'invoices.php') ? 'invoices.php' : 'payments.php?section=bills';
-$linkFees = file_exists($studentViewsPath . 'fees.php') ? 'fees.php' : 'payments.php?section=fees';
-$linkGeneratePrn = file_exists($studentViewsPath . 'generate_prn.php') ? 'generate_prn.php' : 'course-registration.php';
-$linkEnroll = 'course-registration.php';
-$linkPayments = file_exists($studentViewsPath . 'payments.php') ? 'payments.php' : 'notifications.php';
-$linkProgramme = 'my-courses.php';
-$linkApplyServices = file_exists($studentViewsPath . 'services.php') ? 'services.php' : 'dashboard.php';
-$linkServiceHistory = 'notifications.php';
-$linkNewIdCards = file_exists($studentViewsPath . 'new-id-cards.php') ? 'new-id-cards.php' : 'dashboard.php';
-$linkMailbox = 'notifications.php';
+$linkInvoices         = file_exists($studentViewsPath . 'invoices.php')      ? 'invoices.php'      : 'payments.php?section=bills';
+$linkFees             = file_exists($studentViewsPath . 'fees.php')          ? 'fees.php'          : 'payments.php?section=fees';
+$linkGeneratePrn      = file_exists($studentViewsPath . 'generate_prn.php')  ? 'generate_prn.php'  : 'course-registration.php';
+$linkEnroll           = 'course-registration.php';
+$linkPayments         = file_exists($studentViewsPath . 'payments.php')      ? 'payments.php'      : 'notifications.php';
+$linkProgramme        = 'my-courses.php';
+$linkApplyServices    = file_exists($studentViewsPath . 'services.php')      ? 'services.php'      : 'dashboard.php';
+$linkServiceHistory   = 'notifications.php';
+$linkNewIdCards       = file_exists($studentViewsPath . 'new-id-cards.php')  ? 'new-id-cards.php'  : 'dashboard.php';
+$linkMailbox          = 'notifications.php';
 $linkAcademicCalendar = file_exists($studentViewsPath . 'academic-calendar.php') ? 'academic-calendar.php' : 'notifications.php';
-$mailUnreadCount = !empty($currentUser['id']) ? getUnreadNotificationCountForUser((int)$currentUser['id']) : 0;
+$mailUnreadCount      = !empty($currentUser['id']) ? getUnreadNotificationCountForUser((int)$currentUser['id']) : 0;
 
-$results = [];
+$results         = [];
 $organizedResults = [];
 $window = getAcademicCalendarDisplayWindowBounds();
+
 $resolveTranscriptScale = static function ($mark): array {
     if ($mark === null || $mark === '' || !is_numeric($mark)) {
         return ['grade' => '', 'grade_point' => null];
     }
-
     $score = (float)$mark;
-    if ($score >= 80.0) {
-        return ['grade' => 'A', 'grade_point' => 5.00];
-    }
-    if ($score >= 75.0) {
-        return ['grade' => 'B+', 'grade_point' => 4.00];
-    }
-    if ($score >= 70.0) {
-        return ['grade' => 'B', 'grade_point' => 3.50];
-    }
-    if ($score >= 65.0) {
-        return ['grade' => 'C+', 'grade_point' => 3.00];
-    }
-    if ($score >= 60.0) {
-        return ['grade' => 'C', 'grade_point' => 2.50];
-    }
-    if ($score >= 50.0) {
-        return ['grade' => 'D', 'grade_point' => 2.00];
-    }
-    if ($score >= 40.0) {
-        return ['grade' => 'E', 'grade_point' => 1.00];
-    }
-
+    if ($score >= 80.0) return ['grade' => 'A',  'grade_point' => 5.00];
+    if ($score >= 75.0) return ['grade' => 'B+', 'grade_point' => 4.00];
+    if ($score >= 70.0) return ['grade' => 'B',  'grade_point' => 3.50];
+    if ($score >= 65.0) return ['grade' => 'C+', 'grade_point' => 3.00];
+    if ($score >= 60.0) return ['grade' => 'C',  'grade_point' => 2.50];
+    if ($score >= 50.0) return ['grade' => 'D',  'grade_point' => 2.00];
+    if ($score >= 40.0) return ['grade' => 'E',  'grade_point' => 1.00];
     return ['grade' => 'F', 'grade_point' => 0.00];
 };
 
@@ -160,12 +143,11 @@ if ($studentId > 0) {
           AND (c.semester_offered = s.semester_number OR c.semester_offered = 3)
         ORDER BY COALESCE(c.level_year, 1) ASC, course_semester ASC, c.course_code ASC
     ";
-
     $stmt = $conn->prepare($sql);
     $stmt->execute([
         'student_id' => $studentId,
         'start_date' => $window['start_date'],
-        'end_date' => $window['end_date'],
+        'end_date'   => $window['end_date'],
     ]);
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -183,29 +165,18 @@ if ($studentId > 0) {
 
 $bestCourses = [];
 foreach ($results as $row) {
-    $year = (int)($row['year_of_study'] ?? 1);
-    $sem = (int)($row['course_semester'] ?? 1);
-    $courseCode = strtoupper(trim((string)($row['course_code'] ?? '')));
-    $courseKey = $year . '-' . $sem . '-' . $courseCode;
+    $year      = (int)($row['year_of_study'] ?? 1);
+    $sem       = (int)($row['course_semester'] ?? 1);
+    $courseKey = $year . '-' . $sem . '-' . strtoupper(trim((string)($row['course_code'] ?? '')));
 
-    // Prefer rows that are furthest along the provisional workflow.
     $status = strtolower((string)($row['result_status'] ?? ''));
-    $score = 0;
-    if ($status === 'published') {
-        $score += 100;
-    } elseif ($status === 'approved') {
-        $score += 70;
-    } elseif ($status === 'submitted') {
-        $score += 40;
-    } elseif ($status === 'draft') {
-        $score += 20;
-    }
-    if ($row['total_marks'] !== null) {
-        $score += 10;
-    }
-    if ($row['grade_points'] !== null) {
-        $score += 10;
-    }
+    $score  = 0;
+    if ($status === 'published') $score += 100;
+    elseif ($status === 'approved')  $score += 70;
+    elseif ($status === 'submitted') $score += 40;
+    elseif ($status === 'draft')     $score += 20;
+    if ($row['total_marks']  !== null) $score += 10;
+    if ($row['grade_points'] !== null) $score += 10;
 
     if (!isset($bestCourses[$courseKey]) || $score > $bestCourses[$courseKey]['_score']) {
         $row['_score'] = $score;
@@ -215,41 +186,37 @@ foreach ($results as $row) {
 
 foreach ($bestCourses as $row) {
     $year = (int)($row['year_of_study'] ?? 1);
-    $sem = (int)($row['course_semester'] ?? 1);
+    $sem  = (int)($row['course_semester'] ?? 1);
+    if ($sem < 1 || $sem > 2) $sem = 1;
 
-    if ($sem < 1 || $sem > 2) {
-        $sem = 1;
-    }
-
-    if (!isset($organizedResults[$year])) {
-        $organizedResults[$year] = [];
-    }
+    if (!isset($organizedResults[$year]))       $organizedResults[$year] = [];
     if (!isset($organizedResults[$year][$sem])) {
         $organizedResults[$year][$sem] = [
             'academic_year' => $row['academic_year'] ?? '-',
             'semester_name' => $row['semester_name'] ?? ('Semester ' . $sem),
-            'courses' => []
+            'courses'       => []
         ];
     }
-
     unset($row['_score']);
     $organizedResults[$year][$sem]['courses'][] = $row;
 }
 
 ksort($organizedResults);
-foreach ($organizedResults as &$semesters) {
-    ksort($semesters);
-}
+foreach ($organizedResults as &$semesters) { ksort($semesters); }
 unset($semesters);
 
-$pageTitle = 'My Provisional Results - ' . APP_NAME;
+$pageTitle     = 'My Provisional Results - ' . APP_NAME;
 $additionalCSS = array_merge($additionalCSS ?? [], ['student-portal.css']);
-$additionalJS = array_merge($additionalJS ?? [], ['student-portal.js']);
+$additionalJS  = array_merge($additionalJS  ?? [], ['student-portal.js']);
 include '../../includes/header.php';
 ?>
 
 <style>
+/* ═══════════════════════════════════════════════════════════════
+   BASE LAYOUT
+═══════════════════════════════════════════════════════════════ */
 body { background: #f8fafc; }
+
 .student-sidebar {
     width: 230px;
     background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
@@ -259,17 +226,12 @@ body { background: #f8fafc; }
     overflow-x: hidden;
     border-right: 1px solid #e5e7eb;
     position: fixed;
-    left: 0;
-    top: 0;
+    left: 0; top: 0;
     z-index: 100;
-    box-shadow: 2px 0 12px rgba(15, 23, 42, 0.04);
+    box-shadow: 2px 0 12px rgba(15,23,42,0.04);
     transition: transform 0.25s ease;
 }
-.student-sidebar ul {
-    list-style: none;
-    padding: 10px 8px;
-    margin: 0;
-}
+.student-sidebar ul { list-style: none; padding: 10px 8px; margin: 0; }
 .student-sidebar > ul { padding-bottom: 20px; }
 .student-sidebar li {
     padding: 9px 12px;
@@ -282,21 +244,10 @@ body { background: #f8fafc; }
     cursor: pointer;
     transition: all 0.2s ease;
 }
-.student-sidebar li a {
-    color: inherit;
-    text-decoration: none;
-    display: block;
-}
-.student-sidebar li.active {
-    background: #eaf2ff;
-    border-color: #bfdbfe;
-    color: #1d4ed8;
-    font-weight: 700;
-}
-.student-sidebar li:hover {
-    background: #f1f5f9;
-    color: #0f172a;
-}
+.student-sidebar li a { color: inherit; text-decoration: none; display: block; }
+.student-sidebar li.active { background: #eaf2ff; border-color: #bfdbfe; color: #1d4ed8; font-weight: 700; }
+.student-sidebar li:hover  { background: #f1f5f9; color: #0f172a; }
+
 .sidebar-user-card {
     margin: 0.4rem 0.45rem 0.15rem;
     background: linear-gradient(180deg, #31465d 0%, #243547 100%);
@@ -304,585 +255,286 @@ body { background: #f8fafc; }
     color: #fff;
     text-align: center;
     padding: 0.4rem 0.45rem 0.5rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.28rem;
+    display: flex; flex-direction: column; align-items: center; gap: 0.28rem;
 }
 .sidebar-user-card img { width: 126px; height: 126px; border-radius: 16px; object-fit: cover; border: 2px solid rgba(255,255,255,0.82); box-shadow: 0 8px 18px rgba(0,0,0,0.2); }
-.sidebar-user-name { font-size: 0.8rem; line-height: 1.12; margin: 0; }
-.sidebar-user-no { font-size: 1rem; font-weight: 700; line-height: 1.08; margin: 0; }
-
+.sidebar-user-name    { font-size: 0.8rem; line-height: 1.12; margin: 0; }
+.sidebar-user-no      { font-size: 1rem; font-weight: 700; line-height: 1.08; margin: 0; }
 .sidebar-portal-title { font-size: 0.6rem; letter-spacing: 0.07em; text-transform: uppercase; color: #d7e3f3; margin-bottom: 0.12rem; font-weight: 700; }
+
+.student-sidebar.sidebar-collapsed { transform: translateX(-100%); }
+
 .main-content {
-    margin-left: 230px;
-    width: calc(100vw - 230px);
-    max-width: calc(100vw - 230px);
+    margin-left: var(--student-sidebar-width, 230px);
     min-height: 100vh;
     background: #f8fafc;
-    transition: margin-left 0.25s ease, width 0.25s ease;
+    transition: margin-left 0.25s ease;
+    overflow-x: hidden;
 }
-.student-sidebar.sidebar-collapsed {
-    transform: translateX(-100%);
-}
-.main-content.full-width {
-    margin-left: 0;
-    width: 100vw;
-    max-width: 100vw;
-}
+.main-content.full-width { margin-left: 0; }
+
 .student-topbar {
-    display: flex; align-items: center; justify-content: space-between; background: #fff; border-bottom: 1px solid #e5e7eb; padding: 0.5rem 1.2rem; position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    background: #fff; border-bottom: 1px solid #e5e7eb;
+    padding: 0.5rem 1.2rem;
+    position: sticky; top: 0; z-index: 10;
     --key-btn-bg: #fff; --key-btn-border: #e5e7eb; --key-btn-color: #0f172a;
 }
-html[data-theme='dark'] .student-topbar { --key-btn-bg: rgba(15, 23, 42, 0.9); --key-btn-border: rgba(148, 163, 184, 0.5); --key-btn-color: #f8fafc; }
-html[data-theme='dark'] #keyDropMenu { background: #0f172a; color: #e2e8f0; border-color: #334155; box-shadow: 0 2px 12px rgba(2, 6, 23, 0.65); }
+.student-profile-pic { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; border: 2px solid #e5e7eb; }
+
+/* ═══════════════════════════════════════════════════════════════
+   RESULTS CARD
+═══════════════════════════════════════════════════════════════ */
+.results-wrap   { padding: 1rem 1.2rem; }
+.results-card   { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 4px 16px rgba(15,23,42,0.04); }
+.results-header { padding: 1rem 1.2rem; border-bottom: 1px solid #eef2f7; display: flex; align-items: center; justify-content: space-between; }
+.results-header h4 { margin: 0; font-size: 1.05rem; font-weight: 700; color: #0f172a; }
+.student-meta  { font-size: 0.9rem; color: #334155; }
+.year-block    { margin: 1rem 0; }
+.year-title    { font-size: 1.02rem; font-weight: 700; color: #1e293b; margin: 0 0 0.6rem 0; }
+.semester-title {
+    background: #f8fafc; border: 1px solid #e2e8f0; border-bottom: none;
+    padding: 0.65rem 0.9rem; font-size: 0.94rem; font-weight: 600; color: #334155;
+}
+
+/* ── Table base ────────────────────────────────────────────── */
+.marks-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #e2e8f0;
+}
+.marks-table th, .marks-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #edf2f7;
+    font-size: 0.83rem;
+    vertical-align: middle;
+}
+.marks-table th {
+    background: #eaf2ff; color: #0f172a; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.02em; font-size: 0.78rem;
+}
+.marks-table tbody tr:nth-child(even) { background: #f9fbff; }
+.marks-table tbody tr:hover           { background: #eef6ff; }
+
+/* ── Provisional table fixed column widths ─────────────────── */
+.student-provisional-table { table-layout: fixed; }
+.student-provisional-table .col-code   { width: 100px; text-align: left; }
+.student-provisional-table .col-name   { width: 200px; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.student-provisional-table .col-cu     { width: 48px;  text-align: center; }
+.student-provisional-table .col-cw     { width: 55px;  text-align: center; }
+.student-provisional-table .col-exam   { width: 58px;  text-align: center; }
+.student-provisional-table .col-total  { width: 58px;  text-align: center; }
+.student-provisional-table .col-grade  { width: 58px;  text-align: center; }
+.student-provisional-table .col-gp     { width: 65px;  text-align: center; }
+.student-provisional-table .col-status { width: 100px; text-align: center; }
+
+/* All non-name columns: no wrap */
+.student-provisional-table th:not(.col-name),
+.student-provisional-table td:not(.col-name) { white-space: nowrap; }
+
+.summary-row td { background: #f8fafc; font-weight: 700; }
+.cgpa-row    td { background: #ecfdf3; color: #166534; font-weight: 700; }
+
+.grading-key {
+    margin-top: 1rem; padding: 0.85rem 1rem;
+    border: 1px solid #e2e8f0; border-radius: 10px;
+    background: #f8fafc; font-size: 0.82rem; color: #334155;
+}
+.grading-key strong { color: #0f172a; }
+
+.badge-published { background: #dcfce7; border: 1px solid #86efac; color: #166534; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; white-space: nowrap; }
+.badge-pending   { background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; white-space: nowrap; }
+
+/* ═══════════════════════════════════════════════════════════════
+   SCROLL WRAPPER — single authoritative definition
+   No duplicate rules elsewhere; media queries only adjust
+   font-size / padding, never overflow or display properties.
+═══════════════════════════════════════════════════════════════ */
+.table-scroll-wrap {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x pan-y;
+    scrollbar-width: thin;
+    scrollbar-color: #94a3b8 transparent;
+    border: 1px solid #e2e8f0;
+    border-top: none;   /* semester-title already has bottom border */
+}
+.table-scroll-wrap::-webkit-scrollbar        { height: 5px; }
+.table-scroll-wrap::-webkit-scrollbar-thumb  { background: #94a3b8; border-radius: 999px; }
+.table-scroll-wrap::-webkit-scrollbar-track  { background: transparent; }
+
+/* The table inside the wrapper: never collapse below 680px */
+.table-scroll-wrap .marks-table {
+    min-width: 680px;
+    width: 100%;
+    border: none;          /* outer wrapper already has the border */
+}
+
+/* ── Mobile scroll hint ─────────────────────────────────────── */
+/* Always in DOM; JS shows/hides based on real overflow */
+.mobile-scroll-hint {
+    display: none;           /* JS sets display:flex when overflow detected */
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #1d4ed8;
+    background: #eff6ff;
+    padding: 5px 10px;
+    border: 1px solid #bfdbfe;
+    border-top: none;
+    border-bottom: none;
+    transition: opacity 0.3s ease;
+}
+.mobile-scroll-hint.hint-hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+.mobile-scroll-hint svg {
+    flex-shrink: 0;
+    animation: hint-nudge 1.8s ease-in-out infinite;
+}
+@keyframes hint-nudge {
+    0%, 100% { transform: translateX(0); }
+    40%       { transform: translateX(4px); }
+    60%       { transform: translateX(-2px); }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DARK MODE
+═══════════════════════════════════════════════════════════════ */
+html[data-theme='dark'] .main-content   { background: var(--app-bg) !important; }
+html[data-theme='dark'] .results-card   { background: var(--app-surface) !important; border-color: var(--app-border) !important; box-shadow: 0 10px 28px rgba(2,6,23,0.45); }
+html[data-theme='dark'] .results-header { background: var(--app-surface-1) !important; border-bottom-color: var(--app-border) !important; }
+html[data-theme='dark'] .results-header h4,
+html[data-theme='dark'] .student-meta,
+html[data-theme='dark'] .year-title     { color: #e2e8f0; }
+html[data-theme='dark'] .semester-title { background: var(--app-surface-2) !important; color: var(--app-text) !important; border-color: var(--app-border) !important; }
+html[data-theme='dark'] .marks-table    { border-color: var(--app-border) !important; }
+html[data-theme='dark'] .marks-table th { background: var(--app-surface-2) !important; color: #f8fafc !important; border-color: var(--app-border) !important; }
+html[data-theme='dark'] .marks-table td { border-color: var(--app-border) !important; color: var(--app-text) !important; }
+html[data-theme='dark'] .marks-table tbody tr              { background: var(--app-surface) !important; }
+html[data-theme='dark'] .marks-table tbody tr:nth-child(even) { background: var(--app-surface) !important; }
+html[data-theme='dark'] .marks-table tbody tr:hover        { background: var(--app-surface-1) !important; }
+html[data-theme='dark'] .summary-row td { background: var(--app-surface-1) !important; color: #f8fafc !important; }
+html[data-theme='dark'] .cgpa-row td    { background: #123021 !important; color: #bbf7d0 !important; }
+html[data-theme='dark'] .grading-key    { background: var(--app-surface-2) !important; border-color: var(--app-border) !important; color: var(--app-text) !important; }
+html[data-theme='dark'] .grading-key strong { color: #f8fafc; }
+html[data-theme='dark'] .table-scroll-wrap  { border-color: var(--app-border) !important; background: var(--app-surface) !important; }
+html[data-theme='dark'] .mobile-scroll-hint { background: #172033; color: #93c5fd; border-color: #334155; }
+html[data-theme='dark'] .student-topbar { --key-btn-bg: rgba(15,23,42,0.9); --key-btn-border: rgba(148,163,184,0.5); --key-btn-color: #f8fafc; }
+html[data-theme='dark'] #keyDropMenu    { background: #0f172a; color: #e2e8f0; border-color: #334155; box-shadow: 0 2px 12px rgba(2,6,23,0.65); }
 html[data-theme='dark'] #keyDropMenu label { color: #e2e8f0; }
 html[data-theme='dark'] #keyDropMenu input.form-control { background: #0b1220; color: #e2e8f0; border-color: #334155; }
 html[data-theme='dark'] #keyDropMenu input.form-control::placeholder { color: #94a3b8; }
-.student-profile-pic { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; border: 2px solid #e5e7eb; }
-.results-wrap { padding: 1rem 1.2rem; }
-.results-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04); }
-.results-header { padding: 1rem 1.2rem; border-bottom: 1px solid #eef2f7; display: flex; align-items: center; justify-content: space-between; }
-.results-header h4 { margin: 0; font-size: 1.05rem; font-weight: 700; color: #0f172a; }
-.student-meta { font-size: 0.9rem; color: #334155; }
-.year-block { margin: 1rem 0; }
-.year-title { font-size: 1.02rem; font-weight: 700; color: #1e293b; margin: 0 0 0.6rem 0; }
-.semester-title { background: #f8fafc; border: 1px solid #e2e8f0; border-bottom: none; padding: 0.65rem 0.9rem; font-size: 0.94rem; font-weight: 600; color: #334155; }
-.marks-table { width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; }
-.marks-table th, .marks-table td { padding: 10px 12px; border-bottom: 1px solid #edf2f7; font-size: 0.83rem; }
-.marks-table th {
-    background: #eaf2ff;
-    color: #0f172a;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-    font-size: 0.78rem;
-}
-.marks-table tbody tr:nth-child(even) { background: #f9fbff; }
-.marks-table tbody tr:hover { background: #eef6ff; }
-.text-center { text-align: center; }
-.marks-table th:nth-child(1),
-.marks-table td:nth-child(1),
-.marks-table th:nth-child(2),
-.marks-table td:nth-child(2) { text-align: left; }
-.marks-table th:nth-child(3),
-.marks-table td:nth-child(3),
-.marks-table th:nth-child(4),
-.marks-table td:nth-child(4),
-.marks-table th:nth-child(5),
-.marks-table td:nth-child(5),
-.marks-table th:nth-child(6),
-.marks-table td:nth-child(6),
-.marks-table th:nth-child(8),
-.marks-table td:nth-child(8) { text-align: right; }
-.marks-table th:nth-child(7),
-.marks-table td:nth-child(7),
-.marks-table th:nth-child(9),
-.marks-table td:nth-child(9) { text-align: center; }
-.summary-row td { background: #f8fafc; font-weight: 700; }
-.cgpa-row td { background: #ecfdf3; color: #166534; font-weight: 700; }
-.grading-key { margin-top: 1rem; padding: 0.85rem 1rem; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; font-size: 0.82rem; color: #334155; }
-.grading-key strong { color: #0f172a; }
-.badge-published { background: #dcfce7; border: 1px solid #86efac; color: #166534; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; }
-.badge-pending { background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; }
-html[data-theme='dark'] .main-content {
-    background: #020617;
-}
-html[data-theme='dark'] .results-card {
-    background: #0f172a;
-    border-color: #334155;
-    box-shadow: 0 10px 28px rgba(2, 6, 23, 0.45);
-}
-html[data-theme='dark'] .results-header {
-    background: #111827;
-    border-bottom-color: #334155;
-}
-html[data-theme='dark'] .results-header h4,
-html[data-theme='dark'] .student-meta,
-html[data-theme='dark'] .year-title,
-html[data-theme='dark'] .results-wrap,
-html[data-theme='dark'] .results-card .alert {
-    color: #e2e8f0;
-}
-html[data-theme='dark'] .semester-title {
-    background: #172033;
-    color: #dbeafe;
-    border-color: #334155;
-}
-html[data-theme='dark'] .marks-table { border-color: #334155; }
-html[data-theme='dark'] .marks-table th {
-    background: #1e293b;
-    color: #f8fafc;
-    border-color: #334155;
-}
-html[data-theme='dark'] .marks-table td {
-    border-color: #334155;
-    color: #e2e8f0;
-}
-html[data-theme='dark'] .marks-table tbody tr {
-    background: #0f172a;
-}
-html[data-theme='dark'] .marks-table tbody tr:nth-child(even) { background: #0f172a; }
-html[data-theme='dark'] .marks-table tbody tr:hover { background: #132235; }
-html[data-theme='dark'] .summary-row td {
-    background: #182235;
-    color: #f8fafc;
-}
-html[data-theme='dark'] .cgpa-row td {
-    background: #0f2b1f;
-    color: #bbf7d0;
-}
-html[data-theme='dark'] .grading-key {
-    background: #172033;
-    border-color: #334155;
-    color: #e2e8f0;
-}
-html[data-theme='dark'] .grading-key strong {
-    color: #f8fafc;
-}
-html[data-theme='dark'] .table-responsive {
-    border-radius: 0 0 10px 10px;
-}
-.main-content{margin-left:var(--student-sidebar-width)!important;width:auto!important;max-width:none!important;min-width:0;overflow-x:hidden}
-.main-content.full-width{margin-left:0!important;width:auto!important;max-width:none!important}
-.chip-row{flex-wrap:wrap;row-gap:.4rem;white-space:normal}
+html[data-theme='dark'] .student-topbar span { color: var(--app-text) !important; }
+html[data-theme='dark'] #menuBtn { color: var(--app-text) !important; }
+
+/* ═══════════════════════════════════════════════════════════════
+   RESPONSIVE — SIDEBAR COLLAPSES ≤992px
+═══════════════════════════════════════════════════════════════ */
 @media (max-width: 992px) {
-    .main-content,
-    .main-content.full-width {
-        margin-left: 0 !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        overflow-x: hidden !important;
-    }
+    .student-sidebar { transform: translateX(-100%); }
+    .main-content    { margin-left: 0 !important; width: 100% !important; overflow-x: hidden; }
+}
 
+/* ═══════════════════════════════════════════════════════════════
+   RESPONSIVE — TOPBAR & CONTENT ≤767px
+   Only font-size / padding adjustments here.
+   NO overflow, display, or table-layout overrides.
+═══════════════════════════════════════════════════════════════ */
+@media (max-width: 767.98px) {
     .student-topbar {
-        flex-wrap: wrap !important;
-        align-items: flex-start !important;
-        gap: 0.65rem !important;
-        padding: 0.55rem 0.85rem !important;
-    }
-
-    .student-topbar > div:first-child,
-    .student-topbar > div:last-child {
-        width: 100% !important;
-        max-width: 100% !important;
-        margin-left: 0 !important;
-        justify-content: flex-start !important;
-    }
-
-    .student-topbar > div:first-child {
         flex-wrap: nowrap !important;
-        overflow-x: auto !important;
-        padding-bottom: 0.2rem !important;
-        -webkit-overflow-scrolling: touch;
+        gap: 6px !important;
+        padding: 6px 8px 6px 52px !important;
+        min-height: 50px !important;
     }
-
-    .student-topbar > div:last-child span {
-        white-space: normal !important;
-        overflow-wrap: anywhere;
-    }
-
-    .main-content > div[style*="font-size:0.98rem"],
-    .main-content > div[style*="flex-wrap:nowrap"] {
-        flex-wrap: wrap !important;
-        white-space: normal !important;
-        align-items: flex-start !important;
-        padding-left: 0.85rem !important;
-        padding-right: 0.85rem !important;
-        overflow-x: visible !important;
-    }
-
-    .main-content > div[style*="font-size:0.98rem"] > span,
-    .main-content > div[style*="flex-wrap:nowrap"] > span {
-        margin-left: 0 !important;
-        max-width: 100% !important;
-        white-space: normal !important;
-        overflow-wrap: anywhere;
-    }
-
-    .results-wrap {
-        width: 100% !important;
-        max-width: 100% !important;
-        padding: 0.75rem 0.65rem !important;
-    }
-
-    .results-card {
-        width: 100% !important;
-        max-width: 100% !important;
-        overflow: hidden;
-    }
-
-    .results-header {
-        flex-wrap: wrap !important;
-        gap: 0.4rem !important;
-        padding: 0.8rem !important;
-    }
-
-    .results-header h4,
-    .student-meta,
-    .year-title,
-    .semester-title,
-    .grading-key {
-        overflow-wrap: anywhere;
-    }
-
-    .table-responsive {
-        width: 100% !important;
-        max-width: 100% !important;
-        overflow-x: auto !important;
-        -webkit-overflow-scrolling: touch;
-    }
-
-    .marks-table,
-    .results-table {
-        display: table !important;
-        width: max-content !important;
-        min-width: 760px !important;
-        max-width: none !important;
-        white-space: normal !important;
-    }
-
-    .marks-table th,
-    .marks-table td {
-        padding: 8px 9px !important;
-        font-size: 0.76rem !important;
-        vertical-align: middle;
-    }
-
-    .marks-table td:nth-child(2),
-    .marks-table th:nth-child(2) {
-        min-width: 190px;
-        white-space: normal !important;
-    }
-}
-
-@media (max-width: 576px) {
-    .student-topbar > div:first-child button {
-        font-size: 0.76rem !important;
-        padding: 5px 8px !important;
-        flex: 0 0 auto;
-    }
-
-    .results-wrap {
-        padding-left: 0.45rem !important;
-        padding-right: 0.45rem !important;
-    }
-
-    .results-card .p-3 {
-        padding: 0.65rem !important;
-    }
-
-    .marks-table,
-    .results-table {
-        min-width: 720px !important;
-    }
-}
-
-@media (max-width: 640px) {
-    .results-card {
-        overflow: hidden !important;
-    }
-
-    .table-responsive {
+    .student-topbar > div:first-child {
+        flex: 1 1 auto !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 5px !important;
         overflow-x: auto !important;
         overflow-y: hidden !important;
         -webkit-overflow-scrolling: touch;
-        overscroll-behavior-x: contain;
-        touch-action: pan-x;
+        scrollbar-width: none;
+        padding-bottom: 0 !important;
     }
-
-    .marks-table,
-    .results-table {
-        display: table !important;
-        width: 100% !important;
-        min-width: 680px !important;
-        max-width: 100% !important;
-        border-collapse: collapse !important;
-        white-space: normal !important;
-        table-layout: fixed !important;
+    .student-topbar > div:first-child::-webkit-scrollbar { display: none; }
+    .student-topbar > div:last-child {
+        flex: 0 0 auto !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 4px !important;
+        margin-left: auto !important;
     }
+    .student-topbar button { font-size: 0.72rem !important; padding: 4px 8px !important; white-space: nowrap !important; }
+    #menuBtn, #profileDropBtn, #keyDropBtn { width: 30px !important; height: 30px !important; min-width: 30px !important; padding: 0 !important; }
+    .student-profile-pic { width: 34px !important; height: 34px !important; border-radius: 9px !important; }
 
-    .marks-table thead,
-    .results-table thead {
-        display: table-header-group !important;
-    }
-
-    .marks-table tbody,
-    .results-table tbody {
-        display: table-row-group !important;
-        width: auto !important;
-        min-width: 0 !important;
-    }
-
-    .marks-table tr,
-    .results-table tr {
-        display: table-row !important;
-        vertical-align: top;
-        box-sizing: border-box;
-        margin: 0 !important;
-        border: 0 !important;
-        border-radius: 0 !important;
-        box-shadow: none !important;
-        background: transparent !important;
-        overflow: visible !important;
-    }
-
+    .results-wrap           { padding: 0.65rem !important; }
+    .results-header         { flex-wrap: wrap !important; gap: 0.4rem !important; padding: 0.75rem !important; }
+    .results-header h4      { font-size: 0.9rem !important; }
+    .student-meta,
+    .year-title,
+    .semester-title,
+    .grading-key            { font-size: 0.79rem !important; }
     .marks-table th,
-    .marks-table td,
-    .results-table th,
-    .results-table td {
-        display: table-cell !important;
-        width: auto !important;
-        min-width: 0 !important;
-        max-width: none !important;
-        padding: 8px 10px !important;
-        border-bottom: 1px solid #edf2f7 !important;
-        white-space: nowrap !important;
-        vertical-align: middle !important;
-    }
+    .marks-table td         { padding: 8px 9px !important; font-size: 0.79rem !important; }
 
-    .marks-table td::before,
-    .results-table td::before {
-        content: none !important;
-        display: none !important;
-    }
-
-    .marks-table th:nth-child(2),
-    .marks-table td:nth-child(2),
-    .results-table th:nth-child(2),
-    .results-table td:nth-child(2) {
-        white-space: normal !important;
-        min-width: 230px !important;
-        overflow-wrap: anywhere;
-    }
-
-    .marks-table th:nth-child(1),
-    .marks-table td:nth-child(1),
-    .results-table th:nth-child(1),
-    .results-table td:nth-child(1) { width: 110px; }
-    .marks-table th:nth-child(3),
-    .marks-table td:nth-child(3),
-    .results-table th:nth-child(3),
-    .results-table td:nth-child(3) { width: 60px; }
-    .marks-table th:nth-child(4),
-    .marks-table td:nth-child(4),
-    .results-table th:nth-child(4),
-    .results-table td:nth-child(4) { width: 60px; }
-    .marks-table th:nth-child(5),
-    .marks-table td:nth-child(5),
-    .results-table th:nth-child(5),
-    .results-table td:nth-child(5) { width: 60px; }
-    .marks-table th:nth-child(6),
-    .marks-table td:nth-child(6),
-    .results-table th:nth-child(6),
-    .results-table td:nth-child(6) { width: 70px; }
-    .marks-table th:nth-child(7),
-    .marks-table td:nth-child(7),
-    .results-table th:nth-child(7),
-    .results-table td:nth-child(7) { width: 70px; }
-    .marks-table th:nth-child(8),
-    .marks-table td:nth-child(8),
-    .results-table th:nth-child(8),
-    .results-table td:nth-child(8) { width: 70px; }
-    .marks-table th:nth-child(9),
-    .marks-table td:nth-child(9),
-    .results-table th:nth-child(9),
-    .results-table td:nth-child(9) { width: 120px; }
-
-    .marks-table th:nth-child(1),
-    .marks-table td:nth-child(1),
-    .marks-table th:nth-child(2),
-    .marks-table td:nth-child(2),
-    .results-table th:nth-child(1),
-    .results-table td:nth-child(1),
-    .results-table th:nth-child(2),
-    .results-table td:nth-child(2) {
-        text-align: left !important;
-    }
-
-    .marks-table th:nth-child(3),
-    .marks-table td:nth-child(3),
-    .marks-table th:nth-child(4),
-    .marks-table td:nth-child(4),
-    .marks-table th:nth-child(5),
-    .marks-table td:nth-child(5),
-    .marks-table th:nth-child(6),
-    .marks-table td:nth-child(6),
-    .marks-table th:nth-child(8),
-    .marks-table td:nth-child(8),
-    .results-table th:nth-child(3),
-    .results-table td:nth-child(3),
-    .results-table th:nth-child(4),
-    .results-table td:nth-child(4),
-    .results-table th:nth-child(5),
-    .results-table td:nth-child(5),
-    .results-table th:nth-child(6),
-    .results-table td:nth-child(6),
-    .results-table th:nth-child(8),
-    .results-table td:nth-child(8) {
-        text-align: right !important;
-    }
-
-    .marks-table th:nth-child(7),
-    .marks-table td:nth-child(7),
-    .marks-table th:nth-child(9),
-    .marks-table td:nth-child(9),
-    .results-table th:nth-child(7),
-    .results-table td:nth-child(7),
-    .results-table th:nth-child(9),
-    .results-table td:nth-child(9) {
-        text-align: center !important;
-    }
-
-    .marks-table th:nth-child(2),
-    .marks-table td:nth-child(2),
-    .results-table th:nth-child(2),
-    .results-table td:nth-child(2) {
-        min-width: 230px !important;
-        white-space: nowrap !important;
-    }
-
-    .summary-row td,
-    .cgpa-row td {
-        display: table-cell !important;
-        text-align: center !important;
-        background: inherit !important;
-        color: inherit !important;
-    }
+    /* Slightly tighter column widths on mid-mobile */
+    .student-provisional-table .col-code   { width: 90px; }
+    .student-provisional-table .col-name   { width: 180px; }
+    .student-provisional-table .col-status { width: 90px; }
 }
 
-@media (max-width: 767.98px) {
-    .results-card {
-        overflow: hidden !important;
-    }
-
-    .results-card .table-responsive {
-        display: block !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        overflow-x: scroll !important;
-        overflow-y: visible !important;
-        -webkit-overflow-scrolling: touch;
-        overscroll-behavior-x: contain;
-        touch-action: pan-x;
-        padding-bottom: 0.5rem;
-        border: 1px solid #e2e8f0;
-        border-radius: 0 0 10px 10px;
-        scrollbar-width: auto;
-    }
-
-    .results-card .table-responsive::-webkit-scrollbar {
-        height: 10px;
-    }
-
-    .results-card .table-responsive::-webkit-scrollbar-thumb {
-        background: #94a3b8;
-        border-radius: 999px;
-    }
-
-    .results-card .table-responsive::-webkit-scrollbar-track {
-        background: #e2e8f0;
-        border-radius: 999px;
-    }
-
-    .results-card .marks-table,
-    .results-card .results-table {
-        display: table !important;
-        width: max-content !important;
-        min-width: 760px !important;
-        max-width: none !important;
-        border-collapse: collapse !important;
-        white-space: normal !important;
-        table-layout: auto !important;
-    }
-
-    .results-card .marks-table thead,
-    .results-card .results-table thead {
-        display: table-header-group !important;
-    }
-
-    .results-card .marks-table tbody,
-    .results-card .results-table tbody {
-        display: table-row-group !important;
-    }
-
-    .results-card .marks-table tr,
-    .results-card .results-table tr,
-    .results-card .summary-row,
-    .results-card .cgpa-row {
-        display: table-row !important;
-        width: auto !important;
-        margin: 0 !important;
-        border: 0 !important;
+/* ═══════════════════════════════════════════════════════════════
+   RESPONSIVE — SMALL PHONES ≤576px
+═══════════════════════════════════════════════════════════════ */
+@media (max-width: 576px) {
+    .results-wrap  { padding: 0.45rem !important; }
+    .results-card  { border-radius: 0 !important; box-shadow: none !important; }
+    .results-card .p-3 { padding: 0.6rem !important; }
+    .results-header { display: block !important; padding: 0.55rem 0.7rem !important; }
+    .results-header h4 { font-size: 0.86rem !important; line-height: 1.2 !important; text-transform: uppercase; }
+    .student-meta  { display: none !important; }
+    .year-title    { margin: 0 0 0.45rem !important; font-size: 0.82rem !important; text-transform: uppercase; }
+    .semester-title {
         border-radius: 0 !important;
-        box-shadow: none !important;
-        overflow: visible !important;
+        padding: 0.55rem 0.65rem !important;
+        font-size: 0.78rem !important;
+        text-transform: uppercase;
     }
+    .marks-table th,
+    .marks-table td { padding: 7px 8px !important; font-size: 0.76rem !important; }
 
-    .results-card .marks-table th,
-    .results-card .marks-table td,
-    .results-card .results-table th,
-    .results-card .results-table td,
-    .results-card .summary-row td,
-    .results-card .cgpa-row td {
-        display: table-cell !important;
-        width: auto !important;
-        min-width: 84px !important;
-        max-width: 230px !important;
-        padding: 0.48rem 0.55rem !important;
-        border: 1px solid #edf2f7 !important;
-        font-size: 0.72rem !important;
-        line-height: 1.25 !important;
-        vertical-align: middle !important;
-        white-space: normal !important;
-        overflow-wrap: anywhere !important;
-        background: transparent;
-        color: inherit;
-        text-align: center !important;
-    }
+    /* Even tighter columns on tiny screens */
+    .student-provisional-table .col-code   { width: 80px; }
+    .student-provisional-table .col-name   { width: 155px; }
+    .student-provisional-table .col-status { width: 82px; }
+}
 
-    .results-card .marks-table th,
-    .results-card .results-table th {
-        background: #eaf2ff !important;
-        color: #0f172a !important;
-        font-weight: 800 !important;
-    }
-
-    .results-card .marks-table th:nth-child(1),
-    .results-card .marks-table td:nth-child(1),
-    .results-card .marks-table th:nth-child(2),
-    .results-card .marks-table td:nth-child(2),
-    .results-card .results-table th:nth-child(1),
-    .results-card .results-table td:nth-child(1),
-    .results-card .results-table th:nth-child(2),
-    .results-card .results-table td:nth-child(2) {
-        min-width: 145px !important;
-        text-align: left !important;
-    }
-
-    .results-card .marks-table td::before,
-    .results-card .results-table td::before,
-    .results-card .summary-row td::before,
-    .results-card .cgpa-row td::before {
-        display: none !important;
-        content: none !important;
-    }
-
-    .results-card .summary-row td {
-        background: #f8fafc !important;
-        color: #0f172a !important;
-        font-weight: 800 !important;
-    }
-
-    .results-card .cgpa-row td {
-        background: #ecfdf3 !important;
-        color: #166534 !important;
-        font-weight: 800 !important;
-    }
+/* ═══════════════════════════════════════════════════════════════
+   RESPONSIVE — TINY PHONES ≤430px
+═══════════════════════════════════════════════════════════════ */
+@media (max-width: 430px) {
+    .student-topbar { padding-left: 48px !important; }
+    .student-topbar > div:last-child > span { display: none !important; }
+    .results-wrap { padding: 0.4rem !important; }
+    .marks-table th,
+    .marks-table td { padding: 6px 7px !important; font-size: 0.72rem !important; }
+    .student-provisional-table .col-code { width: 72px; }
+    .student-provisional-table .col-name { width: 140px; }
 }
 </style>
 
-<div class="student-sidebar">
+<?php /* ── SIDEBAR ───────────────────────────────────────────────── */ ?>
+<div class="student-sidebar" id="studentSidebar">
     <div class="sidebar-user-card">
         <div class="sidebar-portal-title">SMNS-STUDENT PORTAL</div>
         <?php if (!empty($studentProfile['photo'])): ?>
@@ -897,9 +549,9 @@ html[data-theme='dark'] .table-responsive {
     </div>
     <ul>
         <li><a href="<?php echo e($linkGeneratePrn); ?>">GENERATE PRN</a></li>
-        <li><a href="<?php echo e($linkEnroll); ?>">ENROLLMENT & REGISTRATION</a></li>
+        <li><a href="<?php echo e($linkEnroll); ?>">ENROLLMENT &amp; REGISTRATION</a></li>
         <li><a href="<?php echo e($linkPayments); ?>">PAYMENTS</a></li>
-        <li><a href="<?php echo e($linkProgramme); ?>">MY COURSES & RESULTS</a></li>
+        <li><a href="<?php echo e($linkProgramme); ?>">MY COURSES &amp; RESULTS</a></li>
         <li><a href="services.php?tab=apply">SERVICES</a></li>
         <ul class="services-submenu">
             <li><a href="services.php?tab=apply">APPLY FOR SERVICES</a></li>
@@ -913,21 +565,26 @@ html[data-theme='dark'] .table-responsive {
     </ul>
 </div>
 
+<?php /* ── MAIN CONTENT ──────────────────────────────────────────── */ ?>
 <div class="main-content" id="mainContent">
+
+    <?php /* ── Top bar ─────────────────────────────────────────────── */ ?>
     <div class="student-topbar">
         <div style="display:flex; align-items:center; gap:0.7rem;">
-            <button id="menuBtn" style="background:none; border:none; font-size:1.1rem; cursor:pointer;" title="Toggle Sidebar"><i class="fas fa-bars"></i></button>
+            <button id="menuBtn" style="background:none; border:none; font-size:1.1rem; cursor:pointer;" title="Toggle Sidebar">
+                <i class="fas fa-bars"></i>
+            </button>
             <button onclick="location.href='<?php echo e($linkDashboard); ?>'" style="background:#2563eb; color:#fff; border:none; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW BIO DATA</button>
-                    <button onclick="location.href='<?php echo e($linkProvisionalResults); ?>'" style="background:#2563eb; color:#fff; border:none; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW PROVISIONAL RESULTS</button>
+            <button onclick="location.href='<?php echo e($linkProvisionalResults); ?>'" style="background:#2563eb; color:#fff; border:none; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW PROVISIONAL RESULTS</button>
             <button onclick="location.href='<?php echo e($linkInvoices); ?>'" style="background:#f1f5f9; color:#222; border:1px solid #e5e7eb; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW INVOICES</button>
             <button onclick="location.href='<?php echo e($linkFees); ?>'" style="background:#f1f5f9; color:#222; border:1px solid #e5e7eb; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">VIEW FEES STRUCTURE</button>
             <button onclick="location.href='<?php echo e($linkGeneratePrn); ?>'" style="background:#f1f5f9; color:#222; border:1px solid #e5e7eb; border-radius:5px; padding:5px 10px; font-size:0.92rem; font-weight:600;">Generate PRN</button>
         </div>
         <div style="display:flex; align-items:center; gap:0.5rem; position:relative;">
             <?php if (!empty($studentProfile['photo'])): ?>
-                <img src="<?php echo BASE_URL . '/' . $studentProfile['photo']; ?>" alt="Profile" class="student-profile-pic">
+                <img src="<?php echo BASE_URL . '/' . $studentProfile['photo']; ?>" alt="Profile" class="student-profile-pic" style="width:36px;height:36px;">
             <?php else: ?>
-                <img src="/assets/img/student_sample.jpg" alt="Profile" class="student-profile-pic">
+                <img src="/assets/img/student_sample.jpg" alt="Profile" class="student-profile-pic" style="width:36px;height:36px;">
             <?php endif; ?>
             <span style="font-size:0.98rem; color:#222; font-weight:600; white-space:nowrap;">
                 <?php echo e(strtoupper(trim(($studentProfile['last_name'] ?? '') . ' ' . ($studentProfile['first_name'] ?? '')))); ?>
@@ -943,13 +600,13 @@ html[data-theme='dark'] .table-responsive {
                     <i class="fas fa-chevron-down"></i>
                 </button>
                 <div id="profileDropMenu" style="display:none; position:absolute; top:120%; right:0; background:#fff; border:1px solid #e5e7eb; border-radius:6px; box-shadow:0 2px 8px rgba(0,0,0,0.08); min-width:140px; z-index:100;">
-                    <a href="dashboard.php" style="display:block; padding:8px 14px; color:#1f2937; text-decoration:none; font-weight:600; font-size:0.92rem; border-bottom:1px solid #f1f5f9;">Profile</a>
-                    <a href="services.php?tab=apply" style="display:block; padding:8px 14px; color:#1f2937; text-decoration:none; font-weight:600; font-size:0.92rem; border-bottom:1px solid #f1f5f9;">Services</a>
-                    <a href="logout.php" style="display:block; padding:8px 14px; color:#dc2626; text-decoration:none; font-weight:600; font-size:0.92rem;">Logout</a>
+                    <a href="dashboard.php"          style="display:block; padding:8px 14px; color:#1f2937; text-decoration:none; font-weight:600; font-size:0.92rem; border-bottom:1px solid #f1f5f9;">Profile</a>
+                    <a href="services.php?tab=apply"  style="display:block; padding:8px 14px; color:#1f2937; text-decoration:none; font-weight:600; font-size:0.92rem; border-bottom:1px solid #f1f5f9;">Services</a>
+                    <a href="logout.php"              style="display:block; padding:8px 14px; color:#dc2626; text-decoration:none; font-weight:600; font-size:0.92rem;">Logout</a>
                 </div>
             </div>
             <div class="profile-dropdown" style="position:relative;">
-                <button id="keyDropBtn" style="background:var(--key-btn-bg, #fff); border:1px solid var(--key-btn-border, #e5e7eb); border-radius:50%; width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; color:var(--key-btn-color, #0f172a);">
+                <button id="keyDropBtn" style="background:var(--key-btn-bg,#fff); border:1px solid var(--key-btn-border,#e5e7eb); border-radius:50%; width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; color:var(--key-btn-color,#0f172a);">
                     <i class="fas fa-key"></i>
                 </button>
                 <div id="keyDropMenu" style="display:none; position:absolute; top:120%; right:0; background:#fff; border:1px solid #e5e7eb; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.12); min-width:260px; padding:12px; z-index:100;">
@@ -978,202 +635,246 @@ html[data-theme='dark'] .table-responsive {
         </div>
     </div>
 
+    <?php /* ── Programme / status strip ────────────────────────────── */ ?>
     <div style="padding:0.7rem 1.2rem 0.2rem 1.2rem; font-size:0.98rem; font-weight:600; display:flex; align-items:center; gap:0.7rem; flex-wrap:wrap;">
         <span>PROGRAMME: <?php echo e($registeredProgramName); ?></span>
-        <span class="status-badge status-active" style="font-size:0.85rem; padding:3px 10px;"><?php echo !empty($studentProfile['status']) ? strtoupper(e($studentProfile['status'])) : 'ACTIVE'; ?></span>
-        <span style="margin-left:auto; font-size:1.05rem; color:#222;">ACADEMIC STATUS: <span style="<?php echo e($academicStatusStyle); ?> border-radius:6px; padding:4px 12px; font-weight:600;">
-            <?php echo !empty($academicStatus) ? e($academicStatus) : '-'; ?>
-        </span></span>
+        <span class="status-badge status-active" style="font-size:0.85rem; padding:3px 10px;">
+            <?php echo !empty($studentProfile['status']) ? strtoupper(e($studentProfile['status'])) : 'ACTIVE'; ?>
+        </span>
+        <span style="margin-left:auto; font-size:1.05rem; color:#222;">
+            ACADEMIC STATUS:
+            <span style="<?php echo e($academicStatusStyle); ?> border-radius:6px; padding:4px 12px; font-weight:600;">
+                <?php echo !empty($academicStatus) ? e($academicStatus) : '-'; ?>
+            </span>
+        </span>
     </div>
 
-    <div style="padding:0.45rem 1.2rem 0.2rem 1.2rem; display:flex; align-items:center; gap:0.35rem; flex-wrap:nowrap; white-space:nowrap;">
-        <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">CURRENT YR. <span style="color:#2563eb;"><?php echo e($currentSemester['academic_year']); ?></span></span>
-        <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span>
-        <span style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'background:#dcfce7; color:#166534; border:1px solid #86efac; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;' : 'background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;'; ?>">
-            <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['enrollment_status'] ?? 'not_enrolled') === 'enrolled') ? 'ENROLLED' : 'NOT ENROLLED'; ?>
+    <?php /* ── Chip strip ──────────────────────────────────────────── */ ?>
+    <div style="padding:0.45rem 1.2rem 0.2rem 1.2rem; display:flex; align-items:center; gap:0.35rem; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; scrollbar-width:none;">
+        <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; white-space:nowrap; flex:0 0 auto;">CURRENT YR. <span style="color:#2563eb;"><?php echo e($currentSemester['academic_year']); ?></span></span>
+        <span style="background:#f1f5f9; color:#222; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; white-space:nowrap; flex:0 0 auto;">CURRENT SEM. <span style="color:#2563eb;"><?php echo e($currentSemester['semester_name']); ?></span></span>
+        <?php
+        $lifecycleStatus = getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0));
+        $isEnrolled  = ($lifecycleStatus['enrollment_status']  ?? 'not_enrolled')  === 'enrolled';
+        $isRegistered = ($lifecycleStatus['registration_status'] ?? 'not_registered') === 'registered';
+        $chipBase = 'border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; white-space:nowrap; flex:0 0 auto;';
+        ?>
+        <span style="<?php echo $isEnrolled  ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; echo $chipBase; ?>">
+            <?php echo $isEnrolled  ? 'ENROLLED'     : 'NOT ENROLLED'; ?>
         </span>
-        <span style="<?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'background:#dcfce7; color:#166534; border:1px solid #86efac; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;' : 'background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;'; ?>">
-            <?php echo ((getStudentLifecycleStatus($conn, (int)($studentProfile['id'] ?? 0), (int)($currentSemester['id'] ?? 0))['registration_status'] ?? 'not_registered') === 'registered') ? 'REGISTERED' : 'NOT REGISTERED'; ?>
+        <span style="<?php echo $isRegistered ? 'background:#dcfce7;color:#166534;border:1px solid #86efac;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'; echo $chipBase; ?>">
+            <?php echo $isRegistered ? 'REGISTERED'   : 'NOT REGISTERED'; ?>
         </span>
-        <span style="background:#f1f5f9; color:#991b1b; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">APPROVED FEES AMOUNT: <?php echo number_format($approvedFeesAmount); ?>/=</span>
-        <span style="background:#2563eb; color:#fff; border-radius:6px; padding:4px 8px; font-weight:600; font-size:0.78rem; line-height:1; white-space:nowrap; flex:0 0 auto;">BALANCE ON ACCOUNT: <?php echo number_format((float)$balanceOnAccount); ?>/=</span>
+        <span style="background:#f1f5f9; color:#991b1b; <?php echo $chipBase; ?>">APPROVED FEES AMOUNT: <?php echo number_format($approvedFeesAmount); ?>/=</span>
+        <span style="background:#2563eb; color:#fff; <?php echo $chipBase; ?>">BALANCE ON ACCOUNT: <?php echo number_format((float)$balanceOnAccount); ?>/=</span>
     </div>
 
+    <?php /* ── Results card ────────────────────────────────────────── */ ?>
     <div class="results-wrap">
         <div class="results-card">
             <div class="results-header">
                 <h4>My Provisional Results</h4>
-                <div class="student-meta">
-                    STUDENT NO: <?php echo e($studentDisplayId); ?>
-                </div>
+                <div class="student-meta">STUDENT NO: <?php echo e($studentDisplayId); ?></div>
             </div>
 
-            <div class="p-3">
+            <div class="p-3" style="padding:1rem 1.2rem;">
                 <?php if (empty($organizedResults)): ?>
-                    <div class="alert alert-info mb-0">
+                    <div class="alert alert-info mb-0" style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:1rem;color:#64748b;text-align:center;">
                         No provisional results found yet.
                     </div>
                 <?php else: ?>
-                    <?php
-                    $cumulativeCredits = 0;
-                    $cumulativePoints = 0.0;
-                    ?>
 
-                    <?php foreach ($organizedResults as $year => $semesters): ?>
-                        <div class="year-block">
-                            <div class="year-title">Year <?php echo (int)$year; ?></div>
+                <?php
+                $cumulativeCredits = 0;
+                $cumulativePoints  = 0.0;
+                ?>
 
-                            <?php foreach ($semesters as $semNum => $data): ?>
+                <?php foreach ($organizedResults as $year => $semesters): ?>
+                    <div class="year-block">
+                        <div class="year-title">Year <?php echo (int)$year; ?></div>
+
+                        <?php foreach ($semesters as $semNum => $data): ?>
+                            <div style="margin-bottom:1.4rem;">
                                 <div class="semester-title">
-                                    <?php echo e($data['academic_year']); ?> - Semester <?php echo (int)$semNum; ?>
+                                    <?php echo e($data['academic_year']); ?> &mdash; Semester <?php echo (int)$semNum; ?>
                                 </div>
-                                <div class="table-responsive">
-                                    <table class="results-table marks-table">
+
+                                <?php /* Scroll hint — shown by JS only when table actually overflows */ ?>
+                                <div class="mobile-scroll-hint">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                                        <path d="M5 12h14M15 7l5 5-5 5"/>
+                                    </svg>
+                                    Scroll right to see all columns
+                                </div>
+
+                                <div class="table-scroll-wrap">
+                                    <table class="marks-table student-provisional-table">
+                                        <colgroup>
+                                            <col class="col-code">
+                                            <col class="col-name">
+                                            <col class="col-cu">
+                                            <col class="col-cw">
+                                            <col class="col-exam">
+                                            <col class="col-total">
+                                            <col class="col-grade">
+                                            <col class="col-gp">
+                                            <col class="col-status">
+                                        </colgroup>
                                         <thead>
                                             <tr>
-                                                <th>Course Code</th>
-                                                <th>Course Name</th>
-                                                <th class="text-center">CU</th>
-                                                <th class="text-center">CW</th>
-                                                <th class="text-center">Exam</th>
-                                                <th class="text-center">Total</th>
-                                                <th class="text-center">Grade</th>
-                                                <th class="text-center">GP</th>
-                                                <th class="text-center">Status</th>
+                                                <th class="col-code">Course Code</th>
+                                                <th class="col-name">Course Name</th>
+                                                <th class="col-cu">CU</th>
+                                                <th class="col-cw">CW</th>
+                                                <th class="col-exam">Exam</th>
+                                                <th class="col-total">Total</th>
+                                                <th class="col-grade">Grade</th>
+                                                <th class="col-gp">GP</th>
+                                                <th class="col-status">Status</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <?php
-                                            $semesterCredits = 0;
-                                            $semesterPoints = 0.0;
-                                            $allPublished = true;
-                                            $totalCourses = count($data['courses']);
+                                            $semesterCredits  = 0;
+                                            $semesterPoints   = 0.0;
+                                            $allPublished     = true;
+                                            $totalCourses     = count($data['courses']);
                                             $publishedCourses = 0;
                                             ?>
 
                                             <?php foreach ($data['courses'] as $course): ?>
                                                 <?php
-                                                $resultStatus = strtolower((string)($course['result_status'] ?? ''));
-                                                $hasMarks = ($course['total_marks'] !== null && $course['total_marks'] !== '');
-                                                $cu = (int)($course['credit_hours'] ?? 0);
+                                                $resultStatus  = strtolower((string)($course['result_status'] ?? ''));
+                                                $hasMarks      = ($course['total_marks'] !== null && $course['total_marks'] !== '');
+                                                $cu            = (int)($course['credit_hours'] ?? 0);
                                                 $resolvedScale = $resolveTranscriptScale($course['total_marks'] ?? null);
-                                                $storedGrade = trim((string)($course['grade'] ?? ''));
+
+                                                $storedGrade      = trim((string)($course['grade'] ?? ''));
                                                 $storedGradePoint = ($course['grade_points'] !== null && $course['grade_points'] !== '')
-                                                    ? (float)$course['grade_points']
-                                                    : null;
-                                                $displayGrade = $hasMarks
+                                                    ? (float)$course['grade_points'] : null;
+
+                                                $displayGrade      = $hasMarks
                                                     ? ($storedGrade !== '' ? $storedGrade : (string)$resolvedScale['grade'])
                                                     : '';
                                                 $displayGradePoint = $hasMarks
                                                     ? ($storedGradePoint !== null ? $storedGradePoint : $resolvedScale['grade_point'])
                                                     : null;
+
                                                 $statusLabel = $resultStatus !== '' ? strtoupper(str_replace('_', ' ', $resultStatus)) : 'PA';
 
                                                 if ($hasMarks && $displayGradePoint !== null) {
                                                     $semesterCredits += $cu;
-                                                    $semesterPoints += ((float)$displayGradePoint) * $cu;
+                                                    $semesterPoints  += ((float)$displayGradePoint) * $cu;
                                                     $publishedCourses++;
                                                 } else {
                                                     $allPublished = false;
                                                 }
                                                 ?>
-                                                <tr>
-                                                    <td><strong><?php echo e($course['course_code'] ?? '-'); ?></strong></td>
-                                                    <td><?php echo e($course['course_name'] ?? '-'); ?></td>
-                                                    <td class="text-center"><?php echo e($course['credit_hours'] ?? '-'); ?></td>
-                                                    <td class="text-center"><?php echo $course['assignment_marks'] !== null ? number_format((float)$course['assignment_marks'], 0) : 'PA'; ?></td>
-                                                    <td class="text-center"><?php echo $course['final_exam_marks'] !== null ? number_format((float)$course['final_exam_marks'], 0) : 'PA'; ?></td>
-                                                    <td class="text-center"><?php echo $hasMarks ? number_format((float)$course['total_marks'], 0) : 'PA'; ?></td>
-                                                    <td class="text-center"><?php echo $displayGrade !== '' ? e($displayGrade) : 'PA'; ?></td>
-                                                    <td class="text-center"><?php echo $displayGradePoint !== null ? number_format((float)$displayGradePoint, 2) : 'PA'; ?></td>
-                                                    <td class="text-center">
-                                                        <span class="<?php echo $hasMarks ? 'badge-published' : 'badge-pending'; ?>"><?php echo e($statusLabel); ?></span>
+                                                <tr class="result-course-row">
+                                                    <td class="col-code"><strong><?php echo e($course['course_code'] ?? '-'); ?></strong></td>
+                                                    <td class="col-name"><?php echo e($course['course_name'] ?? '-'); ?></td>
+                                                    <td class="col-cu"><?php echo e($course['credit_hours'] ?? '-'); ?></td>
+                                                    <td class="col-cw"><?php echo $course['assignment_marks'] !== null ? number_format((float)$course['assignment_marks'], 0) : 'PA'; ?></td>
+                                                    <td class="col-exam"><?php echo $course['final_exam_marks'] !== null ? number_format((float)$course['final_exam_marks'], 0) : 'PA'; ?></td>
+                                                    <td class="col-total"><?php echo $hasMarks ? number_format((float)$course['total_marks'], 0) : 'PA'; ?></td>
+                                                    <td class="col-grade"><?php echo $displayGrade !== '' ? e($displayGrade) : 'PA'; ?></td>
+                                                    <td class="col-gp"><?php echo $displayGradePoint !== null ? number_format((float)$displayGradePoint, 2) : 'PA'; ?></td>
+                                                    <td class="col-status">
+                                                        <span class="<?php echo $hasMarks ? 'badge-published' : 'badge-pending'; ?>">
+                                                            <?php echo e($statusLabel); ?>
+                                                        </span>
                                                     </td>
                                                 </tr>
                                             <?php endforeach; ?>
 
                                             <?php
-                                            $sgpa = ($semesterCredits > 0) ? ($semesterPoints / $semesterCredits) : null;
+                                            $sgpa     = ($semesterCredits > 0) ? ($semesterPoints / $semesterCredits) : null;
                                             $sgpaText = ($sgpa !== null && $allPublished) ? number_format($sgpa, 2) : 'PA';
 
                                             if ($semesterCredits > 0 && $allPublished) {
                                                 $cumulativeCredits += $semesterCredits;
-                                                $cumulativePoints += $semesterPoints;
+                                                $cumulativePoints  += $semesterPoints;
                                             }
 
-                                            $cgpa = ($cumulativeCredits > 0) ? ($cumulativePoints / $cumulativeCredits) : null;
+                                            $cgpa     = ($cumulativeCredits > 0) ? ($cumulativePoints / $cumulativeCredits) : null;
                                             $cgpaText = ($cgpa !== null) ? number_format($cgpa, 2) : 'PA';
                                             ?>
 
                                             <tr class="summary-row">
-                                                <td colspan="2" class="text-center">Published Courses</td>
-                                                <td class="text-center"><?php echo $publishedCourses; ?>/<?php echo $totalCourses; ?></td>
-                                                <td colspan="3" class="text-center">Semester GPA</td>
-                                                <td colspan="3" class="text-center"><?php echo $sgpaText; ?></td>
+                                                <td class="col-code" colspan="2" style="text-align:left;">Published Courses</td>
+                                                <td class="col-cu" style="text-align:center;"><?php echo $publishedCourses; ?>/<?php echo $totalCourses; ?></td>
+                                                <td colspan="3" style="text-align:center;">Semester GPA</td>
+                                                <td colspan="3" style="text-align:center;"><?php echo $sgpaText; ?></td>
                                             </tr>
                                             <tr class="cgpa-row">
-                                                <td colspan="6" class="text-center">Cumulative GPA (CGPA)</td>
-                                                <td colspan="3" class="text-center"><?php echo $cgpaText; ?></td>
+                                                <td colspan="6" style="text-align:left;">Cumulative GPA (CGPA)</td>
+                                                <td colspan="3" style="text-align:center;"><?php echo $cgpaText; ?></td>
                                             </tr>
                                         </tbody>
                                     </table>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php endforeach; ?>
-                    <div class="grading-key">
-                        <strong>Grading Key:</strong>
-                        A (80-100, 5.00),
-                        B+ (75-79, 4.00),
-                        B (70-74, 3.50),
-                        C+ (65-69, 3.00),
-                        C (60-64, 2.50),
-                        D (50-59, 2.00),
-                        E (40-49, 1.00),
-                        F (0-39, 0.00).
-                    </div>
+                                </div><!-- /.table-scroll-wrap -->
+                            </div>
+                        <?php endforeach; ?>
+                    </div><!-- /.year-block -->
+                <?php endforeach; ?>
+
+                <div class="grading-key">
+                    <strong>Grading Key:</strong>
+                    A (80–100, 5.00) &nbsp;|&nbsp;
+                    B+ (75–79, 4.00) &nbsp;|&nbsp;
+                    B (70–74, 3.50) &nbsp;|&nbsp;
+                    C+ (65–69, 3.00) &nbsp;|&nbsp;
+                    C (60–64, 2.50) &nbsp;|&nbsp;
+                    D (50–59, 2.00) &nbsp;|&nbsp;
+                    E (40–49, 1.00) &nbsp;|&nbsp;
+                    F (0–39, 0.00)
+                </div>
+
                 <?php endif; ?>
-            </div>
-        </div>
-    </div>
-</div>
+            </div><!-- /.p-3 -->
+        </div><!-- /.results-card -->
+    </div><!-- /.results-wrap -->
+</div><!-- /.main-content -->
 
 <script>
-document.getElementById('menuBtn').addEventListener('click', function() {
-    var sidebar = document.querySelector('.student-sidebar');
-    var main = document.querySelector('.main-content');
+/* ── Sidebar toggle ────────────────────────────────────────── */
+document.getElementById('menuBtn').addEventListener('click', function () {
+    var sidebar = document.getElementById('studentSidebar');
+    var main    = document.getElementById('mainContent');
     sidebar.classList.toggle('sidebar-collapsed');
     if (main) main.classList.toggle('full-width');
 });
 
-document.getElementById('profileDropBtn').addEventListener('click', function(e) {
+/* ── Profile dropdown ──────────────────────────────────────── */
+document.getElementById('profileDropBtn').addEventListener('click', function (e) {
     e.stopPropagation();
     var menu = document.getElementById('profileDropMenu');
     menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
 });
-document.getElementById('keyDropBtn').addEventListener('click', function(e) {
+
+/* ── Key / change-password dropdown ───────────────────────── */
+document.getElementById('keyDropBtn').addEventListener('click', function (e) {
     e.stopPropagation();
     var menu = document.getElementById('keyDropMenu');
     menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
 });
+
 var keyForm = document.getElementById('keyChangePasswordForm');
 if (keyForm) {
-    keyForm.addEventListener('submit', function(e) {
+    keyForm.addEventListener('submit', function (e) {
         e.preventDefault();
-        var msg = document.getElementById('keyChangePasswordMsg');
+        var msg       = document.getElementById('keyChangePasswordMsg');
         var submitBtn = keyForm.querySelector('button[type="submit"]');
         if (submitBtn) submitBtn.disabled = true;
-        if (msg) {
-            msg.style.display = 'none';
-            msg.textContent = '';
-        }
+        if (msg) { msg.style.display = 'none'; msg.textContent = ''; }
+
         fetch('change-password.php', {
             method: 'POST',
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
             body: new FormData(keyForm)
         })
-        .then(function(res) { return res.json(); })
-        .then(function(data) {
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
             if (msg) {
                 msg.style.display = 'block';
                 if (data && data.success) {
@@ -1182,32 +883,82 @@ if (keyForm) {
                     keyForm.reset();
                 } else {
                     msg.style.color = '#b91c1c';
-                    msg.textContent = (data && (data.error || data.message)) ? (data.error || data.message) : 'Unable to update password.';
+                    msg.textContent = (data && (data.error || data.message))
+                        ? (data.error || data.message) : 'Unable to update password.';
                 }
             }
         })
-        .catch(function() {
+        .catch(function () {
             if (msg) {
                 msg.style.display = 'block';
                 msg.style.color = '#b91c1c';
                 msg.textContent = 'Unable to update password.';
             }
         })
-        .finally(function() {
-            if (submitBtn) submitBtn.disabled = false;
-        });
+        .finally(function () { if (submitBtn) submitBtn.disabled = false; });
     });
 }
 
-document.addEventListener('click', function() {
-    var menu = document.getElementById('profileDropMenu');
-    if (menu) menu.style.display = 'none';
+document.addEventListener('click', function () {
+    var menu    = document.getElementById('profileDropMenu');
     var keyMenu = document.getElementById('keyDropMenu');
+    if (menu)    menu.style.display    = 'none';
     if (keyMenu) keyMenu.style.display = 'none';
 });
+
+/* ── Mobile scroll hints ───────────────────────────────────────
+   Each .mobile-scroll-hint sits immediately before its
+   .table-scroll-wrap sibling. We:
+   1. Show the hint only when the table actually overflows.
+   2. Fade it out once the user scrolls past 20 px.
+   3. Re-evaluate on resize (orientation change, etc.).
+──────────────────────────────────────────────────────────────── */
+(function () {
+    function initScrollHints() {
+        document.querySelectorAll('.table-scroll-wrap').forEach(function (wrap) {
+            /* The hint is the element immediately before the wrapper */
+            var hint = wrap.previousElementSibling;
+            if (!hint || !hint.classList.contains('mobile-scroll-hint')) return;
+
+            function evaluate() {
+                /* Only show hint when content is wider than the viewport */
+                if (wrap.scrollWidth > wrap.clientWidth + 4) {
+                    hint.style.display = 'flex';
+                    /* If user already scrolled, keep it hidden */
+                    if (wrap.scrollLeft > 20) {
+                        hint.classList.add('hint-hidden');
+                    } else {
+                        hint.classList.remove('hint-hidden');
+                    }
+                } else {
+                    hint.style.display = 'none';
+                    hint.classList.remove('hint-hidden');
+                }
+            }
+
+            wrap.addEventListener('scroll', function () {
+                if (wrap.scrollLeft > 20) {
+                    hint.classList.add('hint-hidden');
+                } else {
+                    hint.classList.remove('hint-hidden');
+                }
+            }, { passive: true });
+
+            window.addEventListener('resize', evaluate, { passive: true });
+            evaluate();
+        });
+    }
+
+    /* Run after paint so clientWidth / scrollWidth are accurate */
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initScrollHints);
+    } else {
+        /* Small rAF delay ensures layout is settled */
+        requestAnimationFrame(function () {
+            requestAnimationFrame(initScrollHints);
+        });
+    }
+})();
 </script>
 
 <?php include '../../includes/footer.php'; ?>
-
-
-

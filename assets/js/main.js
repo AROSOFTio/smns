@@ -34,6 +34,11 @@ function updateDateTime() {
     if (dateElem) dateElem.textContent = dateString;
 }
 
+function isCompactNavigationViewport() {
+    return window.innerWidth <= 768 ||
+        (window.innerWidth <= 1024 && window.innerHeight <= 540 && window.matchMedia('(orientation: landscape)').matches);
+}
+
 // Auto-fold long content blocks to avoid very long page displays
 function initAutoFoldSections(root) {
     var scope = root && root.querySelectorAll ? root : document;
@@ -44,7 +49,7 @@ function initAutoFoldSections(root) {
         '.content-area .saved-list',
         '.content-area pre'
     ];
-    var threshold = window.innerWidth <= 768 ? 260 : 340;
+    var threshold = isCompactNavigationViewport() ? 260 : 340;
 
     selectors.forEach(function(selector) {
         var nodes = scope.querySelectorAll(selector);
@@ -231,7 +236,7 @@ document.addEventListener('DOMContentLoaded', function() {
         localStorage.removeItem('sidebar-collapsed');
         
         // Check localStorage for sidebar state and apply on page load
-        if (window.innerWidth <= 768) {
+        if (isCompactNavigationViewport()) {
             sidebar.classList.remove('collapsed');
             mainContent.classList.remove('expanded');
         } else if (localStorage.getItem('sidebarCollapsed') === 'true') {
@@ -248,7 +253,7 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             e.stopPropagation();
 
-            if (window.innerWidth <= 768) {
+            if (isCompactNavigationViewport()) {
                 sidebar.classList.remove('collapsed');
                 mainContent.classList.remove('expanded');
                 if (window.SMNSMobileNav && typeof window.SMNSMobileNav.toggle === 'function') {
