@@ -47,9 +47,13 @@ function smnsDetectLoggedModules() {
     $modules = ['admin', 'student', 'lecturer', 'finance'];
     $active = [];
     foreach ($modules as $module) {
-        $auth = new Auth($module);
-        if ($auth->isLoggedIn()) {
-            $active[] = $module;
+        try {
+            $auth = new Auth($module);
+            if ($auth->isLoggedIn()) {
+                $active[] = $module;
+            }
+        } catch (Exception $e) {
+            error_log('Login session detection failed for ' . $module . ': ' . $e->getMessage());
         }
     }
     return $active;
@@ -84,10 +88,14 @@ function smnsProbeIdentity($username) {
     }
     $modules = ['admin', 'student', 'lecturer', 'finance'];
     foreach ($modules as $module) {
-        $probeAuth = new Auth($module);
-        $probeUser = $probeAuth->usernameExists($username);
-        if ($probeUser && is_array($probeUser)) {
-            return ['module' => $module, 'user' => $probeUser];
+        try {
+            $probeAuth = new Auth($module);
+            $probeUser = $probeAuth->usernameExists($username);
+            if ($probeUser && is_array($probeUser)) {
+                return ['module' => $module, 'user' => $probeUser];
+            }
+        } catch (Exception $e) {
+            error_log('Login identity probe failed for ' . $module . ': ' . $e->getMessage());
         }
     }
     return null;
@@ -106,7 +114,7 @@ function smnsResolveProfileName($module, array $user, $fallback = '') {
         'admin' => ['table' => 'admins', 'id_col' => 'user_id', 'select' => 'first_name, last_name'],
         'student' => ['table' => 'students', 'id_col' => 'user_id', 'select' => 'first_name, last_name'],
         'lecturer' => ['table' => 'lecturers', 'id_col' => 'user_id', 'select' => 'first_name, last_name'],
-        'finance' => ['table' => 'finance_staff', 'id_col' => 'user_id', 'select' => 'first_name, last_name, fullname, name']
+        'finance' => ['table' => 'finance_staff', 'id_col' => 'user_id', 'select' => 'first_name, last_name']
     ];
     $cfg = $tableMap[$module] ?? null;
     if (!$cfg) {

@@ -1,6 +1,6 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteBase /smns/
+    RewriteBase /
     
     # Redirect to index.php if file doesn't exist
     RewriteCond %{REQUEST_FILENAME} !-f
@@ -26,9 +26,9 @@ Options -Indexes
 AddDefaultCharset UTF-8
 
 # Error pages
-ErrorDocument 404 /smns/views/errors/404.php
-ErrorDocument 403 /smns/views/errors/403.php
-ErrorDocument 500 /smns/views/errors/500.php
+ErrorDocument 404 /views/errors/404.php
+ErrorDocument 403 /views/errors/403.php
+ErrorDocument 500 /views/errors/500.php
 
 # Security headers
 <IfModule mod_headers.c>
