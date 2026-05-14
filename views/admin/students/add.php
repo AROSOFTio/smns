@@ -56,6 +56,77 @@ function isValidEmail($email) {
 function isValidDate($date) {
     return (bool)strtotime($date);
 }
+// Helper: tolerate deployments where the students table has both legacy and newer profile columns.
+function studentColumnExists(PDO $conn, $column) {
+    static $cache = [];
+    $column = (string)$column;
+    if (isset($cache[$column])) {
+        return $cache[$column];
+    }
+    try {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'students'
+              AND COLUMN_NAME = :column_name
+        ");
+        $stmt->execute(['column_name' => $column]);
+        $cache[$column] = ((int)$stmt->fetchColumn() > 0);
+    } catch (Exception $e) {
+        $cache[$column] = false;
+    }
+    return $cache[$column];
+}
+function studentInsert(PDO $conn, array $data) {
+    $columns = [];
+    $placeholders = [];
+    $params = [];
+
+    foreach ($data as $column => $value) {
+        if (!studentColumnExists($conn, $column)) {
+            continue;
+        }
+        $param = 'c_' . preg_replace('/[^A-Za-z0-9_]/', '_', $column);
+        $columns[] = $column;
+        $placeholders[] = ':' . $param;
+        $params[$param] = $value;
+    }
+
+    if (empty($columns)) {
+        throw new Exception('No matching student columns found for insert.');
+    }
+
+    $sql = "INSERT INTO students (" . implode(',', $columns) . ",created_at) VALUES (" . implode(',', $placeholders) . ",NOW())";
+    $stmt = $conn->prepare($sql);
+    $stmt->execute($params);
+}
+function resolveEntryYearFromSemester(PDO $conn, $semesterId) {
+    $semesterId = (int)$semesterId;
+    if ($semesterId <= 0) {
+        return (int)date('Y');
+    }
+    try {
+        $stmt = $conn->prepare("
+            SELECT ay.year_name, ay.start_date
+            FROM semesters s
+            INNER JOIN academic_years ay ON ay.id = s.academic_year_id
+            WHERE s.id = :semester_id
+            LIMIT 1
+        ");
+        $stmt->execute(['semester_id' => $semesterId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        if (!empty($row['start_date'])) {
+            return (int)date('Y', strtotime((string)$row['start_date']));
+        }
+        if (!empty($row['year_name']) && preg_match('/(\d{4})/', (string)$row['year_name'], $matches)) {
+            return (int)$matches[1];
+        }
+    } catch (Exception $e) {
+        // Fall back below.
+    }
+    return (int)date('Y');
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $admission_number = generateAdmissionNumber($conn);
@@ -139,7 +210,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($primary_number !== '') {
-            $phoneStmt = $conn->prepare("SELECT id, student_id FROM students WHERE primary_number = :primary_number LIMIT 1");
+            $phoneColumn = studentColumnExists($conn, 'primary_number') ? 'primary_number' : 'phone';
+            $phoneStmt = $conn->prepare("SELECT id, student_id FROM students WHERE {$phoneColumn} = :primary_number LIMIT 1");
             $phoneStmt->execute(['primary_number' => $primary_number]);
             $existingByPhone = $phoneStmt->fetch(PDO::FETCH_ASSOC);
             if ($existingByPhone) {
@@ -169,32 +241,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $conn->prepare("INSERT INTO users (username,email,password_hash,role,status,created_at) VALUES (:u,:e,:p,'student','active',NOW())");
             $stmt->execute(['u' => $username, 'e' => $email, 'p' => $hash]);
             $userId = $conn->lastInsertId();
-            $stmt2 = $conn->prepare("INSERT INTO students (user_id,admission_number,student_id,first_name,other_name,last_name,email,smns_email,primary_number,secondary_number,nationality,school_college,department,program_id,study_year,session,entry_mode,current_semester,intake,academic_status,discipline_status,financial_information,date_of_birth,gender,status,created_at) VALUES (:uid,:adm,:reg,:fn,:on,:ln,:em,:smns,:pn,:sn,:nat,:sc,:dept,:program_id,:study_year,:session,:entry_mode,:current_semester,:intake,:academic_status,:discipline_status,:financial_information,:dob,:g,'active',NOW())");
-            $stmt2->execute([
-                'uid' => $userId,
-                'adm' => $admission_number,
-                'reg' => $student_reg,
-                'fn' => $first_name,
-                'on' => $other_name,
-                'ln' => $last_name,
-                'em' => $email,
-                'smns' => $smns_email,
-                'pn' => $primary_number,
-                'sn' => $secondary_number,
-                'nat' => $nationality,
-                'sc' => $school_college,
-                'dept' => $department,
+            $entryYear = resolveEntryYearFromSemester($conn, $current_semester);
+            studentInsert($conn, [
+                'user_id' => $userId,
+                'admission_number' => $admission_number,
+                'student_id' => $student_reg,
+                'first_name' => $first_name,
+                'middle_name' => $other_name,
+                'other_name' => $other_name,
+                'last_name' => $last_name,
+                'date_of_birth' => $dob,
+                'gender' => $gender,
+                'phone' => $primary_number,
+                'email' => $email,
+                'smns_email' => $smns_email,
+                'primary_number' => $primary_number,
+                'secondary_number' => $secondary_number,
+                'nationality' => $nationality,
+                'country' => $nationality,
+                'school_college' => $school_college,
+                'department' => $department,
                 'program_id' => $program_id,
-                'study_year' => $study_year,
+                'level_year' => (int)$study_year,
+                'study_year' => (int)$study_year,
+                'entry_year' => $entryYear,
+                'entry_semester_id' => (int)$current_semester,
                 'session' => $session_val,
                 'entry_mode' => $entry_mode,
-                'current_semester' => $current_semester,
+                'current_semester' => (int)$current_semester,
                 'intake' => $intake,
                 'academic_status' => $academic_status,
                 'discipline_status' => $discipline_status,
                 'financial_information' => $financial_information,
-                'dob' => $dob,
-                'g' => $gender
+                'status' => 'active'
             ]);
             $conn->commit();
             try {
