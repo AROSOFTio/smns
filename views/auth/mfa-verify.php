@@ -64,7 +64,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode(['success' => false, 'message' => 'Invalid request token.']);
             exit;
         }
-        $bootstrap = $auth->issuePendingMfaChallenge();
+        try {
+            $bootstrap = $auth->issuePendingMfaChallenge();
+        } catch (Throwable $e) {
+            error_log('MFA bootstrap request failed: ' . $e->getMessage());
+            $bootstrap = ['success' => false, 'message' => 'Unable to send verification code: ' . $e->getMessage()];
+        }
         echo json_encode([
             'success' => !empty($bootstrap['success']),
             'message' => (string)($bootstrap['message'] ?? (!empty($bootstrap['success']) ? 'Verification code sent.' : 'Unable to send verification code.')),
@@ -350,7 +355,18 @@ document.addEventListener('DOMContentLoaded', function () {
                 action: 'bootstrap'
             })
         })
-        .then(function (response) { return response.json(); })
+        .then(function (response) {
+            return response.text().then(function (text) {
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    return {
+                        success: false,
+                        message: 'Unable to send verification code. Server returned: ' + String(text || ('HTTP ' + response.status)).slice(0, 180)
+                    };
+                }
+            });
+        })
         .then(function (data) {
             if (data && data.success) {
                 if (data.delivery === 'local_code' || data.delivery === 'local_fallback') {
@@ -370,8 +386,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
         })
-        .catch(function () {
-            setStatus('danger', 'Unable to send verification code right now. Please use Resend Code.');
+        .catch(function (error) {
+            setStatus('danger', 'Unable to send verification code right now: ' + ((error && error.message) ? error.message : 'request failed') + '. Please use Resend Code.');
             if (helperText) {
                 helperText.innerHTML = 'Use <strong>Resend Code</strong> to request a new verification email.';
             }

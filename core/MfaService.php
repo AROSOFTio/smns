@@ -217,14 +217,11 @@ class MfaService {
                 ];
             }
 
-            if (defined('APP_DEBUG') && APP_DEBUG) {
-                $reason = $lastError !== '' ? $lastError : 'unknown transport error';
-                return [
-                    'success' => false,
-                    'message' => 'Unable to send MFA code. Mail transport error: ' . $reason
-                ];
-            }
-            return ['success' => false, 'message' => 'Unable to send MFA code. Please try again shortly.'];
+            $reason = $lastError !== '' ? $lastError : 'unknown transport error';
+            return [
+                'success' => false,
+                'message' => 'Unable to send MFA code. Mail transport error: ' . $reason
+            ];
         }
 
         return [

@@ -1159,7 +1159,8 @@ class Auth {
                 $this->setPendingLoginContext((string)$ctx['module'], (int)$ctx['user_id'], 'mfa', (string)($resent['message'] ?? 'Verification code resent.'));
             }
             return $resent;
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
+            error_log('MFA resend failed: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Unable to resend verification code.'];
         }
     }
@@ -1187,7 +1188,8 @@ class Auth {
                 $this->setPendingLoginContext((string)$ctx['module'], (int)$ctx['user_id'], 'mfa', (string)($issued['message'] ?? 'Verification code sent.'));
             }
             return $issued;
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
+            error_log('MFA issue failed: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Unable to send verification code.'];
         }
     }
